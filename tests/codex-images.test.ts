@@ -7,13 +7,20 @@ const actualConfigModule = await import("../src/lib/config")
 const actualTokenModule = await import("../src/lib/token")
 
 let codexProviderConfig: ResolvedProviderConfig | null = null
+let openrouterProviderConfig: ResolvedProviderConfig | null = null
 
 await mock.module("~/lib/config", () => ({
   ...actualConfigModule,
-  getProviderConfig: (provider: string) =>
-    provider === "codex" ? codexProviderConfig : null,
-  getRawProviderConfig: (provider: string) =>
-    provider === "codex" ? codexProviderConfig : null,
+  getProviderConfig: (provider: string) => {
+    if (provider === "codex") return codexProviderConfig
+    if (provider === "openrouter") return openrouterProviderConfig
+    return null
+  },
+  getRawProviderConfig: (provider: string) => {
+    if (provider === "codex") return codexProviderConfig
+    if (provider === "openrouter") return openrouterProviderConfig
+    return null
+  },
 }))
 
 await mock.module("~/lib/token", () => ({
@@ -27,6 +34,9 @@ const { forwardCodexImages, resolveCodexImagesUrl } = await import(
 )
 const { imageRouteDependencies, imageRoutes } = await import(
   "../src/routes/images/route"
+)
+const { providerImageRoutes } = await import(
+  "../src/routes/provider/images/route"
 )
 const { server } = await import("../src/server")
 
@@ -69,6 +79,7 @@ function createApp() {
   const app = new Hono()
   app.route("/images", imageRoutes)
   app.route("/v1/images", imageRoutes)
+  app.route("/:provider/v1/images", providerImageRoutes)
   return app
 }
 
@@ -79,6 +90,13 @@ beforeEach(() => {
     baseUrl: "https://chatgpt.com/backend-api",
     name: "codex",
     type: "openai-responses",
+  }
+  openrouterProviderConfig = {
+    apiKey: "openrouter-key",
+    authType: "authorization",
+    baseUrl: "https://openrouter.example",
+    name: "openrouter",
+    type: "openai-compatible",
   }
   state.codexAccessToken = "codex-access-token"
   state.codexAccountId = "account-123"
@@ -96,6 +114,7 @@ afterEach(() => {
   state.codexAccessToken = undefined
   state.codexAccountId = undefined
   state.verbose = false
+  openrouterProviderConfig = null
   imageRouteDependencies.debugJsonAsync = originalDebugJsonAsync
 })
 
@@ -288,9 +307,83 @@ describe("Codex images forwarding", () => {
     })
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  test("supports the provider-scoped images generations route", async () => {
+    const payload = { prompt: "provider path" }
+
+    const response = await createApp().request(
+      "/codex/v1/images/generations?output=base64",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+    )
+
+    expect(response.status).toBe(200)
+    const [url] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(
+      "https://chatgpt.com/backend-api/codex/images/generations?output=base64",
+    )
+  })
+
+  test("proxies non-codex providers on the provider-scoped images route", async () => {
+    const payload = { prompt: "generic provider image" }
+
+    const response = await createApp().request(
+      "/openrouter/v1/images/generations?output=base64",
+      {
+        method: "POST",
+        headers: {
+          accept: "*/*",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      },
+    )
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(
+      "https://openrouter.example/v1/images/generations?output=base64",
+    )
+    expect(init?.method).toBe("POST")
+    expect((init as StreamingRequestInit | undefined)?.duplex).toBe("half")
+    expect(init?.signal).toBeInstanceOf(AbortSignal)
+    const headers = new Headers(init?.headers)
+    expect(headers.get("authorization")).toBe("Bearer openrouter-key")
+    expect(headers.get("content-type")).toBe("application/json")
+    expect(await new Response(init?.body).json()).toEqual(payload)
+  })
+
+  test("preserves multipart content-type for non-codex provider image edits", async () => {
+    const formData = new FormData()
+    formData.set("model", "gpt-image-2")
+    formData.set("prompt", "generic edit")
+    formData.set(
+      "image",
+      new Blob(["source-image-bytes"], { type: "image/png" }),
+      "source.png",
+    )
+
+    const response = await createApp().request("/openrouter/v1/images/edits", {
+      method: "POST",
+      body: formData,
+    })
+
+    expect(response.status).toBe(200)
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe("https://openrouter.example/v1/images/edits")
+    const headers = new Headers(init?.headers)
+    expect(headers.get("authorization")).toBe("Bearer openrouter-key")
+    expect(headers.get("content-type")).toStartWith(
+      "multipart/form-data; boundary=",
+    )
+  })
 })
 
-test("server registers unversioned and v1 Codex media routes", () => {
+test("server registers unversioned, v1, and provider Codex media routes", () => {
   const postPaths = new Set(
     server.routes
       .filter((route) => route.method === "POST")
@@ -304,6 +397,10 @@ test("server registers unversioned and v1 Codex media routes", () => {
     "/images/edits",
     "/v1/images/generations",
     "/v1/images/edits",
+    "/:provider/v1/alpha/search",
+    "/:provider/v1/images/generations",
+    "/:provider/v1/images/edits",
+    "/:provider/v1/responses",
   ]
   for (const path of expectedPaths) {
     expect(postPaths.has(path)).toBe(true)

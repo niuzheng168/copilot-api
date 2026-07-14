@@ -1,5 +1,6 @@
 import { Hono, type Context } from "hono"
 
+import type { ResolvedProviderConfig } from "~/lib/config"
 import { forwardError } from "~/lib/error"
 import { createHandlerLogger, debugJson, debugJsonAsync } from "~/lib/logger"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
@@ -21,12 +22,18 @@ function getContentMetadata(headers: Headers) {
   }
 }
 
-async function handleCodexImages(
+/**
+ * Handles Codex images proxying. Pass `resolvedProviderConfig` when the
+ * caller already resolved the codex provider to avoid a second resolve.
+ */
+export async function handleCodexImages(
   c: Context,
   operation: CodexImagesOperation,
+  resolvedProviderConfig?: ResolvedProviderConfig,
 ): Promise<Response> {
   try {
-    const codexProviderConfig = await resolveProviderConfig("codex")
+    const codexProviderConfig =
+      resolvedProviderConfig ?? (await resolveProviderConfig("codex"))
     if (!codexProviderConfig) {
       return c.json(
         {

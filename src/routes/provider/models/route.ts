@@ -3,6 +3,10 @@ import { Hono } from "hono"
 import { forwardError } from "~/lib/error"
 import { createHandlerLogger } from "~/lib/logger"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
+import {
+  handleCodexModelsProxy,
+  isCodexUserAgent,
+} from "~/routes/models/codex-models"
 import { getModels as getCodexModels } from "~/services/codex/get-models"
 import {
   createProviderProxyResponse,
@@ -31,6 +35,10 @@ providerModelRoutes.get("/", async (c) => {
     }
 
     if (providerConfig.name === "codex") {
+      if (isCodexUserAgent(c.req.header("user-agent"))) {
+        return await handleCodexModelsProxy(c, providerConfig)
+      }
+
       const models = getCodexModels()
       return c.json({
         object: "list",
