@@ -83,3 +83,8 @@ server.route("/:provider/v1/models", providerModelRoutes)
 server.route("/:provider/v1/responses", providerResponsesRoutes)
 server.route("/:provider/v1/alpha/search", providerAlphaSearchRoutes)
 server.route("/:provider/v1/images", providerImageRoutes)
+
+server.route("/:provider/models", providerModelRoutes)
+server.route("/:provider/responses", providerResponsesRoutes)
+server.route("/:provider/alpha/search", providerAlphaSearchRoutes)
+server.route("/:provider/images", providerImageRoutes)

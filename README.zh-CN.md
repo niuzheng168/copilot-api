@@ -686,19 +686,19 @@ curl http://localhost:4141/admin/config/model-mappings \
 
 ### Anthropic 兼容端点
 
-这些端点设计为兼容 Anthropic Messages API。
+这些端点设计为兼容 Anthropic Messages API。provider 级的 models、Responses、alpha-search 和 images 路由同时支持无版本前缀与 `/v1` 两种路径；Messages 路由仍使用 `/v1`。
 
 | 端点 | 方法 | 说明 |
 | --- | --- | --- |
 | `POST /v1/messages` | `POST` | 为给定对话创建模型响应。支持已配置 provider 的 `provider/model` 别名，包括通过 `openai-compatible` provider 做翻译。 |
 | `POST /v1/messages/count_tokens` | `POST` | 计算一组消息的 token 数。支持已配置 provider 的 `provider/model` 别名。 |
 | `POST /:provider/v1/messages` | `POST` | 将 Anthropic Messages 请求代理到已配置的 Anthropic provider，或翻译到 OpenAI 兼容 / OpenAI Responses provider。 |
-| `GET /:provider/v1/models` | `GET` | 将模型列表请求代理到已配置的 provider。对 `codex` 默认返回内置模型目录；Codex 客户端（`User-Agent` 以 `codex` 开头）会转发到 Codex Models 上游。 |
+| `GET /:provider/models`<br>`GET /:provider/v1/models` | `GET` | 将模型列表请求代理到已配置的 provider。对 `codex` 默认返回内置模型目录；Codex 客户端（`User-Agent` 以 `codex` 开头）会转发到 Codex Models 上游。 |
 | `POST /:provider/v1/messages/count_tokens` | `POST` | 为 provider 路由请求在本地计算 token 数。 |
-| `POST /:provider/v1/responses` | `POST` | 将 OpenAI Responses 请求代理到已配置的 `openai-responses` provider（含 `codex`）。 |
-| `POST /:provider/v1/alpha/search` | `POST` | 代理 alpha-search 请求。对 `codex` 转发到 Codex Alpha Search 上游；其他 provider 转发到 `{baseUrl}/v1/alpha/search`。 |
-| `POST /:provider/v1/images/generations` | `POST` | 代理图片生成。对 `codex` 使用 Codex Images 上游；其他 provider 转发到 `{baseUrl}/v1/images/generations`（15 分钟超时）。 |
-| `POST /:provider/v1/images/edits` | `POST` | 代理图片编辑。对 `codex` 使用 Codex Images 上游；其他 provider 以 multipart/流式方式转发到 `{baseUrl}/v1/images/edits`（15 分钟超时）。 |
+| `POST /:provider/responses`<br>`POST /:provider/v1/responses` | `POST` | 将 OpenAI Responses 请求代理到已配置的 `openai-responses` provider（含 `codex`）。 |
+| `POST /:provider/alpha/search`<br>`POST /:provider/v1/alpha/search` | `POST` | 代理 alpha-search 请求。对 `codex` 转发到 Codex Alpha Search 上游；其他 provider 转发到 `{baseUrl}/v1/alpha/search`。 |
+| `POST /:provider/images/generations`<br>`POST /:provider/v1/images/generations` | `POST` | 代理图片生成。对 `codex` 使用 Codex Images 上游；其他 provider 转发到 `{baseUrl}/v1/images/generations`（15 分钟超时）。 |
+| `POST /:provider/images/edits`<br>`POST /:provider/v1/images/edits` | `POST` | 代理图片编辑。对 `codex` 使用 Codex Images 上游；其他 provider 以 multipart/流式方式转发到 `{baseUrl}/v1/images/edits`（15 分钟超时）。 |
 
 ### 使用量监控端点
 
