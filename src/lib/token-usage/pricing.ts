@@ -221,6 +221,21 @@ const BUILTIN_PROVIDER_PRICING: Record<
       input: 1.4,
       output: 4.4,
     },
+    "grok-4.5": {
+      tiers: [
+        {
+          cachedInput: 0.5,
+          input: 2,
+          maxInputTokens: 200_000,
+          output: 6,
+        },
+        {
+          cachedInput: 1,
+          input: 4,
+          output: 12,
+        },
+      ],
+    },
     "deepseek-v4-flash": {
       cachedInput: 0.0028,
       input: 0.14,
@@ -235,6 +250,11 @@ const BUILTIN_PROVIDER_PRICING: Record<
       cachedInput: 0.19,
       input: 0.95,
       output: 4,
+    },
+    "kimi-k3": {
+      cachedInput: 0.3,
+      input: 3,
+      output: 15,
     },
     "mimo-v2.5": {
       cachedInput: 0.0028,
