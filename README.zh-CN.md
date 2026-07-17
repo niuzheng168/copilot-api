@@ -192,11 +192,9 @@ npx @jeffreycao/copilot-api@latest start --claude-code
     "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "true",
     "CLAUDE_CODE_ENABLE_AWAY_SUMMARY": "0"
   },
-  "permissions": {
-    "deny": [
-      "mcp__ide__executeCode"
-    ]
-  }
+  "alwaysThinkingEnabled": true,
+  "effortLevel": "xhigh",
+  "showThinkingSummaries": true
 }
 ```
 
