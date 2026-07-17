@@ -179,9 +179,10 @@ npx @jeffreycao/copilot-api@latest start --claude-code
   "env": {
     "ANTHROPIC_BASE_URL": "http://localhost:4141",
     "ANTHROPIC_AUTH_TOKEN": "dummy",
-    "ANTHROPIC_MODEL": "deepseek/deepseek-v4-pro",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "deepseek/deepseek-v4-pro",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "deepseek/deepseek-v4-flash",
+    "ANTHROPIC_MODEL": "codex/gpt-5.6-sol[1m]",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "codex/gpt-5.6-sol[1m]",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "codex/gpt-5.6-luna[1m]",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "272000",
     "CLAUDE_CODE_USE_VERTEX": "0",
     "CLAUDE_CODE_USE_BEDROCK": "0",
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
