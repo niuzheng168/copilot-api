@@ -131,9 +131,16 @@ docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
 
 If you prefer a GUI, this repository also includes an Electron desktop app in `desktop/`. It supports GitHub Copilot sign-in, OpenAI Codex OAuth, and API-key configuration for DeepSeek, DashScope, OpenRouter, or a custom provider. After authorization or provider configuration, it can start and stop the local proxy with one click and shows the local endpoint, auth header, available models, usage, and logs in the app.
 
-The settings screen also exposes `OAuth App`, `API Home`, `Enterprise URL`, verbose logging, and minimize-to-tray. Desktop packages are published in GitHub Releases:
+The settings screen also exposes `OAuth App`, `API Home`, `Enterprise URL`, verbose logging, and minimize-to-tray. Windows x64 (`.exe`), macOS Apple Silicon (`.dmg`), and Linux x64 (`.AppImage`) packages are published in GitHub Releases:
 
 https://github.com/caozhiyuan/copilot-api/releases
+
+On Linux, make the downloaded AppImage executable before launching it:
+
+```sh
+chmod +x Copilot-API-*-linux-x86_64.AppImage
+./Copilot-API-*-linux-x86_64.AppImage
+```
 
 Download the installer for your platform, authorize or configure a provider inside the app, choose a port, start the server, then point your client at the local endpoint shown in the app. Packaged desktop builds use the bundled Electron runtime, so normal desktop usage does not require installing Node.js separately. Token usage history is enabled when that bundled runtime supports SQLite.
 

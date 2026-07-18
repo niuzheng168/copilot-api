@@ -131,9 +131,16 @@ docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
 
 如果你更喜欢图形界面，仓库里还提供了位于 `desktop/` 的 Electron 桌面应用。它支持 GitHub Copilot 登录、OpenAI Codex OAuth，以及 DeepSeek、DashScope、OpenRouter 或自定义 provider 的 API Key 配置。授权或配置 provider 后，可以一键启动或停止本地代理，并在界面里直接查看本地端点、鉴权 Header、可用模型、额度和日志。
 
-设置页还可以配置 `OAuth App`、`API Home`、`Enterprise URL`、详细日志以及最小化到托盘。桌面安装包发布在 GitHub Releases：
+设置页还可以配置 `OAuth App`、`API Home`、`Enterprise URL`、详细日志以及最小化到托盘。Windows x64（`.exe`）、macOS Apple Silicon（`.dmg`）和 Linux x64（`.AppImage`）安装包发布在 GitHub Releases：
 
 https://github.com/caozhiyuan/copilot-api/releases
+
+Linux 用户需要先为下载的 AppImage 添加执行权限：
+
+```sh
+chmod +x Copilot-API-*-linux-x86_64.AppImage
+./Copilot-API-*-linux-x86_64.AppImage
+```
 
 下载对应平台的安装包后，在应用内授权或配置 provider，选择端口并启动服务，再把你的客户端指向应用里显示的本地端点即可。发布版桌面应用使用随包内置的 Electron 运行时，正常使用不需要额外安装 Node.js；token usage 历史记录会在该内置运行时支持 SQLite 时启用。
 
