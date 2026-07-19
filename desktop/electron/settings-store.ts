@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS: DesktopSettings = {
   oauthApp: 'default',
   enterpriseUrl: '',
   lastPort: 4141,
+  launchAtLogin: false,
   minimizeToTray: false,
   accountType: 'individual',
   verbose: false,
@@ -30,6 +31,12 @@ const DEFAULT_SETTINGS: DesktopSettings = {
     https_proxy: 'http://127.0.0.1:8888',
     no_proxy: 'localhost,127.0.0.1',
   },
+}
+
+let launchAtLoginFallback = DEFAULT_SETTINGS.launchAtLogin
+
+export function setLaunchAtLoginFallback(enabled: boolean): void {
+  launchAtLoginFallback = enabled
 }
 
 function isDesktopProxyMode(
@@ -81,6 +88,10 @@ export function normalizeSettings(
       typeof settings?.lastPort === 'number' ?
         settings.lastPort
       : DEFAULT_SETTINGS.lastPort,
+    launchAtLogin:
+      typeof settings?.launchAtLogin === 'boolean' ?
+        settings.launchAtLogin
+      : launchAtLoginFallback,
     minimizeToTray:
       typeof settings?.minimizeToTray === 'boolean' ?
         settings.minimizeToTray
@@ -125,7 +136,7 @@ export function readSettingsSync(): DesktopSettings {
     const raw = fsSync.readFileSync(SETTINGS_PATH, 'utf8')
     return normalizeSettings(JSON.parse(raw) as Partial<DesktopSettings>)
   } catch {
-    return { ...DEFAULT_SETTINGS, proxy: { ...DEFAULT_SETTINGS.proxy } }
+    return normalizeSettings(null)
   }
 }
 
@@ -134,7 +145,7 @@ export async function readSettings(): Promise<DesktopSettings> {
     const raw = await fs.readFile(SETTINGS_PATH, 'utf8')
     return normalizeSettings(JSON.parse(raw) as Partial<DesktopSettings>)
   } catch {
-    return { ...DEFAULT_SETTINGS, proxy: { ...DEFAULT_SETTINGS.proxy } }
+    return normalizeSettings(null)
   }
 }
 
