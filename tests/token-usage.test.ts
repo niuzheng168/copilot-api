@@ -19,6 +19,7 @@ import {
   type TokenUsageEventsPage,
   type TokenUsageSummary,
 } from "~/lib/token-usage"
+import { resolveTokenUsageCost } from "~/lib/token-usage/pricing"
 import { traceIdMiddleware } from "~/lib/trace"
 import { tokenUsageRoute } from "~/routes/token-usage/route"
 
@@ -243,8 +244,8 @@ describe("token usage storage", () => {
   test("calculates built-in Codex GPT-5.6 prices with cached input discount", async () => {
     const expectedCosts = [
       { model: "gpt-5.6-sol", totalCostNanos: 96_000_000 },
-      { model: "gpt-5.6-terra", totalCostNanos: 48_000_000 },
-      { model: "gpt-5.6-luna", totalCostNanos: 19_200_000 },
+      { model: "gpt-5.6-terra", totalCostNanos: 38_400_000 },
+      { model: "gpt-5.6-luna", totalCostNanos: 3_840_000 },
     ]
 
     for (const { model } of expectedCosts) {
@@ -278,11 +279,36 @@ describe("token usage storage", () => {
     const summary = (await response.json()) as TokenUsageSummary
     expect(summary.totals.costs).toEqual([
       {
-        amount: 0.1632,
+        amount: 0.13824,
         currency: "USD",
-        total_cost_nanos: 163_200_000,
+        total_cost_nanos: 138_240_000,
       },
     ])
+  })
+
+  test("uses GPT-5.6 Terra and Luna long-context and cache-write prices", () => {
+    const expectedCosts = [
+      { model: "gpt-5.6-terra", totalCostNanos: 1_140_800_000 },
+      { model: "gpt-5.6-luna", totalCostNanos: 114_080_000 },
+    ]
+
+    for (const { model, totalCostNanos } of expectedCosts) {
+      expect(
+        resolveTokenUsageCost({
+          cache_creation_input_tokens: 2_000,
+          cache_read_input_tokens: 2_000,
+          input_tokens: 269_000,
+          model,
+          output_tokens: 3_000,
+          providerName: "codex",
+          source: "provider",
+        }),
+      ).toEqual({
+        currency: "USD",
+        source: "builtin",
+        total_cost_nanos: totalCostNanos,
+      })
+    }
   })
 
   test("only falls back to interaction id when no real session id exists", async () => {
