@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
 import type { ResolvedProviderConfig } from "../src/lib/config"
+import type { UsageTokens } from "../src/lib/token-usage"
 
 const actualConfigModule = await import("../src/lib/config")
 const actualTokenUsageModule = await import("../src/lib/token-usage")
@@ -9,7 +10,10 @@ const actualTokenUsageModule = await import("../src/lib/token-usage")
 let providerConfig: ResolvedProviderConfig | null = null
 let upstreamResponseFactory: () => Response
 
-const noopTokenUsageRecorder = () => {}
+const recordedUsages: Array<UsageTokens> = []
+const providerTokenUsageRecorder = (usage: UsageTokens): void => {
+  recordedUsages.push(usage)
+}
 
 await mock.module("~/lib/config", () => ({
   ...actualConfigModule,
@@ -18,7 +22,7 @@ await mock.module("~/lib/config", () => ({
 
 await mock.module("~/lib/token-usage", () => ({
   ...actualTokenUsageModule,
-  createProviderTokenUsageRecorder: () => noopTokenUsageRecorder,
+  createProviderTokenUsageRecorder: () => providerTokenUsageRecorder,
 }))
 
 const { providerMessageRoutes } = await import(
@@ -80,7 +84,10 @@ const createThinkingResponse = () => ({
   },
 })
 
-const createThinkingStreamResponse = (signature?: string): Response => {
+const createThinkingStreamResponse = (
+  signature?: string,
+  cost?: number,
+): Response => {
   const chunks: Array<string> = []
   const appendEvent = (event: string, data: unknown): void => {
     chunks.push(`event: ${event}`)
@@ -136,7 +143,7 @@ const createThinkingStreamResponse = (signature?: string): Response => {
   appendEvent("message_delta", {
     delta: { stop_reason: "end_turn", stop_sequence: null },
     type: "message_delta",
-    usage: { output_tokens: 3 },
+    usage: { output_tokens: 3, ...(cost === undefined ? {} : { cost }) },
   })
   appendEvent("message_stop", { type: "message_stop" })
   appendEvent("message_stop", "[DONE]")
@@ -157,6 +164,7 @@ const parseStreamData = (text: string): Array<Record<string, unknown>> =>
 
 beforeEach(() => {
   providerConfig = createProviderConfig()
+  recordedUsages.length = 0
   upstreamResponseFactory = () =>
     new Response(JSON.stringify(createThinkingResponse()), {
       headers: { "content-type": "application/json" },
@@ -255,5 +263,27 @@ describe("provider Messages Anthropic forwarding", () => {
         type: "content_block_delta",
       },
     ])
+  })
+
+  test("records the cost reported in an OpenRouter message delta", async () => {
+    const cost = 0.0002928408
+    upstreamResponseFactory = () =>
+      createThinkingStreamResponse(undefined, cost)
+
+    const response = await createApp().request("/openrouter/v1/messages", {
+      body: JSON.stringify(createMessagesPayload({ stream: true })),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    await response.text()
+
+    expect(recordedUsages).toHaveLength(1)
+    expect(recordedUsages[0]).toMatchObject({
+      cost,
+      input_tokens: 4,
+      output_tokens: 3,
+    })
   })
 })

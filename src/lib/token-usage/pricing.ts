@@ -317,6 +317,16 @@ const BUILTIN_PROVIDER_PRICING: Record<
 export function resolveTokenUsageCost(
   input: TokenUsageCostInput,
 ): CalculatedTokenUsageCost | null {
+  if (
+    input.source === "provider"
+    && input.providerName?.trim().toLowerCase() === "openrouter"
+  ) {
+    const reportedCost = resolveReportedProviderCost(input)
+    if (reportedCost) {
+      return reportedCost
+    }
+  }
+
   if (input.source === "copilot") {
     return resolveCopilotCost(input)
   }
@@ -362,6 +372,26 @@ export function resolveTokenUsageCost(
   return {
     currency,
     source: resolvedPricing.source,
+    total_cost_nanos: totalCostNanos,
+  }
+}
+
+function resolveReportedProviderCost(
+  input: TokenUsageCostInput,
+): CalculatedTokenUsageCost | null {
+  const cost = normalizeReportedCost(input.cost)
+  if (cost === null) {
+    return null
+  }
+
+  const totalCostNanos = Math.round(cost * COST_NANOS_PER_UNIT)
+  if (totalCostNanos <= 0) {
+    return null
+  }
+
+  return {
+    currency: input.pricingCurrency?.trim().toUpperCase() || "USD",
+    source: "upstream",
     total_cost_nanos: totalCostNanos,
   }
 }
@@ -455,6 +485,14 @@ function getInputTokenTotal(input: UsageTokens): number {
 
 function normalizePrice(value: number | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ?
+      value
+    : null
+}
+
+function normalizeReportedCost(
+  value: number | null | undefined,
+): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ?
       value
     : null
 }

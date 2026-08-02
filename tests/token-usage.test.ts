@@ -286,6 +286,53 @@ describe("token usage storage", () => {
     ])
   })
 
+  test("records provider-reported cost before configured pricing", async () => {
+    recordTokenUsageEvent({
+      cost: 0.0002928408,
+      endpoint: "provider_messages",
+      input_tokens: 853,
+      model: "claude-sonnet-4",
+      output_tokens: 284,
+      pricing: {
+        input: 100,
+        output: 100,
+      },
+      pricingCurrency: "USD",
+      providerName: "openrouter",
+      source: "provider",
+    })
+
+    const page = await fetchEventsPage()
+    expect(page.items[0]?.cost).toEqual({
+      amount: 0.000292841,
+      currency: "USD",
+      source: "upstream",
+      total_cost_nanos: 292_841,
+    })
+  })
+
+  test("does not use provider-reported cost for non-OpenRouter providers", () => {
+    expect(
+      resolveTokenUsageCost({
+        cost: 0.0002928408,
+        input_tokens: 10,
+        model: "custom-model",
+        output_tokens: 5,
+        pricing: {
+          input: 1,
+          output: 2,
+        },
+        pricingCurrency: "USD",
+        providerName: "anthropic",
+        source: "provider",
+      }),
+    ).toEqual({
+      currency: "USD",
+      source: "config",
+      total_cost_nanos: 20_000,
+    })
+  })
+
   test("uses GPT-5.6 Terra and Luna long-context and cache-write prices", () => {
     const expectedCosts = [
       { model: "gpt-5.6-terra", totalCostNanos: 1_140_800_000 },
