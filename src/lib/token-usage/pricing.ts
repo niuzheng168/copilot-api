@@ -216,6 +216,28 @@ const BUILTIN_PROVIDER_PRICING: Record<
     },
   },
   "opencode-go": {
+    hy3: {
+      cachedInput: 0.035,
+      input: 0.14,
+      output: 0.58,
+    },
+    "gpt-5.6-luna": {
+      tiers: [
+        {
+          cacheCreationInput: 0.125,
+          cachedInput: 0.01,
+          input: 0.1,
+          maxInputTokens: 272_000,
+          output: 0.6,
+        },
+        {
+          cacheCreationInput: 0.25,
+          cachedInput: 0.02,
+          input: 0.2,
+          output: 0.9,
+        },
+      ],
+    },
     "glm-5.2": {
       cachedInput: 0.26,
       input: 1.4,

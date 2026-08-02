@@ -358,6 +358,47 @@ describe("token usage storage", () => {
     }
   })
 
+  test("prices OpenCode Go Hy3 and GPT-5.6 Luna with long-context tiers", () => {
+    const shortContextCosts = [
+      { model: "hy3", totalCostNanos: 1_950_000 },
+      { model: "gpt-5.6-luna", totalCostNanos: 2_045_000 },
+    ]
+
+    for (const { model, totalCostNanos } of shortContextCosts) {
+      expect(
+        resolveTokenUsageCost({
+          cache_creation_input_tokens: 1_000,
+          cache_read_input_tokens: 2_000,
+          input_tokens: 1_000,
+          model,
+          output_tokens: 3_000,
+          providerName: "opencode-go",
+          source: "provider",
+        }),
+      ).toEqual({
+        currency: "USD",
+        source: "builtin",
+        total_cost_nanos: totalCostNanos,
+      })
+    }
+
+    expect(
+      resolveTokenUsageCost({
+        cache_creation_input_tokens: 2_000,
+        cache_read_input_tokens: 2_000,
+        input_tokens: 269_000,
+        model: "gpt-5.6-luna",
+        output_tokens: 3_000,
+        providerName: "opencode-go",
+        source: "provider",
+      }),
+    ).toEqual({
+      currency: "USD",
+      source: "builtin",
+      total_cost_nanos: 57_040_000,
+    })
+  })
+
   test("only falls back to interaction id when no real session id exists", async () => {
     const recordWithFallback = createCopilotTokenUsageRecorder({
       endpoint: "responses",
