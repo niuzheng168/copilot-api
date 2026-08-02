@@ -412,7 +412,7 @@ function resolveReportedProviderCost(
   }
 
   return {
-    currency: input.pricingCurrency?.trim().toUpperCase() || "USD",
+    currency: "USD",
     source: "upstream",
     total_cost_nanos: totalCostNanos,
   }
