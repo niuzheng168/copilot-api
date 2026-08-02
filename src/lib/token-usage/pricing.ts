@@ -401,13 +401,13 @@ export function resolveTokenUsageCost(
 function resolveReportedProviderCost(
   input: TokenUsageCostInput,
 ): CalculatedTokenUsageCost | null {
-  const cost = normalizeReportedCost(input.cost)
+  const cost = normalizePrice(input.cost)
   if (cost === null) {
     return null
   }
 
   const totalCostNanos = Math.round(cost * COST_NANOS_PER_UNIT)
-  if (totalCostNanos <= 0) {
+  if (totalCostNanos < 0) {
     return null
   }
 
@@ -505,16 +505,8 @@ function getInputTokenTotal(input: UsageTokens): number {
   )
 }
 
-function normalizePrice(value: number | undefined): number | null {
+function normalizePrice(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ?
-      value
-    : null
-}
-
-function normalizeReportedCost(
-  value: number | null | undefined,
-): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ?
       value
     : null
 }
