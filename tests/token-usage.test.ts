@@ -362,6 +362,7 @@ describe("token usage storage", () => {
     const shortContextCosts = [
       { model: "hy3", totalCostNanos: 1_950_000 },
       { model: "gpt-5.6-luna", totalCostNanos: 2_045_000 },
+      { model: "qwen3.8-max", totalCostNanos: 23_000_000 },
     ]
 
     for (const { model, totalCostNanos } of shortContextCosts) {
@@ -396,6 +397,41 @@ describe("token usage storage", () => {
       currency: "USD",
       source: "builtin",
       total_cost_nanos: 57_040_000,
+    })
+  })
+
+  test("prices DashScope Qwen3.8 Max with explicit cache prices", () => {
+    expect(
+      resolveTokenUsageCost({
+        cache_creation_input_tokens: 1_000,
+        cache_read_input_tokens: 2_000,
+        input_tokens: 1_000,
+        model: "qwen3.8-max",
+        output_tokens: 3_000,
+        providerName: "dashscope",
+        source: "provider",
+      }),
+    ).toEqual({
+      currency: "CNY",
+      source: "builtin",
+      total_cost_nanos: 137_000_000,
+    })
+  })
+
+  test("prices DashScope DeepSeek V4 Flash 0731 with cached input", () => {
+    expect(
+      resolveTokenUsageCost({
+        cache_read_input_tokens: 2_000,
+        input_tokens: 1_000,
+        model: "deepseek-v4-flash-0731",
+        output_tokens: 3_000,
+        providerName: "dashscope",
+        source: "provider",
+      }),
+    ).toEqual({
+      currency: "CNY",
+      source: "builtin",
+      total_cost_nanos: 7_400_000,
     })
   })
 

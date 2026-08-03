@@ -182,6 +182,18 @@ const BUILTIN_PROVIDER_PRICING: Record<
       input: 12,
       output: 36,
     },
+    "qwen3.8-max": {
+      cachedInput: 1.5,
+      cacheCreationInput: 15,
+      explicitCachedInput: 1,
+      input: 12,
+      output: 36,
+    },
+    "deepseek-v4-flash-0731": {
+      cachedInput: 0.2,
+      input: 1,
+      output: 2,
+    },
     "qwen3.7-plus": {
       tiers: [
         {
@@ -311,6 +323,12 @@ const BUILTIN_PROVIDER_PRICING: Record<
       cachedInput: 0.5,
       input: 2.5,
       output: 7.5,
+    },
+    "qwen3.8-max": {
+      cacheCreationInput: 2.5,
+      cachedInput: 0.25,
+      input: 2,
+      output: 6,
     },
     "minimax-m2.7": {
       cachedInput: 0.06,
