@@ -30,6 +30,14 @@ export interface AppConfig {
   // via /responses. Leave unset to disable (the tool is then stripped).
   // Mixing web_search with other tools is not supported.
   messageApiWebSearchModel?: string
+  // Model used for Claude Code background security-monitor requests on
+  // /v1/messages and provider message APIs: requests without tools, with
+  // `stop_sequences: ["</block>"]` and a system block starting with
+  // "You are a security monitor for autonomous AI coding agents.".
+  // A `provider/model` alias is forwarded to that provider's message API on
+  // the top-level route. Provider message routes use the configured value on
+  // their current provider. Leave empty to disable (default).
+  claudeAutoModel?: string
   claudeTokenMultiplier?: number
 }
 
@@ -767,6 +775,12 @@ export function getMessageApiWebSearchModel(): string | undefined {
   const config = getConfig()
   const model = config.messageApiWebSearchModel ?? "gpt-5-mini"
   return model && model.trim().length > 0 ? model : undefined
+}
+
+export function getClaudeAutoModel(): string | undefined {
+  const config = getConfig()
+  const model = config.claudeAutoModel
+  return model && model.trim().length > 0 ? model.trim() : undefined
 }
 
 export function getClaudeTokenMultiplier(): number {

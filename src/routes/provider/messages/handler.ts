@@ -23,6 +23,7 @@ import type {
 import {
   type ModelConfig,
   type ResolvedProviderConfig,
+  getClaudeAutoModel,
   resolveEffectiveProviderType,
   resolveProviderAuthType,
 } from "~/lib/config"
@@ -71,7 +72,10 @@ import {
   reconstructWebSearchResponse,
   stripWebSearchServerTool,
 } from "~/routes/messages/web-search/fulfill"
-import { normalizeSystemMessages } from "~/routes/messages/preprocess"
+import {
+  isClaudeAutoModelRequest,
+  normalizeSystemMessages,
+} from "~/routes/messages/preprocess"
 import {
   applyResponsesApiContextManagement,
   compactInputByLatestCompaction,
@@ -83,6 +87,7 @@ import {
   forwardProviderMessages,
   forwardProviderResponses,
 } from "~/services/providers/provider-proxy"
+import consola from "consola"
 
 const logger = createHandlerLogger("provider-messages-handler")
 
@@ -91,7 +96,19 @@ export async function handleProviderMessages(
 ): Promise<Response> {
   const provider = c.req.param("provider")
   const payload = await c.req.json<AnthropicMessagesPayload>()
-  return await handleProviderMessagesForProvider(c, { payload, provider })
+
+  const claudeAutoModel = getClaudeAutoModel()
+  if (claudeAutoModel && isClaudeAutoModelRequest(payload)) {
+    consola.debug(
+      `Claude auto model override (${provider}): ${payload.model} -> ${claudeAutoModel}`,
+    )
+    payload.model = claudeAutoModel
+  }
+
+  return await handleProviderMessagesForProvider(c, {
+    payload,
+    provider,
+  })
 }
 
 export async function handleProviderMessagesForProvider(
