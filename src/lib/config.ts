@@ -93,6 +93,8 @@ export interface ResolvedProviderConfig {
 }
 
 const GPT_MODEL_PATTERN = /^gpt-(\d+)(?:\.(\d+))?/
+const OPENCODE_ANTHROPIC_MODEL_PATTERN = /^(?:qwen|minimax)/iu
+const OPENCODE_RESPONSES_MODEL_PATTERN = /^gpt(?:[-_.]|$)/iu
 
 function isGpt53OrAbove(model: string): boolean {
   const match = GPT_MODEL_PATTERN.exec(model)
@@ -711,6 +713,16 @@ export function resolveEffectiveProviderType(
   if (modelConfig?.type && isSupportedProviderType(modelConfig.type)) {
     return modelConfig.type
   }
+
+  if (providerConfig.name === "opencode-go") {
+    if (OPENCODE_ANTHROPIC_MODEL_PATTERN.test(model)) {
+      return "anthropic"
+    }
+    if (OPENCODE_RESPONSES_MODEL_PATTERN.test(model)) {
+      return "openai-responses"
+    }
+  }
+
   return providerConfig.type
 }
 
