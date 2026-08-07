@@ -1,19 +1,79 @@
 # Copilot API Proxy
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/@jeffreycao/copilot-api"><img src="https://img.shields.io/npm/v/@jeffreycao/copilot-api.svg" alt="npm version"></a>
+  <a href="https://github.com/caozhiyuan/copilot-api/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/caozhiyuan/copilot-api/stargazers"><img src="https://img.shields.io/github/stars/caozhiyuan/copilot-api.svg" alt="GitHub stars"></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/Bun-%3E%3D1.2.x-orange.svg" alt="Bun >= 1.2.x"></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node-%3E%3D22.13.0-green.svg" alt="Node >= 22.13.0"></a>
+</p>
+
 [English](./README.md) | 简体中文
+
+## 目录
+
+- [Copilot API Proxy](#copilot-api-proxy)
+  - [目录](#目录)
+  - [重要说明](#重要说明)
+  - [项目概览](#项目概览)
+  - [快速开始](#快速开始)
+  - [功能特性](#功能特性)
+  - [前置要求](#前置要求)
+  - [安装](#安装)
+  - [从源码运行](#从源码运行)
+    - [开发模式](#开发模式)
+    - [生产模式](#生产模式)
+  - [通过 npx 使用](#通过-npx-使用)
+  - [配合 Docker 使用](#配合-docker-使用)
+  - [Electron 桌面应用](#electron-桌面应用)
+    - [桌面应用截图](#桌面应用截图)
+  - [与 Claude Code 一起使用](#与-claude-code-一起使用)
+    - [通过 `--claude-code` 标志进行交互式配置](#通过---claude-code-标志进行交互式配置)
+    - [通过 `settings.json` 手动配置](#通过-settingsjson-手动配置)
+  - [与 OpenCode 一起使用](#与-opencode-一起使用)
+    - [最小配置](#最小配置)
+  - [与 Codex 一起使用](#与-codex-一起使用)
+    - [Codex `config.toml` 参考配置](#codex-configtoml-参考配置)
+  - [GPT Tool Search](#gpt-tool-search)
+  - [插件集成](#插件集成)
+    - [Claude Code 插件集成（基于 marketplace）](#claude-code-插件集成基于-marketplace)
+    - [Opencode 插件](#opencode-插件)
+  - [使用量查看器](#使用量查看器)
+    - [Usage Viewer 截图](#usage-viewer-截图)
+  - [命令结构](#命令结构)
+  - [命令行选项](#命令行选项)
+    - [全局选项](#全局选项)
+    - [Start 命令选项](#start-命令选项)
+    - [Auth 命令选项](#auth-命令选项)
+    - [Debug 命令选项](#debug-命令选项)
+  - [配置（config.json）](#配置configjson)
+  - [API 认证](#api-认证)
+  - [API 端点](#api-端点)
+    - [OpenAI 兼容端点](#openai-兼容端点)
+    - [Codex 后端代理端点](#codex-后端代理端点)
+    - [Anthropic 兼容端点](#anthropic-兼容端点)
+    - [使用量监控端点](#使用量监控端点)
+    - [Admin / 配置端点](#admin--配置端点)
+  - [使用示例](#使用示例)
+  - [使用建议](#使用建议)
+    - [CLAUDE.md 或 AGENTS.md 推荐内容](#claudemd-或-agentsmd-推荐内容)
+
+<a id="important-notes"></a>
 
 ## 重要说明
 
 > [!IMPORTANT]
 > **使用前请先注意以下几点：**
 >
-> 1. **Claude Code 配置：** 与 Claude Code 搭配使用时，请将模型 ID 配置为 `claude-opus-4-8`。示例 claude `settings.json` 见 [通过 `settings.json` 手动配置](#manual-configuration-with-settingsjson)。
+> 1. **Claude Code 配置：** 与 Claude Code 搭配使用时，请将模型 ID 配置为 `claude-opus-4-8[1m]`。示例 claude `settings.json` 见 [通过 `settings.json` 手动配置](#manual-configuration-with-settingsjson)。
 >
 > 2. **内置 `copilot`、`codex` 与第三方 provider：** 执行 `npx @jeffreycao/copilot-api@latest auth`，可选择 `copilot`、`codex`、`deepseek`、`custom` 等 provider。
 >
 > 3. **注意事项：** README 顶部移除的 GitHub Copilot warning 见 [GitHub Copilot 安全提示](./NOTICE.md#github-copilot-security-notice)。
 
 ---
+
+<a id="project-overview"></a>
 
 ## 项目概览
 
@@ -22,6 +82,35 @@
 AI gateway 会从同一个本地端点暴露 OpenAI / Anthropic 兼容 API，让 [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview)、OpenCode、Codex 和 OpenAI 兼容客户端可以共用同一个本地服务。
 
 在 GitHub Copilot 路径上，AI gateway 会在可用时优先使用 Copilot 原生的 Anthropic 风格 Messages API，在重工具调用场景下保留更原生的 Claude 行为。
+
+<a id="quick-start"></a>
+
+## 快速开始
+
+最快启动一个可用网关的方式：
+
+```sh
+npx @jeffreycao/copilot-api@latest start
+```
+
+服务默认监听 `http://localhost:4141`。也可以先登录 GitHub Copilot 或配置第三方 provider：
+
+```sh
+npx @jeffreycao/copilot-api@latest auth login
+```
+
+验证网关已启动：
+
+```sh
+curl http://localhost:4141/v1/models
+```
+
+> [!NOTE]
+> token usage 存储需要 Node.js >= 22.13.0 或 Bun。详见[通过 npx 使用](#using-with-npx)。
+
+接下来可按你的客户端选择指南：[与 Claude Code 一起使用](#using-with-claude-code)、[与 OpenCode 一起使用](#using-with-opencode)、[与 Codex 一起使用](#using-with-codex)，或通过 [Docker](#using-with-docker) 运行。
+
+<a id="features"></a>
 
 ## 功能特性
 
@@ -35,12 +124,16 @@ AI gateway 会从同一个本地端点暴露 OpenAI / Anthropic 兼容 API，让
 - **灵活的认证与部署选项**：支持交互式登录、直接 token、个人 / Business / Enterprise、GitHub Enterprise、opencode OAuth 和自定义数据目录。
 - **多 provider 路由**：可暴露 `/:provider/...` 路由，也可在顶层 API 上使用 `model: "provider/model"`。
 
+<a id="prerequisites"></a>
+
 ## 前置要求
 
 - Bun（>= 1.2.x）
 - 如果要通过 `npx` 运行已发布 CLI，需要 Node.js
 - 只有在使用 GitHub Copilot provider 时，才需要已订阅 Copilot 的 GitHub 账号
 - 如果不使用 GitHub Copilot，需要至少一个已配置 provider 的 API key 或 OAuth 登录
+
+<a id="installation"></a>
 
 ## 安装
 
@@ -50,11 +143,7 @@ AI gateway 会从同一个本地端点暴露 OpenAI / Anthropic 兼容 API，让
 bun install
 ```
 
-直接从源码启动服务：
-
-```sh
-bun run start start
-```
+<a id="running-from-source"></a>
 
 ## 从源码运行
 
@@ -71,6 +160,10 @@ bun run dev start
 ```sh
 bun run start start
 ```
+
+> 结尾的 `start` 是传给 `src/main.ts` 的 CLI 子命令，不是笔误：`bun run dev start` 是 watch 模式，`bun run start start` 是生产模式。
+
+<a id="using-with-npx"></a>
 
 ## 通过 npx 使用
 
@@ -104,6 +197,8 @@ npx @jeffreycao/copilot-api@latest auth login --provider dashscope
 npx @jeffreycao/copilot-api@latest start
 ```
 
+<a id="using-with-docker"></a>
+
 ## 配合 Docker 使用
 
 构建镜像：
@@ -126,6 +221,8 @@ docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api co
 ```sh
 docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
 ```
+
+<a id="electron-desktop-app"></a>
 
 ## Electron 桌面应用
 
@@ -154,6 +251,8 @@ chmod +x Copilot-API-*-linux-x86_64.AppImage
   <img src="./docs/screenshots/desktop-dashboard.png" alt="Copilot API 桌面应用首页" width="49%" />
   <img src="./docs/screenshots/desktop-token-usage.png" alt="Copilot API 桌面应用 Token 用量页" width="49%" />
 </p>
+
+<a id="using-with-claude-code"></a>
 
 ## 与 Claude Code 一起使用
 
@@ -224,6 +323,8 @@ npx @jeffreycao/copilot-api@latest start --claude-code
 更多选项见：[Claude Code settings](https://docs.anthropic.com/en/docs/claude-code/settings#environment-variables)
 
 也可以参考 IDE 集成说明：[Add Claude Code to your IDE](https://docs.anthropic.com/en/docs/claude-code/ide-integrations)
+
+<a id="using-with-opencode"></a>
 
 ## 与 OpenCode 一起使用
 
@@ -296,6 +397,8 @@ npx @jeffreycao/copilot-api@latest start
 - `options.baseURL` 应设为 `http://localhost:4141/v1`；Anthropic SDK 会自动补上 `/messages`、`/models` 和 `/messages/count_tokens`。
 - 如果你在此代理中启用了 `auth.apiKeys`，请把 `dummy` 替换为真实 key；否则任意占位值都可以。
 
+<a id="using-with-codex"></a>
+
 ## 与 Codex 一起使用
 
 这个 AI gateway 也可以为 Codex 提供后端能力。
@@ -345,6 +448,8 @@ enabled = false
 
 该映射只作用于顶层 GitHub Copilot 路由。provider-scoped 路由不会使用 `modelMappings`，因此内置 `/codex` provider 仍会原生处理 `codex-auto-review`。
 
+<a id="gpt-tool-search"></a>
+
 ## GPT Tool Search
 
 对于 `gpt-5.4+` 这类 GPT Responses 模型，这个 AI gateway 可以通过一个很小的 MCP bridge 暴露 Responses `tool_search`。Claude Code 和 opencode 都可以使用同一个 bridge，前提是客户端会加载 MCP server，并且 Anthropic Messages 流量会经过这个 AI gateway。
@@ -392,7 +497,7 @@ AI gateway 内部现在会把 OpenAI Responses `tool_search` 配置成 client-ex
 
 本项目为 Claude Code 和 opencode 提供了插件集成。
 
-#### Claude Code 插件集成（基于 marketplace）
+### Claude Code 插件集成（基于 marketplace）
 
 Claude Code 集成现在拆分为两个插件：
 
@@ -424,7 +529,7 @@ Claude Code 集成现在拆分为两个插件：
 
 `tool-search` 插件内置了 [GPT Tool Search](#gpt-tool-search) 一节描述的同一个 MCP bridge，因此安装该插件后，Claude Code 用户无需再手动配置 `tool_search` server。
 
-#### Opencode 插件
+### Opencode 插件
 
 subagent 标记生成器被打包为一个 opencode 插件，位于 `plugin/opencode/subagent-marker.js`。
 
@@ -447,6 +552,8 @@ cp plugin/opencode/subagent-marker.js ~/.config/opencode/plugins/
 - 让这个 AI gateway 能够把来自 subagent 的请求识别为 `x-initiator: agent`
 
 该插件会挂接到 `session.created`、`session.deleted`、`chat.message` 和 `chat.headers` 事件上，以无缝提供 subagent marker 能力。
+
+<a id="using-the-usage-viewer"></a>
 
 ## 使用量查看器
 
@@ -483,6 +590,8 @@ cp plugin/opencode/subagent-marker.js ~/.config/opencode/plugins/
   <img src="./docs/screenshots/usage-viewer.png" alt="Copilot API Usage Viewer 页面" width="900" />
 </p>
 
+<a id="command-structure"></a>
+
 ## 命令结构
 
 Copilot API 现在使用子命令结构，主要命令包括：
@@ -490,6 +599,8 @@ Copilot API 现在使用子命令结构，主要命令包括：
 - `start`：启动 AI gateway 服务。如果已有 GitHub token，则启用 Copilot 路径；如果没有 GitHub token，但存在至少一个启用中的 provider，则按 provider-only 模式启动；如果两者都没有，会引导你配置 provider。
 - `auth`：仅执行 provider 登录或配置流程，不启动服务。可用于 GitHub Copilot 登录、Codex OAuth，或第三方 provider API key 配置。
 - `debug`：显示诊断信息，包括版本、运行时详情、文件路径以及认证状态，便于排障与支持。
+
+<a id="command-line-options"></a>
 
 ## 命令行选项
 
@@ -664,6 +775,8 @@ Copilot API 现在使用子命令结构，主要命令包括：
 
 编辑此文件后即可自定义 prompts，或替换为你自己的快速模型。修改完成后请重启服务（或重新执行命令），让缓存中的配置刷新生效。
 
+<a id="api-authentication"></a>
+
 ## API 认证
 
 - **受保护的普通路由：** 当配置了 `auth.apiKeys` 且非空时，除 `/`、`/usage-viewer` 和 `/usage-viewer/` 以外的普通路由都需要认证。
@@ -688,6 +801,8 @@ curl http://localhost:4141/admin/config/model-mappings \
   -H "x-api-key: your_admin_api_key"
 ```
 
+<a id="api-endpoints"></a>
+
 ## API 端点
 
 服务端提供多个 OpenAI / Anthropic 兼容端点。请求会根据所选模型和 `provider/model` 别名路由到 GitHub Copilot、内置 `codex` provider 或已配置的 provider。
@@ -696,20 +811,20 @@ curl http://localhost:4141/admin/config/model-mappings \
 
 这些端点模拟 OpenAI API 结构。
 
-| 端点 | 方法 | 说明 |
-| --- | --- | --- |
-| `POST /v1/responses` | `POST` | OpenAI 中用于生成模型响应的高级接口。支持 `openai-responses` provider 的 `provider/model` 别名。 |
+| 端点                        | 方法 | 说明                                                                                                     |
+| --------------------------- | ---- | -------------------------------------------------------------------------------------------------------- |
+| `POST /v1/responses`        | `POST` | OpenAI 中用于生成模型响应的高级接口。支持 `openai-responses` provider 的 `provider/model` 别名。        |
 | `POST /v1/chat/completions` | `POST` | 为给定聊天对话创建模型响应。支持 `openai-compatible` provider 的 `provider/model` 别名；目标 provider 已配置时可在没有 Copilot 的情况下使用。 |
-| `GET /v1/models` | `GET` | 列出 Copilot 模型以及已启用 provider 的 `provider/model-id` 模型。来自 Codex 客户端（`User-Agent` 以 `codex` 开头）的请求会转发到 Codex Models 上游。 |
-| `POST /v1/embeddings` | `POST` | 创建表示输入文本的向量嵌入。 |
+| `GET /v1/models`            | `GET` | 列出 Copilot 模型以及已启用 provider 的 `provider/model-id` 模型。来自 Codex 客户端（`User-Agent` 以 `codex` 开头）的请求会转发到 Codex Models 上游。 |
+| `POST /v1/embeddings`       | `POST` | 创建表示输入文本的向量嵌入。                                                                             |
 
 ### Codex 后端代理端点
 
 这些端点要求已有可用的 Codex 登录态。每个端点同时提供无版本前缀和 `/v1` 两种路径。
 
-| 端点 | 方法 | 说明 |
-| --- | --- | --- |
-| `POST /alpha/search`<br>`POST /v1/alpha/search` | `POST` | 将 JSON 请求体和查询参数透明转发到 Codex Alpha Search 上游。 |
+| 端点                                                       | 方法 | 说明                                                                                                 |
+| ---------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------- |
+| `POST /alpha/search`<br>`POST /v1/alpha/search`            | `POST` | 将 JSON 请求体和查询参数透明转发到 Codex Alpha Search 上游。                                      |
 | `POST /images/generations`<br>`POST /v1/images/generations` | `POST` | 将 JSON 图片生成请求转发到 Codex Images 上游。请求未携带 `Content-Type` 时，网关默认补充 `application/json`。 |
 | `POST /images/edits`<br>`POST /v1/images/edits` | `POST` | 将图片编辑请求转发到 Codex Images 上游。请使用 `multipart/form-data`，并让 HTTP 客户端自动生成 `boundary`；网关会保留传入的 content type，并以流式方式转发上传请求体。 |
 
@@ -719,14 +834,14 @@ curl http://localhost:4141/admin/config/model-mappings \
 
 这些端点设计为兼容 Anthropic Messages API。provider 级的 models、Responses、alpha-search 和 images 路由同时支持无版本前缀与 `/v1` 两种路径；Messages 路由仍使用 `/v1`。
 
-| 端点 | 方法 | 说明 |
-| --- | --- | --- |
-| `POST /v1/messages` | `POST` | 为给定对话创建模型响应。支持已配置 provider 的 `provider/model` 别名，包括通过 `openai-compatible` provider 做翻译。 |
-| `POST /v1/messages/count_tokens` | `POST` | 计算一组消息的 token 数。支持已配置 provider 的 `provider/model` 别名。 |
-| `POST /:provider/v1/messages` | `POST` | 将 Anthropic Messages 请求代理到已配置的 Anthropic provider，或翻译到 OpenAI 兼容 / OpenAI Responses provider。 |
-| `GET /:provider/models`<br>`GET /:provider/v1/models` | `GET` | 将模型列表请求代理到已配置的 provider。对 `codex` 默认返回内置模型目录；Codex 客户端（`User-Agent` 以 `codex` 开头）会转发到 Codex Models 上游。 |
-| `POST /:provider/v1/messages/count_tokens` | `POST` | 为 provider 路由请求在本地计算 token 数。 |
-| `POST /:provider/responses`<br>`POST /:provider/v1/responses` | `POST` | 将 OpenAI Responses 请求代理到已配置的 `openai-responses` provider（含 `codex`）。 |
+| 端点                                                          | 方法 | 说明                                                                                                 |
+| ------------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------- |
+| `POST /v1/messages`                                           | `POST` | 为给定对话创建模型响应。支持已配置 provider 的 `provider/model` 别名，包括通过 `openai-compatible` provider 做翻译。 |
+| `POST /v1/messages/count_tokens`                              | `POST` | 计算一组消息的 token 数。支持已配置 provider 的 `provider/model` 别名。                          |
+| `POST /:provider/v1/messages`                                 | `POST` | 将 Anthropic Messages 请求代理到已配置的 Anthropic provider，或翻译到 OpenAI 兼容 / OpenAI Responses provider。 |
+| `GET /:provider/models`<br>`GET /:provider/v1/models`         | `GET` | 将模型列表请求代理到已配置的 provider。对 `codex` 默认返回内置模型目录；Codex 客户端（`User-Agent` 以 `codex` 开头）会转发到 Codex Models 上游。 |
+| `POST /:provider/v1/messages/count_tokens`                    | `POST` | 为 provider 路由请求在本地计算 token 数。                                                        |
+| `POST /:provider/responses`<br>`POST /:provider/v1/responses` | `POST` | 将 OpenAI Responses 请求代理到已配置的 `openai-responses` provider（含 `codex`）。              |
 | `POST /:provider/alpha/search`<br>`POST /:provider/v1/alpha/search` | `POST` | 代理 alpha-search 请求。对 `codex` 转发到 Codex Alpha Search 上游；其他 provider 转发到 `{baseUrl}/v1/alpha/search`。 |
 | `POST /:provider/images/generations`<br>`POST /:provider/v1/images/generations` | `POST` | 代理图片生成。对 `codex` 使用 Codex Images 上游；其他 provider 转发到 `{baseUrl}/v1/images/generations`（15 分钟超时）。 |
 | `POST /:provider/images/edits`<br>`POST /:provider/v1/images/edits` | `POST` | 代理图片编辑。对 `codex` 使用 Codex Images 上游；其他 provider 以 multipart/流式方式转发到 `{baseUrl}/v1/images/edits`（15 分钟超时）。 |
@@ -735,19 +850,21 @@ curl http://localhost:4141/admin/config/model-mappings \
 
 用于监控 Copilot 用量与额度的新端点。
 
-| 端点 | 方法 | 说明 |
-| --- | --- | --- |
-| `GET /usage` | `GET` | 获取详细的 Copilot 使用统计与额度信息。 |
-| `GET /token` | `GET` | 获取当前 API 正在使用的 Copilot token。 |
+| 端点           | 方法 | 说明                                              |
+| -------------- | ---- | ------------------------------------------------- |
+| `GET /usage`   | `GET` | 获取详细的 Copilot 使用统计与额度信息。          |
+| `GET /token`   | `GET` | 获取当前 API 正在使用的 Copilot token。          |
 
 ### Admin / 配置端点
 
 这些端点用于本地管理操作，只接受 `auth.adminApiKey`。
 
-| 端点 | 方法 | 说明 |
-| --- | --- | --- |
-| `GET /admin/config/model-mappings` | `GET` | 返回当前 `config.json` 路径以及生效中的 `modelMappings` 映射。 |
-| `POST /admin/config/model-mappings` | `POST` | 只更新 `config.json` 里的 `modelMappings` 字段，并回传更新后的结果。 |
+| 端点                                 | 方法 | 说明                                                            |
+| ------------------------------------ | ---- | --------------------------------------------------------------- |
+| `GET /admin/config/model-mappings`   | `GET` | 返回当前 `config.json` 路径以及生效中的 `modelMappings` 映射。 |
+| `POST /admin/config/model-mappings`  | `POST` | 只更新 `config.json` 里的 `modelMappings` 字段，并回传更新后的结果。 |
+
+<a id="example-usage"></a>
 
 ## 使用示例
 
@@ -786,13 +903,15 @@ curl http://localhost:4141/dashscope/v1/messages \
   -d '{"model":"qwen3.6-plus","max_tokens":1024,"messages":[{"role":"user","content":"hello"}]}'
 ```
 
+<a id="usage-tips"></a>
+
 ## 使用建议
 
 <a id="claudemd-or-agentsmd-recommended-content"></a>
 
 ### CLAUDE.md 或 AGENTS.md 推荐内容
 
-如果你想手动加入这些提醒，请在 Claude Code 的 `CLAUDE.md`，或 opencode/codex 的 `AGENTS.md` 中加入以下内容：
+与 `agent-inject` 插件 `CLAUDE_PLUGIN_ENABLE_QUESTION_RULES=1` 注入的提醒一致，供不使用该插件时手动添加。加入 Claude Code 的 `CLAUDE.md` 或 opencode/codex 的 `AGENTS.md`：
 
 ```
 - Prohibited from directly asking questions to users, MUST use question tool.

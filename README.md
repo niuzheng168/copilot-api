@@ -1,13 +1,69 @@
 # Copilot API Proxy
 
+<p align="center">
+  <a href="https://www.npmjs.com/package/@jeffreycao/copilot-api"><img src="https://img.shields.io/npm/v/@jeffreycao/copilot-api.svg" alt="npm version"></a>
+  <a href="https://github.com/caozhiyuan/copilot-api/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/caozhiyuan/copilot-api/stargazers"><img src="https://img.shields.io/github/stars/caozhiyuan/copilot-api.svg" alt="GitHub stars"></a>
+  <a href="https://bun.sh"><img src="https://img.shields.io/badge/Bun-%3E%3D1.2.x-orange.svg" alt="Bun >= 1.2.x"></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node-%3E%3D22.13.0-green.svg" alt="Node >= 22.13.0"></a>
+</p>
+
 English | [简体中文](./README.zh-CN.md)
+
+## Table of Contents
+
+- [Copilot API Proxy](#copilot-api-proxy)
+  - [Table of Contents](#table-of-contents)
+  - [Important Notes](#important-notes)
+  - [Project Overview](#project-overview)
+  - [Quick Start](#quick-start)
+  - [Features](#features)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Running from Source](#running-from-source)
+    - [Development Mode](#development-mode)
+    - [Production Mode](#production-mode)
+  - [Using with npx](#using-with-npx)
+  - [Using with Docker](#using-with-docker)
+  - [Electron Desktop App](#electron-desktop-app)
+    - [Desktop App Screenshots](#desktop-app-screenshots)
+  - [Using with Claude Code](#using-with-claude-code)
+    - [Interactive Setup with `--claude-code` flag](#interactive-setup-with---claude-code-flag)
+    - [Manual Configuration with `settings.json`](#manual-configuration-with-settingsjson)
+  - [Using with OpenCode](#using-with-opencode)
+    - [Minimal setup](#minimal-setup)
+  - [Using with Codex](#using-with-codex)
+    - [Codex `config.toml` Reference](#codex-configtoml-reference)
+  - [GPT Tool Search](#gpt-tool-search)
+  - [Plugin Integrations](#plugin-integrations)
+    - [Claude Code plugin integration (marketplace-based)](#claude-code-plugin-integration-marketplace-based)
+    - [Opencode plugin](#opencode-plugin)
+  - [Using the Usage Viewer](#using-the-usage-viewer)
+    - [Usage Viewer Screenshot](#usage-viewer-screenshot)
+  - [Command Structure](#command-structure)
+  - [Command Line Options](#command-line-options)
+    - [Global Options](#global-options)
+    - [Start Command Options](#start-command-options)
+    - [Auth Command Options](#auth-command-options)
+    - [Debug Command Options](#debug-command-options)
+  - [Configuration (config.json)](#configuration-configjson)
+  - [API Authentication](#api-authentication)
+  - [API Endpoints](#api-endpoints)
+    - [OpenAI Compatible Endpoints](#openai-compatible-endpoints)
+    - [Codex Backend Proxy Endpoints](#codex-backend-proxy-endpoints)
+    - [Anthropic Compatible Endpoints](#anthropic-compatible-endpoints)
+    - [Usage Monitoring Endpoints](#usage-monitoring-endpoints)
+    - [Admin / Configuration Endpoints](#admin--configuration-endpoints)
+  - [Example Usage](#example-usage)
+  - [Usage Tips](#usage-tips)
+    - [CLAUDE.md or AGENTS.md Recommended Content](#claudemd-or-agentsmd-recommended-content)
 
 ## Important Notes
 
 > [!IMPORTANT]
 > **Before using, please be aware of the following:**
 >
-> 1. **Claude Code configuration:** When using with Claude Code, please configure the model ID as `claude-opus-4-8`. Example claude `settings.json` see [Manual Configuration with `settings.json`](#manual-configuration-with-settingsjson). 
+> 1. **Claude Code configuration:** When using with Claude Code, please configure the model ID as `claude-opus-4-8[1m]`. Example claude `settings.json` see [Manual Configuration with `settings.json`](#manual-configuration-with-settingsjson). 
 >
 > 2. **Built-in `copilot`, `codex` and third-party providers:** Run `npx @jeffreycao/copilot-api@latest auth` and choose `copilot`, `codex`, `deepseek`, `custom`, or other providers.
 >
@@ -22,6 +78,31 @@ A small AI gateway that can use GitHub Copilot, the built-in `codex` provider, o
 The gateway exposes OpenAI- and Anthropic-compatible APIs from one local endpoint, so tools like [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview), OpenCode, Codex, and OpenAI-compatible clients can share the same local server.
 
 On the GitHub Copilot path, the gateway prefers Copilot's native Anthropic-style Messages API when available, preserving more Claude-native behavior for tool-heavy workflows.
+
+## Quick Start
+
+The fastest way to get a working gateway:
+
+```sh
+npx @jeffreycao/copilot-api@latest start
+```
+
+The server listens on `http://localhost:4141` by default. Optionally authenticate with GitHub Copilot or configure a third-party provider first:
+
+```sh
+npx @jeffreycao/copilot-api@latest auth login
+```
+
+Verify the gateway is up:
+
+```sh
+curl http://localhost:4141/v1/models
+```
+
+> [!NOTE]
+> Token usage storage requires Node.js >= 22.13.0 or Bun. See [Using with npx](#using-with-npx) for details.
+
+From here, jump to the guide for your client: [Claude Code](#using-with-claude-code), [OpenCode](#using-with-opencode), [Codex](#using-with-codex), or run it with [Docker](#using-with-docker).
 
 ## Features
 
@@ -50,12 +131,6 @@ To install dependencies, run:
 bun install
 ```
 
-To start the server directly from source:
-
-```sh
-bun run start start
-```
-
 ## Running from Source
 
 The project can be run from source in several ways:
@@ -71,6 +146,8 @@ bun run dev start
 ```sh
 bun run start start
 ```
+
+> The trailing `start` is the CLI subcommand passed to `src/main.ts`, not a typo: `bun run dev start` runs watch mode, `bun run start start` runs production.
 
 ## Using with npx
 
@@ -388,7 +465,7 @@ The bridge uses direct tool selection, not query search. Its tool input is `name
 
 Plugin integrations are available for Claude Code and opencode.
 
-#### Claude Code plugin integration (marketplace-based)
+### Claude Code plugin integration (marketplace-based)
 
 The Claude Code integration is packaged as two plugins:
 
@@ -420,7 +497,7 @@ The `agent-inject` plugin also registers a `UserPromptSubmit` hook that returns 
 
 The `tool-search` plugin bundles the same MCP bridge described in [GPT Tool Search](#gpt-tool-search), so Claude Code users do not need to add the `tool_search` server manually when they install that plugin.
 
-#### Opencode plugin
+### Opencode plugin
 
 The subagent marker producer is packaged as an opencode plugin located at `plugin/opencode/subagent-marker.js`.
 
@@ -701,9 +778,9 @@ These endpoints mimic the OpenAI API structure.
 
 These endpoints require an active Codex login. Each endpoint is available both without a version prefix and under `/v1`.
 
-| Endpoint | Method | Description |
-| --- | --- | --- |
-| `POST /alpha/search`<br>`POST /v1/alpha/search` | `POST` | Transparently forwards the JSON body and query parameters to the Codex Alpha Search upstream. |
+| Endpoint                                                       | Method | Description                                                     |
+| -------------------------------------------------------------- | ------ | --------------------------------------------------------------- |
+| `POST /alpha/search`<br>`POST /v1/alpha/search`                | `POST` | Transparently forwards the JSON body and query parameters to the Codex Alpha Search upstream. |
 | `POST /images/generations`<br>`POST /v1/images/generations` | `POST` | Forwards a JSON image generation request to the Codex Images upstream. When the request omits `Content-Type`, the gateway defaults it to `application/json`. |
 | `POST /images/edits`<br>`POST /v1/images/edits` | `POST` | Forwards an image edit request to the Codex Images upstream. Send this request as `multipart/form-data` and let the HTTP client generate the `boundary`; the gateway preserves the incoming content type and streams the upload body. |
 
@@ -784,7 +861,7 @@ curl http://localhost:4141/dashscope/v1/messages \
 
 ### CLAUDE.md or AGENTS.md Recommended Content
 
-To add these reminders manually, include the following in `CLAUDE.md` for Claude Code, or `AGENTS.md` for opencode/codex:
+Same reminders as `CLAUDE_PLUGIN_ENABLE_QUESTION_RULES=1` in the `agent-inject` plugin, for when you don't use that plugin. Add to `CLAUDE.md` (Claude Code) or `AGENTS.md` (opencode/codex):
 
 ```
 - Prohibited from directly asking questions to users, MUST use question tool.
