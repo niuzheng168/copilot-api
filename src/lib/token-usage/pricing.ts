@@ -364,7 +364,7 @@ const BUILTIN_PROVIDER_PRICING: Record<
       input: 3,
       output: 15,
     },
-    "k3-256": {
+    "k3-256k": {
       cachedInput: 0.3,
       input: 3,
       output: 15,

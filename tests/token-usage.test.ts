@@ -445,7 +445,7 @@ describe("token usage storage", () => {
       },
       {
         currency: "USD",
-        model: "k3-256",
+        model: "k3-256k",
         providerName: "kimi",
         totalCostNanos: 48_600_000,
       },
