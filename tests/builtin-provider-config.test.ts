@@ -5,6 +5,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 interface ConfigFileShape {
+  alphaSearchCodexPriority?: boolean
   builtinProviders?: Record<string, unknown>
   contextManagement?: {
     messages?: boolean
@@ -105,6 +106,31 @@ describe("builtin provider config", () => {
       messages: true,
       responses: false,
     })
+  })
+
+  test("enables alpha search Codex priority by default", () => {
+    const tempDir = createTempConfigDir()
+    const configPath = path.join(tempDir, "config.json")
+
+    const output = runScript(
+      tempDir,
+      'const { isAlphaSearchCodexPriorityEnabled } = await import("./src/lib/config"); console.log(JSON.stringify(isAlphaSearchCodexPriorityEnabled()));',
+    )
+
+    expect(JSON.parse(output)).toBe(true)
+    expect(readConfigFile(configPath).alphaSearchCodexPriority).toBe(true)
+  })
+
+  test("allows disabling alpha search Codex priority", () => {
+    const tempDir = createTempConfigDir()
+    writeConfigFile(tempDir, { alphaSearchCodexPriority: false })
+
+    const output = runScript(
+      tempDir,
+      'const { isAlphaSearchCodexPriorityEnabled } = await import("./src/lib/config"); console.log(JSON.stringify(isAlphaSearchCodexPriorityEnabled()));',
+    )
+
+    expect(JSON.parse(output)).toBe(false)
   })
 
   test("allows overriding context management per endpoint", () => {

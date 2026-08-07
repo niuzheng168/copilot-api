@@ -38,6 +38,12 @@ beforeEach(() => {
 })
 
 describe("config model mappings route", () => {
+  test("exposes the alpha search Codex priority setting", () => {
+    expect(typeof actualConfigModule.isAlphaSearchCodexPriorityEnabled()).toBe(
+      "boolean",
+    )
+  })
+
   test("returns the current model mappings snapshot", async () => {
     const app = createApp()
     const response = await app.request("/admin/config/model-mappings")

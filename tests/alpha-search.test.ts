@@ -12,8 +12,7 @@ const actualTokenModule = await import("../src/lib/token")
 
 let codexProviderConfig: ResolvedProviderConfig | null = null
 let openrouterProviderConfig: ResolvedProviderConfig | null = null
-let alphaSearchResponsesFallbackEnabled = false
-let responsesApiWebSearchEnabled = true
+let alphaSearchCodexPriorityEnabled = true
 let modelMappings: Record<string, string> = {}
 
 await mock.module("~/lib/config", () => ({
@@ -28,9 +27,7 @@ await mock.module("~/lib/config", () => ({
     if (provider === "openrouter") return openrouterProviderConfig
     return null
   },
-  isAlphaSearchResponsesFallbackEnabled: () =>
-    alphaSearchResponsesFallbackEnabled,
-  isResponsesApiWebSearchEnabled: () => responsesApiWebSearchEnabled,
+  isAlphaSearchCodexPriorityEnabled: () => alphaSearchCodexPriorityEnabled,
   resolveMappedModel: (model: string) => modelMappings[model] ?? model,
 }))
 
@@ -48,20 +45,20 @@ const { forwardCodexModels, getModels, resolveCodexModelsUrl } = await import(
   "../src/services/codex/get-models"
 )
 const { alphaSearchRoutes } = await import("../src/routes/alpha-search/route")
-const { alphaSearchFallbackDependencies, resetAlphaSearchFallbackState } =
-  await import("../src/routes/alpha-search/copilot-fallback")
+const { alphaSearchResponsesDependencies, resetAlphaSearchState } =
+  await import("../src/routes/alpha-search/alpha-search-responses")
 const { providerAlphaSearchRoutes } = await import(
   "../src/routes/provider/alpha-search/route"
 )
 
 const originalFetch = globalThis.fetch
-const originalFallbackDependencies = { ...alphaSearchFallbackDependencies }
+const originalResponsesDependencies = { ...alphaSearchResponsesDependencies }
 const originalModels = state.models
 const originalCopilotToken = state.copilotToken
 const originalMacMachineId = state.macMachineId
 const alphaSearchPayload = {
   id: "search-request-id",
-  model: "gpt-5.6-sol",
+  model: "codex/gpt-5.6-sol",
   input: [
     {
       type: "message",
@@ -221,7 +218,6 @@ function requestFallback(
   path = "/alpha/search",
 ): Promise<Response> {
   codexProviderConfig = null
-  alphaSearchResponsesFallbackEnabled = true
   return Promise.resolve(
     createApp().request(path, {
       method: "POST",
@@ -232,8 +228,7 @@ function requestFallback(
 }
 
 beforeEach(() => {
-  alphaSearchResponsesFallbackEnabled = false
-  responsesApiWebSearchEnabled = true
+  alphaSearchCodexPriorityEnabled = true
   modelMappings = {}
   codexProviderConfig = {
     apiKey: "unused-provider-key",
@@ -271,16 +266,17 @@ beforeEach(() => {
   state.verbose = false
   fetchMock.mockClear()
   createResponsesMock.mockClear()
-  alphaSearchFallbackDependencies.createResponses = createResponsesMock as never
-  alphaSearchFallbackDependencies.findEndpointModel = (model) =>
+  alphaSearchResponsesDependencies.createResponses =
+    createResponsesMock as never
+  alphaSearchResponsesDependencies.findEndpointModel = (model) =>
     state.models?.data.find((candidate) => candidate.id === model)
-  alphaSearchFallbackDependencies.createUsageRecorder = (() =>
+  alphaSearchResponsesDependencies.createUsageRecorder = (() =>
     () => {}) as never
-  alphaSearchFallbackDependencies.now = () =>
+  alphaSearchResponsesDependencies.now = () =>
     Date.parse("2026-08-03T12:00:00.000Z")
-  alphaSearchFallbackDependencies.resolveMappedModel = (model) =>
+  alphaSearchResponsesDependencies.resolveMappedModel = (model) =>
     modelMappings[model] ?? model
-  resetAlphaSearchFallbackState()
+  resetAlphaSearchState()
   ;(globalThis as unknown as { fetch: typeof fetch }).fetch =
     fetchMock as unknown as typeof fetch
 })
@@ -294,8 +290,8 @@ afterEach(() => {
   state.models = originalModels
   state.verbose = false
   openrouterProviderConfig = null
-  Object.assign(alphaSearchFallbackDependencies, originalFallbackDependencies)
-  resetAlphaSearchFallbackState()
+  Object.assign(alphaSearchResponsesDependencies, originalResponsesDependencies)
+  resetAlphaSearchState()
 })
 
 describe("Codex alpha search URL", () => {
@@ -383,7 +379,10 @@ describe("Codex alpha search forwarding", () => {
     expect(headers.get("originator")).toBe("codex-tui")
     expect(headers.get("user-agent")).toBe("codex-tui/test")
     expect(headers.get("x-client-header")).toBe("kept")
-    expect(await new Response(init?.body).json()).toEqual(alphaSearchPayload)
+    expect(await new Response(init?.body).json()).toEqual({
+      ...alphaSearchPayload,
+      model: "gpt-5.6-sol",
+    })
   })
 
   test("does not expose alpha search over GET", async () => {
@@ -495,6 +494,7 @@ describe("Codex alpha search forwarding", () => {
 
     const response = await createApp().request("/alpha/search?q=bun", {
       method: "POST",
+      body: JSON.stringify({ model: "codex/gpt-5.6-sol" }),
     })
 
     expect(response.status).toBe(404)
@@ -508,38 +508,138 @@ describe("Codex alpha search forwarding", () => {
   })
 })
 
-describe("Copilot alpha search fallback", () => {
-  test("requires both flags and never overrides an available Codex provider", async () => {
-    alphaSearchResponsesFallbackEnabled = true
-    responsesApiWebSearchEnabled = false
-    codexProviderConfig = null
-
-    const disabledResponse = await createApp().request("/alpha/search", {
+describe("Alpha search Responses adapter", () => {
+  test("prefers Codex for unqualified models when Codex priority is enabled", async () => {
+    const response = await createApp().request("/alpha/search", {
       method: "POST",
       body: JSON.stringify(
-        createFallbackPayload({ search_query: [{ q: "disabled" }] }),
+        createFallbackPayload({ search_query: [{ q: "codex first" }] }),
       ),
     })
 
-    expect(disabledResponse.status).toBe(404)
+    expect(response.status).toBe(200)
     expect(createResponsesMock).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = fetchMock.mock.calls[0] ?? []
+    expect(await new Response(init?.body).json()).toMatchObject({
+      model: "gpt-5.6-sol",
+    })
+  })
 
-    responsesApiWebSearchEnabled = true
-    codexProviderConfig = {
-      apiKey: "codex-key",
-      authType: "oauth2",
-      baseUrl: "https://chatgpt.com/backend-api",
-      name: "codex",
+  test("uses Copilot for unqualified models when Codex is unavailable", async () => {
+    codexProviderConfig = null
+    const response = await createApp().request("/alpha/search", {
+      method: "POST",
+      body: JSON.stringify(
+        createFallbackPayload({ search_query: [{ q: "copilot wins" }] }),
+      ),
+    })
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(createResponsesMock).toHaveBeenCalledTimes(1)
+  })
+
+  test("uses Copilot for unqualified models when Codex priority is disabled", async () => {
+    alphaSearchCodexPriorityEnabled = false
+    const response = await createApp().request("/alpha/search", {
+      method: "POST",
+      body: JSON.stringify(
+        createFallbackPayload({ search_query: [{ q: "copilot wins" }] }),
+      ),
+    })
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(createResponsesMock).toHaveBeenCalledTimes(1)
+  })
+
+  test("prefers Codex for a provider model when Codex priority is enabled", async () => {
+    const response = await createApp().request("/alpha/search", {
+      method: "POST",
+      body: JSON.stringify(
+        createFallbackPayload(
+          { search_query: [{ q: "codex priority" }] },
+          { model: "openrouter/gpt-5.6-sol" },
+        ),
+      ),
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponsesMock).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = fetchMock.mock.calls[0] ?? []
+    expect(await new Response(init?.body).json()).toMatchObject({
+      model: "gpt-5.6-sol",
+    })
+  })
+
+  test("uses the provider Responses API when Codex priority is disabled", async () => {
+    alphaSearchCodexPriorityEnabled = false
+    openrouterProviderConfig = {
+      ...openrouterProviderConfig!,
       type: "openai-responses",
     }
-    const codexResponse = await createApp().request("/alpha/search", {
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(createResponsesResult()), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+      ),
+    )
+
+    const response = await createApp().request("/alpha/search", {
       method: "POST",
       body: JSON.stringify(
-        createFallbackPayload({ search_query: [{ q: "codex wins" }] }),
+        createFallbackPayload(
+          { search_query: [{ q: "provider search" }] },
+          { model: "openrouter/gpt-5.6-sol" },
+        ),
       ),
     })
 
-    expect(codexResponse.status).toBe(200)
+    expect(response.status).toBe(200)
+    expect(createResponsesMock).not.toHaveBeenCalled()
+    expect(((await response.json()) as { output: string }).output).toContain(
+      "Grounded search answer.",
+    )
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe("https://openrouter.example/v1/responses")
+    expect(new Headers(init?.headers).get("authorization")).toBe(
+      "Bearer openrouter-key",
+    )
+    expect(await new Response(init?.body).json()).toMatchObject({
+      model: "gpt-5.6-sol",
+    })
+  })
+
+  test("uses the provider Responses API when Codex is unavailable", async () => {
+    codexProviderConfig = null
+    openrouterProviderConfig = {
+      ...openrouterProviderConfig!,
+      type: "openai-responses",
+    }
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(createResponsesResult()), {
+          headers: { "content-type": "application/json" },
+          status: 200,
+        }),
+      ),
+    )
+
+    const response = await createApp().request("/alpha/search", {
+      method: "POST",
+      body: JSON.stringify(
+        createFallbackPayload(
+          { search_query: [{ q: "provider fallback" }] },
+          { model: "openrouter/gpt-5.6-sol" },
+        ),
+      ),
+    })
+
+    expect(response.status).toBe(200)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(createResponsesMock).not.toHaveBeenCalled()
   })
@@ -722,7 +822,6 @@ describe("Copilot alpha search fallback", () => {
 
   test("rejects malformed fallback payloads without parsing native Codex traffic", async () => {
     codexProviderConfig = null
-    alphaSearchResponsesFallbackEnabled = true
     const invalidJson = await createApp().request("/alpha/search", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1006,7 +1105,7 @@ describe("Copilot alpha search fallback", () => {
     ).toContain("unavailable or expired")
     expect(createResponsesMock).toHaveBeenCalledTimes(1)
 
-    alphaSearchFallbackDependencies.now = () =>
+    alphaSearchResponsesDependencies.now = () =>
       Date.parse("2026-08-03T13:00:00.000Z")
     const expired = await requestFallback(
       createFallbackPayload({ open: [{ ref_id: "turn0search0" }] }),
@@ -1015,7 +1114,7 @@ describe("Copilot alpha search fallback", () => {
       "unavailable or expired",
     )
 
-    alphaSearchFallbackDependencies.now = () =>
+    alphaSearchResponsesDependencies.now = () =>
       Date.parse("2026-08-03T14:00:00.000Z")
     await requestFallback(
       createFallbackPayload(
@@ -1064,7 +1163,7 @@ describe("Copilot alpha search fallback", () => {
       ((await evictedReference.json()) as { output: string }).output,
     ).toContain("unavailable or expired")
 
-    resetAlphaSearchFallbackState()
+    resetAlphaSearchState()
     createResponsesMock.mockImplementation(() =>
       Promise.resolve(
         createResponsesResult({
@@ -1101,7 +1200,7 @@ describe("Copilot alpha search fallback", () => {
     }
     expect(missingAuthBody.error.message).toContain("Copilot token not found")
 
-    alphaSearchFallbackDependencies.createResponses = (() =>
+    alphaSearchResponsesDependencies.createResponses = (() =>
       Promise.reject(
         new HTTPError(
           "rate limited",

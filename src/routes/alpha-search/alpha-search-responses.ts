@@ -1,15 +1,22 @@
 import type { Context } from "hono"
 import consola from "consola"
 
-import { resolveMappedModel } from "~/lib/config"
+import {
+  resolveEffectiveProviderType,
+  resolveMappedModel,
+  type ResolvedProviderConfig,
+} from "~/lib/config"
+import { HTTPError } from "~/lib/error"
 import { debugJson, createHandlerLogger } from "~/lib/logger"
 import { findEndpointModel } from "~/lib/models"
 import {
   createCopilotTokenUsageRecorder,
+  createProviderTokenUsageRecorder,
   normalizeOptionalToken,
   normalizeResponsesUsage,
   type UsageTokens,
 } from "~/lib/token-usage"
+import { resolveProviderConfig } from "~/lib/provider-resolver"
 import { generateRequestIdFromPayload, getUUID } from "~/lib/utils"
 import {
   alphaSearchRequestSchema,
@@ -28,8 +35,9 @@ import {
   type ResponsesPayload,
   type ResponsesResult,
 } from "~/services/copilot/create-responses"
+import { forwardProviderResponses } from "~/services/providers/provider-proxy"
 
-const logger = createHandlerLogger("alpha-search-copilot-handler")
+const logger = createHandlerLogger("alpha-search-responses-handler")
 
 const SESSION_TTL_MS = 60 * 60 * 1000
 const MAX_SESSIONS = 128
@@ -84,6 +92,11 @@ interface RemotePageOperation {
   pattern?: string
 }
 
+interface RemoteOperation {
+  operation: string
+  [key: string]: unknown
+}
+
 interface PageOperationOptions {
   lineno?: number
   pattern?: string
@@ -100,13 +113,23 @@ interface SearchOperationState {
   output: Array<string>
   warnings: Array<string>
   resultReferences: Map<string, UrlReference>
-  remoteOperations: Array<Record<string, unknown>>
+  remoteOperations: Array<RemoteOperation>
   remotePages: Array<RemotePageOperation>
+}
+
+export interface AlphaSearchResponsesOptions {
+  provider?: string
+  request: AlphaSearchRequest
+}
+
+interface RemoteModelTarget {
+  model: string
+  providerConfig?: ResolvedProviderConfig
 }
 
 const sessions = new Map<string, SearchSession>()
 
-export const alphaSearchFallbackDependencies = {
+export const alphaSearchResponsesDependencies = {
   createResponses: createCopilotResponses,
   findEndpointModel,
   now: (): number => Date.now(),
@@ -122,7 +145,7 @@ export const alphaSearchFallbackDependencies = {
     }),
 }
 
-export function resetAlphaSearchFallbackState(): void {
+export function resetAlphaSearchState(): void {
   sessions.clear()
 }
 
@@ -351,7 +374,7 @@ function formatTime(utcOffset: string, now: number): string {
 }
 
 function buildInstruction(
-  operations: Array<Record<string, unknown>>,
+  operations: Array<RemoteOperation>,
   responseLength: "short" | "medium" | "long" | undefined,
 ): string {
   return [
@@ -380,28 +403,6 @@ function invalidRequest(c: Context, message: string): Response {
     },
     400,
   )
-}
-
-async function parseAlphaSearchRequest(
-  c: Context,
-): Promise<AlphaSearchRequest | Response> {
-  let body: unknown
-  try {
-    body = await c.req.json<unknown>()
-  } catch {
-    return invalidRequest(c, "Invalid alpha search request: expected JSON body")
-  }
-
-  const parsed = alphaSearchRequestSchema.safeParse(body)
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0]
-    const path = issue?.path.join(".") || "body"
-    return invalidRequest(
-      c,
-      `Invalid alpha search request at ${path}: ${issue?.message ?? "invalid value"}`,
-    )
-  }
-  return parsed.data
 }
 
 function createSearchOperationState(
@@ -608,21 +609,50 @@ function shouldExecuteRemoteOperations(
   return state.remoteOperations.length > 0 && supportsLiveAccess(request)
 }
 
-function resolveRemoteModel(
+async function resolveRemoteModel(
   c: Context,
   request: AlphaSearchRequest,
-): string | Response {
-  const model = alphaSearchFallbackDependencies.resolveMappedModel(
-    request.model,
-  )
-  const selectedModel = alphaSearchFallbackDependencies.findEndpointModel(model)
+  provider?: string,
+): Promise<RemoteModelTarget | Response> {
+  const model =
+    provider ?
+      request.model
+    : alphaSearchResponsesDependencies.resolveMappedModel(request.model)
+  if (provider) {
+    const providerConfig = await resolveProviderConfig(provider)
+    if (!providerConfig) {
+      return c.json(
+        {
+          error: {
+            message: `Provider '${provider}' not found or disabled`,
+            type: "invalid_request_error",
+          },
+        },
+        404,
+      )
+    }
+
+    if (
+      resolveEffectiveProviderType(providerConfig, model) !== "openai-responses"
+    ) {
+      return invalidRequest(
+        c,
+        `Provider '${provider}' does not support the /v1/responses endpoint required for alpha search`,
+      )
+    }
+
+    return { model, providerConfig }
+  }
+
+  const selectedModel =
+    alphaSearchResponsesDependencies.findEndpointModel(model)
   if (!selectedModel?.supported_endpoints?.includes("/responses")) {
     return invalidRequest(
       c,
       `Model '${model}' does not support the Copilot Responses endpoint required for alpha search`,
     )
   }
-  return model
+  return { model }
 }
 
 function createRemoteResponsesPayload(
@@ -650,29 +680,54 @@ function createRemoteResponsesPayload(
   }
 }
 
-async function requestRemoteSearch(
-  request: AlphaSearchRequest,
-  state: SearchOperationState,
+async function requestProviderSearch(
+  c: Context,
+  providerConfig: ResolvedProviderConfig,
+  payload: ResponsesPayload,
   model: string,
+  sessionId: string,
 ): Promise<ResponsesResult> {
-  const instruction = buildInstruction(
-    state.remoteOperations,
-    request.commands?.response_length,
+  debugJson(logger, "Alpha search provider Responses request:", {
+    payload,
+    provider: providerConfig.name,
+  })
+  const upstreamResponse = await forwardProviderResponses(
+    providerConfig,
+    payload,
+    c.req.raw.headers,
   )
-  const sessionId = getUUID(request.id)
-  const requestId = generateRequestIdFromPayload(
-    { messages: `${state.turn.number}:${instruction}` },
-    sessionId,
-  )
-  const responsesPayload = createRemoteResponsesPayload(
-    request,
+  if (!upstreamResponse.ok) {
+    throw new HTTPError(
+      `Failed to create ${providerConfig.name} responses for alpha search`,
+      upstreamResponse,
+    )
+  }
+  const result = (await upstreamResponse.json()) as ResponsesResult
+  debugJson(logger, "Alpha search provider Responses result:", {
+    provider: providerConfig.name,
+    result,
+  })
+  createProviderTokenUsageRecorder({
+    endpoint: "responses",
+    fallbackSessionId: sessionId,
     model,
-    instruction,
-  )
+    pricing: providerConfig.models?.[model]?.pricing,
+    pricingCurrency: providerConfig.pricingCurrency,
+    providerName: providerConfig.name,
+    sessionId,
+  })(normalizeResponsesUsage(result.usage))
+  return result
+}
 
-  debugJson(logger, "Alpha search Copilot Responses request:", responsesPayload)
-  const result = (await alphaSearchFallbackDependencies.createResponses(
-    responsesPayload,
+async function requestCopilotSearch(
+  payload: ResponsesPayload,
+  model: string,
+  requestId: string,
+  sessionId: string,
+): Promise<ResponsesResult> {
+  debugJson(logger, "Alpha search Copilot Responses request:", payload)
+  const result = (await alphaSearchResponsesDependencies.createResponses(
+    payload,
     {
       vision: false,
       initiator: "agent",
@@ -683,7 +738,7 @@ async function requestRemoteSearch(
   )) as ResponsesResult
   debugJson(logger, "Alpha search Copilot Responses result:", result)
 
-  alphaSearchFallbackDependencies.createUsageRecorder(
+  alphaSearchResponsesDependencies.createUsageRecorder(
     model,
     sessionId,
   )({
@@ -693,6 +748,40 @@ async function requestRemoteSearch(
     ),
   })
   return result
+}
+
+async function requestRemoteSearch(
+  c: Context,
+  request: AlphaSearchRequest,
+  state: SearchOperationState,
+  target: RemoteModelTarget,
+): Promise<ResponsesResult> {
+  const instruction = buildInstruction(
+    state.remoteOperations,
+    request.commands?.response_length,
+  )
+  const sessionId = getUUID(request.id)
+  const requestId = generateRequestIdFromPayload(
+    { messages: `${state.turn.number}:${instruction}` },
+    sessionId,
+  )
+  const payload = createRemoteResponsesPayload(
+    request,
+    target.model,
+    instruction,
+  )
+
+  if (target.providerConfig) {
+    return await requestProviderSearch(
+      c,
+      target.providerConfig,
+      payload,
+      target.model,
+      sessionId,
+    )
+  }
+
+  return await requestCopilotSearch(payload, target.model, requestId, sessionId)
 }
 
 function getActiveRemoteReferences(
@@ -852,10 +941,11 @@ async function executeRemoteOperations(
   c: Context,
   request: AlphaSearchRequest,
   state: SearchOperationState,
+  provider?: string,
 ): Promise<Response | null> {
-  const model = resolveRemoteModel(c, request)
-  if (model instanceof Response) return model
-  const result = await requestRemoteSearch(request, state, model)
+  const target = await resolveRemoteModel(c, request, provider)
+  if (target instanceof Response) return target
+  const result = await requestRemoteSearch(c, request, state, target)
   processRemoteResult(result, state)
   return null
 }
@@ -881,11 +971,21 @@ function buildAlphaSearchResponse(
   }
 }
 
-export async function handleCopilotAlphaSearch(c: Context): Promise<Response> {
-  const parsedRequest = await parseAlphaSearchRequest(c)
-  if (parsedRequest instanceof Response) return parsedRequest
-  const request = parsedRequest
-  const now = alphaSearchFallbackDependencies.now()
+export async function handleAlphaSearchResponses(
+  c: Context,
+  options: AlphaSearchResponsesOptions,
+): Promise<Response> {
+  const parsed = alphaSearchRequestSchema.safeParse(options.request)
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    const path = issue?.path.join(".") || "body"
+    return invalidRequest(
+      c,
+      `Invalid alpha search request at ${path}: ${issue?.message ?? "invalid value"}`,
+    )
+  }
+  const request = parsed.data
+  const now = alphaSearchResponsesDependencies.now()
   const reservation = reserveSession(request.id, now)
   const session = reservation.session
   const turn: SearchTurn = {
@@ -899,7 +999,12 @@ export async function handleCopilotAlphaSearch(c: Context): Promise<Response> {
   addLiveAccessWarning(request, state)
 
   if (shouldExecuteRemoteOperations(request, state)) {
-    const remoteResponse = await executeRemoteOperations(c, request, state)
+    const remoteResponse = await executeRemoteOperations(
+      c,
+      request,
+      state,
+      options.provider,
+    )
     if (remoteResponse) return remoteResponse
   }
 
