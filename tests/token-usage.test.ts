@@ -435,6 +435,46 @@ describe("token usage storage", () => {
     })
   })
 
+  test("prices Kimi models in USD and DashScope Kimi in CNY", () => {
+    const expectedCosts = [
+      {
+        currency: "USD",
+        model: "k3",
+        providerName: "kimi",
+        totalCostNanos: 48_600_000,
+      },
+      {
+        currency: "USD",
+        model: "k3-256",
+        providerName: "kimi",
+        totalCostNanos: 48_600_000,
+      },
+      {
+        currency: "CNY",
+        model: "kimi/kimi-k3",
+        providerName: "dashscope",
+        totalCostNanos: 324_000_000,
+      },
+    ]
+
+    for (const expected of expectedCosts) {
+      expect(
+        resolveTokenUsageCost({
+          cache_read_input_tokens: 2_000,
+          input_tokens: 1_000,
+          model: expected.model,
+          output_tokens: 3_000,
+          providerName: expected.providerName,
+          source: "provider",
+        }),
+      ).toEqual({
+        currency: expected.currency,
+        source: "builtin",
+        total_cost_nanos: expected.totalCostNanos,
+      })
+    }
+  })
+
   test("only falls back to interaction id when no real session id exists", async () => {
     const recordWithFallback = createCopilotTokenUsageRecorder({
       endpoint: "responses",

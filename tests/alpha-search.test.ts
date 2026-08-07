@@ -38,6 +38,7 @@ await mock.module("~/lib/token", () => ({
 
 const { state } = await import("../src/lib/state")
 const { HTTPError } = await import("../src/lib/error")
+const { closeUsageStore } = await import("../src/lib/token-usage")
 const { forwardCodexAlphaSearch, resolveCodexAlphaSearchUrl } = await import(
   "../src/services/codex/alpha-search"
 )
@@ -50,6 +51,8 @@ const { alphaSearchResponsesDependencies, resetAlphaSearchState } =
 const { providerAlphaSearchRoutes } = await import(
   "../src/routes/provider/alpha-search/route"
 )
+
+const DB_PATH_ENV = "COPILOT_API_SQLITE_DB_PATH"
 
 const originalFetch = globalThis.fetch
 const originalResponsesDependencies = { ...alphaSearchResponsesDependencies }
@@ -227,7 +230,10 @@ function requestFallback(
   )
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  process.env[DB_PATH_ENV] = ":memory:"
+  await closeUsageStore()
+
   alphaSearchCodexPriorityEnabled = true
   modelMappings = {}
   codexProviderConfig = {
@@ -281,7 +287,9 @@ beforeEach(() => {
     fetchMock as unknown as typeof fetch
 })
 
-afterEach(() => {
+afterEach(async () => {
+  await closeUsageStore()
+  Reflect.deleteProperty(process.env, DB_PATH_ENV)
   ;(globalThis as unknown as { fetch: typeof fetch }).fetch = originalFetch
   state.codexAccessToken = undefined
   state.codexAccountId = undefined
