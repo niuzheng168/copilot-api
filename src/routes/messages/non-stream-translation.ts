@@ -353,6 +353,11 @@ function handleAssistantMessage(
     ]
   }
 
+  // Skip assistant messages with empty content array
+  if (message.content.length === 0) {
+    return []
+  }
+
   const toolUseBlocks = message.content.filter(
     (block): block is AnthropicToolUseBlock => block.type === "tool_use",
   )
