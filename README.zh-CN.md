@@ -309,6 +309,7 @@ model_provider = "copilot_api"
 model_reasoning_summary = "auto"
 model_context_window = 272000
 model_auto_compact_token_limit = 244800
+web_search = "live"
 
 [model_providers.copilot_api]
 name = "OpenAI"
