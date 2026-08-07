@@ -9,35 +9,35 @@ const searchQuerySchema = z
     recency: unsignedInteger.optional(),
     domains: z.array(z.string()).optional(),
   })
-  .passthrough()
+  .loose()
 
 const openOperationSchema = z
   .object({
     ref_id: z.string(),
     lineno: unsignedInteger.optional(),
   })
-  .passthrough()
+  .loose()
 
 const clickOperationSchema = z
   .object({
     ref_id: z.string(),
     id: unsignedInteger,
   })
-  .passthrough()
+  .loose()
 
 const findOperationSchema = z
   .object({
     ref_id: z.string(),
     pattern: z.string(),
   })
-  .passthrough()
+  .loose()
 
 const screenshotOperationSchema = z
   .object({
     ref_id: z.string(),
     pageno: unsignedInteger,
   })
-  .passthrough()
+  .loose()
 
 const financeOperationSchema = z
   .object({
@@ -45,7 +45,7 @@ const financeOperationSchema = z
     type: z.enum(["equity", "fund", "crypto", "index"]),
     market: z.string().optional(),
   })
-  .passthrough()
+  .loose()
 
 const weatherOperationSchema = z
   .object({
@@ -53,7 +53,7 @@ const weatherOperationSchema = z
     start: z.string().optional(),
     duration: unsignedInteger.optional(),
   })
-  .passthrough()
+  .loose()
 
 const sportsOperationSchema = z
   .object({
@@ -77,13 +77,13 @@ const sportsOperationSchema = z
     num_games: unsignedInteger.optional(),
     locale: z.string().optional(),
   })
-  .passthrough()
+  .loose()
 
 const timeOperationSchema = z
   .object({
     utc_offset: z.string().regex(/^[+-](?:[01]\d|2[0-3]):[0-5]\d$/u),
   })
-  .passthrough()
+  .loose()
 
 export const alphaSearchCommandsSchema = z
   .object({
@@ -99,7 +99,7 @@ export const alphaSearchCommandsSchema = z
     time: z.array(timeOperationSchema).optional(),
     response_length: z.enum(["short", "medium", "long"]).optional(),
   })
-  .passthrough()
+  .loose()
 
 const reasoningSchema = z
   .object({
@@ -113,7 +113,7 @@ const reasoningSchema = z
       .nullable()
       .optional(),
   })
-  .passthrough()
+  .loose()
 
 const settingsSchema = z
   .object({
@@ -125,7 +125,7 @@ const settingsSchema = z
         city: z.string().optional(),
         timezone: z.string().optional(),
       })
-      .passthrough()
+      .loose()
       .optional(),
     search_context_size: z.enum(["low", "medium", "high"]).optional(),
     filters: z
@@ -133,14 +133,14 @@ const settingsSchema = z
         allowed_domains: z.array(z.string()).optional(),
         blocked_domains: z.array(z.string()).optional(),
       })
-      .passthrough()
+      .loose()
       .optional(),
     image_settings: z
       .object({
         max_results: unsignedInteger.optional(),
         caption: z.boolean().optional(),
       })
-      .passthrough()
+      .loose()
       .optional(),
     allowed_callers: z
       .array(z.enum(["direct", "shell", "code_interpreter"]))
@@ -149,7 +149,7 @@ const settingsSchema = z
       .union([z.boolean(), z.enum(["cached", "indexed", "live"])])
       .optional(),
   })
-  .passthrough()
+  .loose()
 
 export const alphaSearchRequestSchema = z
   .object({
@@ -161,7 +161,7 @@ export const alphaSearchRequestSchema = z
     settings: settingsSchema.optional(),
     max_output_tokens: unsignedInteger.optional(),
   })
-  .passthrough()
+  .loose()
 
 export type AlphaSearchRequest = z.infer<typeof alphaSearchRequestSchema>
 export type AlphaSearchCommands = z.infer<typeof alphaSearchCommandsSchema>

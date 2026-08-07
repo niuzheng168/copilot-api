@@ -13,6 +13,8 @@ import {
 import { generateRequestIdFromPayload, getUUID } from "~/lib/utils"
 import {
   alphaSearchRequestSchema,
+  type AlphaSearchCommands,
+  type AlphaSearchRequest,
   type AlphaSearchResponse,
   type AlphaSearchTextResult,
 } from "~/routes/alpha-search/alpha-search-types"
@@ -82,9 +84,24 @@ interface RemotePageOperation {
   pattern?: string
 }
 
+interface PageOperationOptions {
+  lineno?: number
+  pattern?: string
+}
+
 interface SearchTurn {
   number: number
   nextReferenceIndex: number
+}
+
+interface SearchOperationState {
+  session: SearchSession
+  turn: SearchTurn
+  output: Array<string>
+  warnings: Array<string>
+  resultReferences: Map<string, UrlReference>
+  remoteOperations: Array<Record<string, unknown>>
+  remotePages: Array<RemotePageOperation>
 }
 
 const sessions = new Map<string, SearchSession>()
@@ -162,7 +179,7 @@ function extractMarkdownSources(text: string): Array<WebSearchSource> {
   // only if measured responses exceed this shape.
   return Array.from(
     text.matchAll(
-      /(?<!!)\[([^\]\n]+)\]\((https?:\/\/(?:[^\s<>()]|\([^\s<>()]*\))+)\)/gu,
+      /(?<!!)\[([^\]\n]+)\]\((https?:\/\/(?:[^\s<>()]|\([^\s<>()]*\))+)\)/gu, //NOSONAR
     ),
     ([, title, url]) => ({ title, url }),
   )
@@ -324,7 +341,7 @@ function findInSnapshot(
 }
 
 function formatTime(utcOffset: string, now: number): string {
-  const direction = utcOffset[0] === "+" ? 1 : -1
+  const direction = utcOffset.startsWith("+") ? 1 : -1
   const offsetMinutes =
     direction
     * (Number.parseInt(utcOffset.slice(1, 3), 10) * 60
@@ -365,7 +382,9 @@ function invalidRequest(c: Context, message: string): Response {
   )
 }
 
-export async function handleCopilotAlphaSearch(c: Context): Promise<Response> {
+async function parseAlphaSearchRequest(
+  c: Context,
+): Promise<AlphaSearchRequest | Response> {
   let body: unknown
   try {
     body = await c.req.json<unknown>()
@@ -382,8 +401,490 @@ export async function handleCopilotAlphaSearch(c: Context): Promise<Response> {
       `Invalid alpha search request at ${path}: ${issue?.message ?? "invalid value"}`,
     )
   }
+  return parsed.data
+}
 
-  const request = parsed.data
+function createSearchOperationState(
+  session: SearchSession,
+  turn: SearchTurn,
+): SearchOperationState {
+  return {
+    session,
+    turn,
+    output: [],
+    warnings: [],
+    resultReferences: new Map(),
+    remoteOperations: [],
+    remotePages: [],
+  }
+}
+
+function includeResult(
+  state: SearchOperationState,
+  reference: UrlReference,
+): void {
+  state.resultReferences.set(reference.result.url, reference)
+}
+
+function queuePage(
+  state: SearchOperationState,
+  kind: "open" | "find",
+  source: UrlReference,
+  options: PageOperationOptions = {},
+): void {
+  state.remoteOperations.push({
+    operation: kind,
+    url: source.result.url,
+    ...(options.lineno === undefined ? {} : { lineno: options.lineno }),
+    ...(options.pattern === undefined ? {} : { pattern: options.pattern }),
+  })
+  state.remotePages.push({ kind, source, ...options })
+  includeResult(state, source)
+}
+
+function processSearchCommands(
+  commands: AlphaSearchCommands,
+  state: SearchOperationState,
+): void {
+  for (const command of commands.search_query ?? []) {
+    state.remoteOperations.push({ ...command, operation: "search_query" })
+  }
+}
+
+function processOpenCommands(
+  commands: AlphaSearchCommands,
+  state: SearchOperationState,
+): void {
+  for (const command of commands.open ?? []) {
+    const directSnapshot = getSnapshot(state.session, command.ref_id)
+    if (directSnapshot) {
+      state.output.push(renderSnapshot(directSnapshot, command.lineno))
+      includeResult(state, directSnapshot.source)
+      continue
+    }
+
+    const source = resolveUrlReference(
+      state.session,
+      command.ref_id,
+      state.turn,
+    )
+    if (!source) {
+      state.output.push(unavailableReference(command.ref_id))
+      continue
+    }
+    const cached = findSnapshotByUrl(state.session, source.result.url)
+    if (cached) {
+      state.output.push(renderSnapshot(cached, command.lineno))
+      includeResult(state, source)
+      continue
+    }
+    queuePage(state, "open", source, { lineno: command.lineno })
+  }
+}
+
+function processClickCommands(
+  commands: AlphaSearchCommands,
+  state: SearchOperationState,
+): void {
+  for (const command of commands.click ?? []) {
+    const parent = getSnapshot(state.session, command.ref_id)
+    const source = parent?.links[command.id]
+    if (!source) {
+      state.output.push(
+        unavailableReference(`${command.ref_id} link ${command.id}`),
+      )
+      continue
+    }
+    const cached = findSnapshotByUrl(state.session, source.result.url)
+    if (cached) {
+      state.output.push(renderSnapshot(cached))
+      includeResult(state, source)
+      continue
+    }
+    queuePage(state, "open", source)
+  }
+}
+
+function processFindCommands(
+  commands: AlphaSearchCommands,
+  state: SearchOperationState,
+): void {
+  for (const command of commands.find ?? []) {
+    const directSnapshot = getSnapshot(state.session, command.ref_id)
+    const source =
+      directSnapshot?.source
+      ?? resolveUrlReference(state.session, command.ref_id, state.turn)
+    if (!source) {
+      state.output.push(unavailableReference(command.ref_id))
+      continue
+    }
+    const snapshot =
+      directSnapshot ?? findSnapshotByUrl(state.session, source.result.url)
+    const localResult =
+      snapshot ? findInSnapshot(snapshot, command.pattern) : null
+    if (localResult) {
+      state.output.push(localResult)
+      includeResult(state, source)
+      continue
+    }
+    queuePage(state, "find", source, { pattern: command.pattern })
+  }
+}
+
+function processStructuredCommands(
+  commands: AlphaSearchCommands,
+  state: SearchOperationState,
+  now: number,
+): void {
+  for (const command of commands.finance ?? []) {
+    state.remoteOperations.push({ ...command, operation: "finance" })
+  }
+  for (const command of commands.weather ?? []) {
+    state.remoteOperations.push({ ...command, operation: "weather" })
+  }
+  for (const command of commands.sports ?? []) {
+    state.remoteOperations.push({ ...command, operation: "sports" })
+  }
+  for (const command of commands.time ?? []) {
+    state.output.push(formatTime(command.utc_offset, now))
+  }
+}
+
+function processUnsupportedCommands(
+  commands: AlphaSearchCommands,
+  state: SearchOperationState,
+): void {
+  for (const commandName of Object.keys(commands)) {
+    if (!KNOWN_COMMANDS.has(commandName)) {
+      state.warnings.push(
+        `Unsupported by GitHub Copilot web search: ${commandName}. Do not retry this operation.`,
+      )
+    }
+  }
+}
+
+function processCommandOperations(
+  commands: AlphaSearchCommands,
+  state: SearchOperationState,
+  now: number,
+): void {
+  processSearchCommands(commands, state)
+  if ((commands.image_query?.length ?? 0) > 0) {
+    state.warnings.push(IMAGE_UNSUPPORTED)
+  }
+  processOpenCommands(commands, state)
+  processClickCommands(commands, state)
+  processFindCommands(commands, state)
+  if ((commands.screenshot?.length ?? 0) > 0) {
+    state.warnings.push(SCREENSHOT_UNSUPPORTED)
+  }
+  processStructuredCommands(commands, state, now)
+  processUnsupportedCommands(commands, state)
+}
+
+function supportsLiveAccess(request: AlphaSearchRequest): boolean {
+  const externalWebAccess = request.settings?.external_web_access
+  return (
+    externalWebAccess === undefined
+    || externalWebAccess === true
+    || externalWebAccess === "live"
+  )
+}
+
+function addLiveAccessWarning(
+  request: AlphaSearchRequest,
+  state: SearchOperationState,
+): void {
+  if (state.remoteOperations.length === 0 || supportsLiveAccess(request)) return
+  state.warnings.push(
+    `GitHub Copilot alpha search supports live retrieval only; external_web_access=${JSON.stringify(request.settings?.external_web_access)} is unsupported. Do not retry this request in this mode.`,
+  )
+}
+
+function shouldExecuteRemoteOperations(
+  request: AlphaSearchRequest,
+  state: SearchOperationState,
+): boolean {
+  return state.remoteOperations.length > 0 && supportsLiveAccess(request)
+}
+
+function resolveRemoteModel(
+  c: Context,
+  request: AlphaSearchRequest,
+): string | Response {
+  const model = alphaSearchFallbackDependencies.resolveMappedModel(
+    request.model,
+  )
+  const selectedModel = alphaSearchFallbackDependencies.findEndpointModel(model)
+  if (!selectedModel?.supported_endpoints?.includes("/responses")) {
+    return invalidRequest(
+      c,
+      `Model '${model}' does not support the Copilot Responses endpoint required for alpha search`,
+    )
+  }
+  return model
+}
+
+function createRemoteResponsesPayload(
+  request: AlphaSearchRequest,
+  model: string,
+  instruction: string,
+): ResponsesPayload {
+  return {
+    model,
+    input: instruction,
+    tools: [
+      buildResponsesWebSearchTool({
+        allowedDomains: request.settings?.filters?.allowed_domains,
+        blockedDomains: request.settings?.filters?.blocked_domains,
+        userLocation: request.settings?.user_location,
+        searchContextSize: request.settings?.search_context_size,
+      }),
+    ],
+    tool_choice: "required",
+    store: false,
+    stream: false,
+    include: ["web_search_call.action.sources"],
+    reasoning: request.reasoning as ResponsesPayload["reasoning"],
+    max_output_tokens: request.max_output_tokens,
+  }
+}
+
+async function requestRemoteSearch(
+  request: AlphaSearchRequest,
+  state: SearchOperationState,
+  model: string,
+): Promise<ResponsesResult> {
+  const instruction = buildInstruction(
+    state.remoteOperations,
+    request.commands?.response_length,
+  )
+  const sessionId = getUUID(request.id)
+  const requestId = generateRequestIdFromPayload(
+    { messages: `${state.turn.number}:${instruction}` },
+    sessionId,
+  )
+  const responsesPayload = createRemoteResponsesPayload(
+    request,
+    model,
+    instruction,
+  )
+
+  debugJson(logger, "Alpha search Copilot Responses request:", responsesPayload)
+  const result = (await alphaSearchFallbackDependencies.createResponses(
+    responsesPayload,
+    {
+      vision: false,
+      initiator: "agent",
+      transport: "http",
+      requestId,
+      sessionId,
+    },
+  )) as ResponsesResult
+  debugJson(logger, "Alpha search Copilot Responses result:", result)
+
+  alphaSearchFallbackDependencies.createUsageRecorder(
+    model,
+    sessionId,
+  )({
+    ...normalizeResponsesUsage(result.usage),
+    total_nano_aiu: normalizeOptionalToken(
+      result.copilot_usage?.total_nano_aiu,
+    ),
+  })
+  return result
+}
+
+function getActiveRemoteReferences(
+  session: SearchSession,
+  references: Array<UrlReference>,
+): Array<UrlReference> {
+  return references.filter(
+    (reference) =>
+      session.referencesById.get(reference.result.ref_id) === reference,
+  )
+}
+
+function buildSnapshotLinks(
+  state: SearchOperationState,
+  target: UrlReference,
+  markdownReferences: Array<UrlReference>,
+  remoteReferences: Array<UrlReference>,
+): Array<UrlReference> {
+  return [
+    ...new Map(
+      [
+        ...markdownReferences,
+        ...getActiveRemoteReferences(state.session, remoteReferences),
+      ]
+        .filter(
+          (reference) =>
+            reference.result.url !== target.result.url
+            && state.session.referencesById.get(reference.result.ref_id)
+              === reference,
+        )
+        .map((reference) => [reference.result.url, reference] as const),
+    ).values(),
+  ]
+}
+
+function processRemotePages(
+  state: SearchOperationState,
+  answerText: string,
+  markdownReferences: Array<UrlReference>,
+  remoteReferences: Array<UrlReference>,
+): void {
+  for (const [index, page] of state.remotePages.entries()) {
+    const target =
+      addUrlReference(
+        state.session,
+        {
+          url: page.source.result.url,
+          title: page.source.result.title,
+          snippet: answerText,
+        },
+        state.turn,
+      ) ?? page.source
+    includeResult(state, target)
+    const snapshotLinks = buildSnapshotLinks(
+      state,
+      target,
+      markdownReferences,
+      remoteReferences,
+    )
+
+    if (page.kind === "find") {
+      state.output.push(
+        `Find results for ${JSON.stringify(page.pattern ?? "")} in ${target.result.url}:\n${answerText}`,
+      )
+      if (!findSnapshotByUrl(state.session, target.result.url)) {
+        addSnapshot(
+          state.session,
+          target,
+          state.turn.number,
+          index,
+          answerText,
+          snapshotLinks,
+        )
+      }
+      continue
+    }
+
+    const snapshot = addSnapshot(
+      state.session,
+      target,
+      state.turn.number,
+      index,
+      answerText,
+      snapshotLinks,
+    )
+    state.output.push(renderSnapshot(snapshot, page.lineno))
+  }
+}
+
+function appendActiveSources(
+  state: SearchOperationState,
+  references: Array<UrlReference>,
+): void {
+  if (references.length === 0) return
+  state.output.push(
+    [
+      "Sources:",
+      ...references.map(
+        (reference) =>
+          `- [${reference.result.ref_id}] ${reference.result.title} — ${reference.result.url}`,
+      ),
+    ].join("\n"),
+  )
+}
+
+function processRemoteResult(
+  result: ResponsesResult,
+  state: SearchOperationState,
+): void {
+  const extracted = extractWebSearchResult(result)
+  const citedSources = extracted.sources.filter(
+    (source) => source.snippet !== undefined,
+  )
+  const relevantSources =
+    citedSources.length > 0 ? citedSources : extracted.sources
+  consola.log(
+    `--> web search: operations=${[
+      ...new Set(
+        state.remoteOperations.map(
+          (remoteOperation) => remoteOperation.operation,
+        ),
+      ),
+    ].join(
+      ",",
+    )} queries=${JSON.stringify(extracted.queries)} sources=${relevantSources.length}`,
+  )
+
+  const remoteReferences = relevantSources
+    .map((source) => addUrlReference(state.session, source, state.turn))
+    .filter((reference): reference is UrlReference => Boolean(reference))
+  for (const reference of getActiveRemoteReferences(
+    state.session,
+    remoteReferences,
+  )) {
+    includeResult(state, reference)
+  }
+
+  const answerText =
+    extracted.answerText || "GitHub Copilot web search returned no text."
+  const markdownReferences =
+    state.remotePages.length === 0 ?
+      []
+    : extractMarkdownSources(answerText)
+        .map((source) => addUrlReference(state.session, source, state.turn))
+        .filter((reference): reference is UrlReference => Boolean(reference))
+  for (const reference of markdownReferences) includeResult(state, reference)
+  if (state.remotePages.length === 0) state.output.push(answerText)
+
+  processRemotePages(state, answerText, markdownReferences, remoteReferences)
+  appendActiveSources(
+    state,
+    getActiveRemoteReferences(state.session, remoteReferences),
+  )
+}
+
+async function executeRemoteOperations(
+  c: Context,
+  request: AlphaSearchRequest,
+  state: SearchOperationState,
+): Promise<Response | null> {
+  const model = resolveRemoteModel(c, request)
+  if (model instanceof Response) return model
+  const result = await requestRemoteSearch(request, state, model)
+  processRemoteResult(result, state)
+  return null
+}
+
+function buildAlphaSearchResponse(
+  state: SearchOperationState,
+): AlphaSearchResponse {
+  state.output.push(...state.warnings)
+  if (state.output.length === 0) {
+    state.output.push("No supported search operations were requested.")
+  }
+
+  return {
+    encrypted_output: null,
+    output: state.output.join("\n\n"),
+    results: [...state.resultReferences.values()]
+      .filter(
+        (reference) =>
+          state.session.referencesById.get(reference.result.ref_id)
+          === reference,
+      )
+      .map(({ result }) => result),
+  }
+}
+
+export async function handleCopilotAlphaSearch(c: Context): Promise<Response> {
+  const parsedRequest = await parseAlphaSearchRequest(c)
+  if (parsedRequest instanceof Response) return parsedRequest
+  const request = parsedRequest
   const now = alphaSearchFallbackDependencies.now()
   const reservation = reserveSession(request.id, now)
   const session = reservation.session
@@ -391,316 +892,16 @@ export async function handleCopilotAlphaSearch(c: Context): Promise<Response> {
     number: reservation.turn,
     nextReferenceIndex: 0,
   }
+  const state = createSearchOperationState(session, turn)
   const commands = request.commands ?? {}
-  const output: Array<string> = []
-  const warnings: Array<string> = []
-  const resultReferences = new Map<string, UrlReference>()
-  const remoteOperations: Array<Record<string, unknown>> = []
-  const remotePages: Array<RemotePageOperation> = []
+  processCommandOperations(commands, state, now)
 
-  const includeResult = (reference: UrlReference): void => {
-    resultReferences.set(reference.result.url, reference)
-  }
-  const queuePage = (
-    kind: "open" | "find",
-    source: UrlReference,
-    options: { lineno?: number; pattern?: string } = {},
-  ): void => {
-    remoteOperations.push({
-      type: kind,
-      url: source.result.url,
-      ...(options.lineno === undefined ? {} : { lineno: options.lineno }),
-      ...(options.pattern === undefined ? {} : { pattern: options.pattern }),
-    })
-    remotePages.push({ kind, source, ...options })
-    includeResult(source)
+  addLiveAccessWarning(request, state)
+
+  if (shouldExecuteRemoteOperations(request, state)) {
+    const remoteResponse = await executeRemoteOperations(c, request, state)
+    if (remoteResponse) return remoteResponse
   }
 
-  for (const command of commands.search_query ?? []) {
-    remoteOperations.push({ ...command, type: "search_query" })
-  }
-
-  if ((commands.image_query?.length ?? 0) > 0) warnings.push(IMAGE_UNSUPPORTED)
-
-  for (const command of commands.open ?? []) {
-    const directSnapshot = getSnapshot(session, command.ref_id)
-    if (directSnapshot) {
-      output.push(renderSnapshot(directSnapshot, command.lineno))
-      includeResult(directSnapshot.source)
-      continue
-    }
-
-    const source = resolveUrlReference(session, command.ref_id, turn)
-    if (!source) {
-      output.push(unavailableReference(command.ref_id))
-      continue
-    }
-    const cached = findSnapshotByUrl(session, source.result.url)
-    if (cached) {
-      output.push(renderSnapshot(cached, command.lineno))
-      includeResult(source)
-      continue
-    }
-    queuePage("open", source, { lineno: command.lineno })
-  }
-
-  for (const command of commands.click ?? []) {
-    const parent = getSnapshot(session, command.ref_id)
-    const source = parent?.links[command.id]
-    if (!source) {
-      output.push(unavailableReference(`${command.ref_id} link ${command.id}`))
-      continue
-    }
-    const cached = findSnapshotByUrl(session, source.result.url)
-    if (cached) {
-      output.push(renderSnapshot(cached))
-      includeResult(source)
-      continue
-    }
-    queuePage("open", source)
-  }
-
-  for (const command of commands.find ?? []) {
-    const directSnapshot = getSnapshot(session, command.ref_id)
-    const source =
-      directSnapshot?.source
-      ?? resolveUrlReference(session, command.ref_id, turn)
-    if (!source) {
-      output.push(unavailableReference(command.ref_id))
-      continue
-    }
-    const snapshot =
-      directSnapshot ?? findSnapshotByUrl(session, source.result.url)
-    const localResult =
-      snapshot ? findInSnapshot(snapshot, command.pattern) : null
-    if (localResult) {
-      output.push(localResult)
-      includeResult(source)
-      continue
-    }
-    queuePage("find", source, { pattern: command.pattern })
-  }
-
-  if ((commands.screenshot?.length ?? 0) > 0) {
-    warnings.push(SCREENSHOT_UNSUPPORTED)
-  }
-
-  for (const command of commands.finance ?? []) {
-    remoteOperations.push({ ...command, type: "finance" })
-  }
-  for (const command of commands.weather ?? []) {
-    remoteOperations.push({ ...command, type: "weather" })
-  }
-  for (const command of commands.sports ?? []) {
-    remoteOperations.push({ ...command, type: "sports" })
-  }
-  for (const command of commands.time ?? []) {
-    output.push(formatTime(command.utc_offset, now))
-  }
-
-  for (const commandName of Object.keys(commands)) {
-    if (!KNOWN_COMMANDS.has(commandName)) {
-      warnings.push(
-        `Unsupported by GitHub Copilot web search: ${commandName}. Do not retry this operation.`,
-      )
-    }
-  }
-
-  const externalWebAccess = request.settings?.external_web_access
-  const liveAccess =
-    externalWebAccess === undefined
-    || externalWebAccess === true
-    || externalWebAccess === "live"
-
-  if (remoteOperations.length > 0 && !liveAccess) {
-    warnings.push(
-      `GitHub Copilot alpha search supports live retrieval only; external_web_access=${JSON.stringify(externalWebAccess)} is unsupported. Do not retry this request in this mode.`,
-    )
-  }
-
-  if (remoteOperations.length > 0 && liveAccess) {
-    const model = alphaSearchFallbackDependencies.resolveMappedModel(
-      request.model,
-    )
-    const selectedModel =
-      alphaSearchFallbackDependencies.findEndpointModel(model)
-    if (!selectedModel?.supported_endpoints?.includes("/responses")) {
-      return invalidRequest(
-        c,
-        `Model '${model}' does not support the Copilot Responses endpoint required for alpha search`,
-      )
-    }
-
-    const instruction = buildInstruction(
-      remoteOperations,
-      commands.response_length,
-    )
-    const sessionId = getUUID(request.id)
-    const requestId = generateRequestIdFromPayload(
-      { messages: `${turn.number}:${instruction}` },
-      sessionId,
-    )
-    const responsesPayload: ResponsesPayload = {
-      model,
-      input: instruction,
-      tools: [
-        buildResponsesWebSearchTool({
-          allowedDomains: request.settings?.filters?.allowed_domains,
-          blockedDomains: request.settings?.filters?.blocked_domains,
-          userLocation: request.settings?.user_location,
-          searchContextSize: request.settings?.search_context_size,
-        }),
-      ],
-      tool_choice: "required",
-      store: false,
-      stream: false,
-      include: ["web_search_call.action.sources"],
-      reasoning: request.reasoning as ResponsesPayload["reasoning"],
-      max_output_tokens: request.max_output_tokens,
-    }
-
-    debugJson(
-      logger,
-      "Alpha search Copilot Responses request:",
-      responsesPayload,
-    )
-    const result = (await alphaSearchFallbackDependencies.createResponses(
-      responsesPayload,
-      {
-        vision: false,
-        initiator: "agent",
-        transport: "http",
-        requestId,
-        sessionId,
-      },
-    )) as ResponsesResult
-    debugJson(logger, "Alpha search Copilot Responses result:", result)
-
-    alphaSearchFallbackDependencies.createUsageRecorder(
-      model,
-      sessionId,
-    )({
-      ...normalizeResponsesUsage(result.usage),
-      total_nano_aiu: normalizeOptionalToken(
-        result.copilot_usage?.total_nano_aiu,
-      ),
-    })
-
-    const extracted = extractWebSearchResult(result)
-    const citedSources = extracted.sources.filter(
-      (source) => source.snippet !== undefined,
-    )
-    const relevantSources =
-      citedSources.length > 0 ? citedSources : extracted.sources
-    consola.log(
-      `--> web search: operations=${[
-        ...new Set(remoteOperations.map((operation) => operation.type)),
-      ].join(
-        ",",
-      )} queries=${JSON.stringify(extracted.queries)} sources=${relevantSources.length}`,
-    )
-    const remoteReferences = relevantSources
-      .map((source) => addUrlReference(session, source, turn))
-      .filter((reference): reference is UrlReference => Boolean(reference))
-    const activeRemoteReferences = (): Array<UrlReference> =>
-      remoteReferences.filter(
-        (reference) =>
-          session.referencesById.get(reference.result.ref_id) === reference,
-      )
-    for (const reference of activeRemoteReferences()) includeResult(reference)
-
-    const answerText =
-      extracted.answerText || "GitHub Copilot web search returned no text."
-    const markdownReferences =
-      remotePages.length === 0 ?
-        []
-      : extractMarkdownSources(answerText)
-          .map((source) => addUrlReference(session, source, turn))
-          .filter((reference): reference is UrlReference => Boolean(reference))
-    for (const reference of markdownReferences) includeResult(reference)
-    if (remotePages.length === 0) output.push(answerText)
-
-    for (const [index, page] of remotePages.entries()) {
-      const target =
-        addUrlReference(
-          session,
-          {
-            url: page.source.result.url,
-            title: page.source.result.title,
-            snippet: answerText,
-          },
-          turn,
-        ) ?? page.source
-      includeResult(target)
-      const snapshotLinks = [
-        ...new Map(
-          [...markdownReferences, ...activeRemoteReferences()]
-            .filter(
-              (reference) =>
-                reference.result.url !== target.result.url
-                && session.referencesById.get(reference.result.ref_id)
-                  === reference,
-            )
-            .map((reference) => [reference.result.url, reference] as const),
-        ).values(),
-      ]
-
-      if (page.kind === "find") {
-        output.push(
-          `Find results for ${JSON.stringify(page.pattern ?? "")} in ${target.result.url}:\n${answerText}`,
-        )
-        if (!findSnapshotByUrl(session, target.result.url)) {
-          addSnapshot(
-            session,
-            target,
-            turn.number,
-            index,
-            answerText,
-            snapshotLinks,
-          )
-        }
-        continue
-      }
-
-      const snapshot = addSnapshot(
-        session,
-        target,
-        turn.number,
-        index,
-        answerText,
-        snapshotLinks,
-      )
-      output.push(renderSnapshot(snapshot, page.lineno))
-    }
-
-    const activeSources = activeRemoteReferences()
-    if (activeSources.length > 0) {
-      output.push(
-        [
-          "Sources:",
-          ...activeSources.map(
-            (reference) =>
-              `- [${reference.result.ref_id}] ${reference.result.title} — ${reference.result.url}`,
-          ),
-        ].join("\n"),
-      )
-    }
-  }
-
-  output.push(...warnings)
-  if (output.length === 0) {
-    output.push("No supported search operations were requested.")
-  }
-
-  const response: AlphaSearchResponse = {
-    encrypted_output: null,
-    output: output.join("\n\n"),
-    results: [...resultReferences.values()]
-      .filter(
-        (reference) =>
-          session.referencesById.get(reference.result.ref_id) === reference,
-      )
-      .map(({ result }) => result),
-  }
-  return c.json(response)
+  return c.json(buildAlphaSearchResponse(state))
 }

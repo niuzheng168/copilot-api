@@ -643,7 +643,11 @@ describe("Copilot alpha search fallback", () => {
     const instruction = payload?.input as string
     expect(instruction).not.toContain("Recent text")
     expect(instruction).toContain('"recency": 7')
+    expect(instruction).toContain('"operation": "finance"')
+    expect(instruction).toContain('"type": "equity"')
     expect(instruction).toContain('"market": "USA"')
+    expect(instruction).toContain('"operation": "weather"')
+    expect(instruction).toContain('"operation": "sports"')
     expect(instruction).toContain('"team": "GSW"')
     expect(instruction).toContain("Requested response length: long")
 
@@ -769,9 +773,9 @@ describe("Copilot alpha search fallback", () => {
     expect(mixedBody.output).toContain("Do not retry")
     const instruction = createResponsesMock.mock.calls[0]?.[0].input as string
     expect(instruction).toContain("complete and exclusive")
-    expect(instruction).toContain('"type": "search_query"')
-    expect(instruction).not.toContain('"type": "image_query"')
-    expect(instruction).not.toContain('"type": "screenshot"')
+    expect(instruction).toContain('"operation": "search_query"')
+    expect(instruction).not.toContain('"operation": "image_query"')
+    expect(instruction).not.toContain('"operation": "screenshot"')
 
     const unsupportedOnly = await requestFallback(
       createFallbackPayload(
@@ -974,7 +978,7 @@ describe("Copilot alpha search fallback", () => {
     )
     const payload = createResponsesMock.mock.calls[1]?.[0]
     const instruction = payload?.input as string
-    expect(instruction).toContain('"type": "find"')
+    expect(instruction).toContain('"operation": "find"')
 
     const cached = await requestFallback(
       createFallbackPayload({ open: [{ ref_id: "turn0search0" }] }),
