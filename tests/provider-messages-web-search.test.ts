@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
-import type { ResolvedProviderConfig } from "../src/lib/config"
+import type { ResolvedProviderConfig } from "~/lib/config"
 import type {
   AnthropicMessagesPayload,
   AnthropicResponse,
-} from "../src/routes/messages/anthropic-types"
-import type { ResponsesResult } from "../src/services/copilot/create-responses"
+} from "~/lib/types/anthropic"
+import type { ResponsesResult } from "~/lib/types/responses"
 
-const actualConfigModule = await import("../src/lib/config")
-const actualModelsModule = await import("../src/lib/models")
-const actualStateModule = await import("../src/lib/state")
-const actualTokenModule = await import("../src/lib/token")
-const actualTokenUsageModule = await import("../src/lib/token-usage")
+const actualConfigModule = await import("~/lib/config")
+const actualModelsModule = await import("~/lib/models")
+const actualStateModule = await import("~/lib/state")
+const actualTokenModule = await import("~/lib/token")
+const actualTokenUsageModule = await import("~/lib/token-usage")
 
 let providerConfigs: Record<string, ResolvedProviderConfig> = {}
 let messageApiWebSearchModel: string | undefined
@@ -57,13 +57,11 @@ await mock.module("~/lib/token-usage", () => ({
 }))
 
 const { providerMessageRoutes } = await import(
-  "../src/routes/provider/messages/route"
+  "~/routes/provider/messages/route"
 )
-const { messageRoutes } = await import("../src/routes/messages/route")
-const { state } = await import("../src/lib/state")
-const { responsesUtilsDependencies } = await import(
-  "../src/routes/responses/utils"
-)
+const { messageRoutes } = await import("~/routes/messages/route")
+const { state } = await import("~/lib/state")
+const { responsesUtilsDependencies } = await import("~/routes/responses/utils")
 
 const originalCodexAccessToken = state.codexAccessToken
 const originalCodexAccountId = state.codexAccountId

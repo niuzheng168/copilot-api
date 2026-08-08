@@ -19,9 +19,9 @@ import {
   type ResponseStreamEvent,
   type ResponseTextDeltaEvent,
   type ResponseTextDoneEvent,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/responses"
 
-import { type AnthropicStreamEventData } from "./anthropic-types"
+import { type AnthropicStreamEventData } from "~/lib/types/anthropic"
 import {
   REASONING_SUMMARY_SEPARATOR,
   encodeCompactionCarrierSignature,

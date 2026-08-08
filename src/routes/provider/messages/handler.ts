@@ -8,17 +8,17 @@ import type {
   AnthropicResponse,
   AnthropicStreamEventData,
   AnthropicStreamState,
-} from "~/routes/messages/anthropic-types"
+} from "~/lib/types/anthropic"
 import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
   ChatCompletionsPayload,
-} from "~/services/copilot/create-chat-completions"
+} from "~/lib/types/chat-completions"
 import type {
   ResponsesResult,
   ResponseStreamEvent,
   ResponsesStream,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/responses"
 
 import {
   type ModelConfig,

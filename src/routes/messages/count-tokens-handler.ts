@@ -16,7 +16,7 @@ import { handleProviderCountTokensForProvider } from "~/routes/provider/messages
 import { type Model } from "~/services/copilot/get-models"
 
 import { findEndpointModel } from "../../lib/models"
-import { type AnthropicMessagesPayload } from "./anthropic-types"
+import { type AnthropicMessagesPayload } from "~/lib/types/anthropic"
 import { translateToOpenAI } from "./non-stream-translation"
 import { normalizeSystemMessages } from "./preprocess"
 

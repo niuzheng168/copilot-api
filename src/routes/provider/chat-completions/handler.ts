@@ -25,7 +25,7 @@ import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
   ChatCompletionsPayload,
-} from "~/services/copilot/create-chat-completions"
+} from "~/lib/types/chat-completions"
 import {
   createProviderProxyResponse,
   forwardProviderChatCompletions,

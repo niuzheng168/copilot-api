@@ -28,12 +28,12 @@ import {
   getUUID,
   parseUserIdMetadata,
 } from "~/lib/utils"
-import {
-  createResponses as createCopilotResponses,
-  type ResponsesPayload,
-  type ResponsesResult,
-  type ResponsesStream,
-} from "~/services/copilot/create-responses"
+import type {
+  ResponsesPayload,
+  ResponsesResult,
+  ResponsesStream,
+} from "~/lib/types/responses"
+import { createResponses as createCopilotResponses } from "~/services/copilot/create-responses"
 
 import type {
   AnthropicContentBlockStartEvent,
@@ -44,7 +44,7 @@ import type {
   AnthropicTool,
   AnthropicWebSearchContentBlock,
   AnthropicWebSearchResultItem,
-} from "../anthropic-types"
+} from "~/lib/types/anthropic"
 import { normalizeSystemMessages } from "../preprocess"
 import { collectResponsesStreamResult } from "../responses-stream-collection"
 import { translateAnthropicMessagesToResponsesPayload } from "../responses-translation"

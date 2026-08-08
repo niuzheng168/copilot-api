@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
-import type { ResolvedProviderConfig } from "../src/lib/config"
-import type { ModelsResponse } from "../src/services/copilot/get-models"
+import type { ResolvedProviderConfig } from "~/lib/config"
+import type { ModelsResponse } from "~/services/copilot/get-models"
 
-const actualConfigModule = await import("../src/lib/config")
-const actualTokenModule = await import("../src/lib/token")
+const actualConfigModule = await import("~/lib/config")
+const actualTokenModule = await import("~/lib/token")
 
 let enabledProviders: Array<string> = []
 let providerConfigs: Record<string, ResolvedProviderConfig | null> = {}
@@ -22,11 +22,9 @@ await mock.module("~/lib/token", () => ({
   setupCodexToken: async () => {},
 }))
 
-const { state } = await import("../src/lib/state")
-const { modelRoutes } = await import("../src/routes/models/route")
-const { providerModelRoutes } = await import(
-  "../src/routes/provider/models/route"
-)
+const { state } = await import("~/lib/state")
+const { modelRoutes } = await import("~/routes/models/route")
+const { providerModelRoutes } = await import("~/routes/provider/models/route")
 
 const originalFetch = globalThis.fetch
 

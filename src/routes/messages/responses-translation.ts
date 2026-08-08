@@ -46,7 +46,7 @@ import {
   type Tool,
   type ToolChoiceFunction,
   type ToolChoiceOptions,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/responses"
 
 import {
   type AnthropicAssistantContentBlock,
@@ -64,7 +64,7 @@ import {
   type AnthropicToolUseBlock,
   type AnthropicUserContentBlock,
   type AnthropicUserMessage,
-} from "./anthropic-types"
+} from "~/lib/types/anthropic"
 import { normalizeToolSchema } from "./non-stream-translation"
 
 const MESSAGE_TYPE = "message"

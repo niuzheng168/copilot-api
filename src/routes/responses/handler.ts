@@ -18,12 +18,12 @@ import {
 } from "~/lib/token-usage"
 import { generateRequestIdFromPayload, getUUID } from "~/lib/utils"
 import type { SubagentMarker } from "~/lib/subagent"
-import {
-  createResponses as createCopilotResponses,
-  type ResponsesPayload,
-  type ResponsesResult,
-  type ResponseStreamEvent,
-} from "~/services/copilot/create-responses"
+import type {
+  ResponsesPayload,
+  ResponsesResult,
+  ResponseStreamEvent,
+} from "~/lib/types/responses"
+import { createResponses as createCopilotResponses } from "~/services/copilot/create-responses"
 
 import { createStreamIdTracker, fixStreamIds } from "./stream-id-sync"
 import {

@@ -1,20 +1,15 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
-import type { AnthropicMessagesPayload } from "../src/routes/messages/anthropic-types"
+import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
 
-import {
-  compactSummaryPromptStart,
-  compactTextOnlyGuard,
-} from "../src/lib/compact"
+import { compactSummaryPromptStart, compactTextOnlyGuard } from "~/lib/compact"
 
-const actualStateModule = await import("../src/lib/state")
-const actualConfigModule = await import("../src/lib/config")
-const actualModelsModule = await import("../src/lib/models")
-const actualUtilsModule = await import("../src/lib/utils")
-const { responsesUtilsDependencies } = await import(
-  "../src/routes/responses/utils"
-)
+const actualStateModule = await import("~/lib/state")
+const actualConfigModule = await import("~/lib/config")
+const actualModelsModule = await import("~/lib/models")
+const actualUtilsModule = await import("~/lib/utils")
+const { responsesUtilsDependencies } = await import("~/routes/responses/utils")
 
 const state = {
   ...actualStateModule.state,
@@ -84,7 +79,7 @@ await mock.module("~/lib/utils", () => ({
   ...actualUtilsModule,
 }))
 const { handleCompletion, messagesFlowHandlers } = await import(
-  "../src/routes/messages/handler"
+  "~/routes/messages/handler"
 )
 
 const defaultMessagesFlowHandlers = { ...messagesFlowHandlers }

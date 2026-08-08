@@ -12,7 +12,7 @@ import type {
   ResponsesResult,
   ResponsesStream,
   ResponsesTransport,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/responses"
 
 import { isResponsesApiWebSocketEnabled as isConfiguredResponsesApiWebSocketEnabled } from "~/lib/config"
 import { HTTPError } from "~/lib/error"

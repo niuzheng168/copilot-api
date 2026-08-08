@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 
-import type { AnthropicMessagesPayload } from "../src/routes/messages/anthropic-types"
+import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
 
-const actualConfigModule = await import("../src/lib/config")
+const actualConfigModule = await import("~/lib/config")
 
 let mockedReasoningEffort:
   | "none"
@@ -25,7 +25,7 @@ import {
   prepareMessagesApiPayload,
   sanitizeIdeTools,
   stripToolReferenceTurnBoundary,
-} from "../src/routes/messages/preprocess"
+} from "~/routes/messages/preprocess"
 
 beforeEach(() => {
   mockedReasoningEffort = "xhigh"

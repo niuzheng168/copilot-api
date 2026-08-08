@@ -30,11 +30,8 @@ import {
   extractWebSearchResult,
   type WebSearchSource,
 } from "~/routes/messages/web-search/backend"
-import {
-  createResponses as createCopilotResponses,
-  type ResponsesPayload,
-  type ResponsesResult,
-} from "~/services/copilot/create-responses"
+import type { ResponsesPayload, ResponsesResult } from "~/lib/types/responses"
+import { createResponses as createCopilotResponses } from "~/services/copilot/create-responses"
 import { forwardProviderResponses } from "~/services/providers/provider-proxy"
 
 const logger = createHandlerLogger("alpha-search-responses-handler")

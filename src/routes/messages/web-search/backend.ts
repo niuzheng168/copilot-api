@@ -1,7 +1,7 @@
 import type {
   ResponseOutputMessage,
   ResponsesResult,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/responses"
 
 export interface WebSearchSource {
   url: string

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import type { AnthropicStreamEventData } from "~/routes/messages/anthropic-types"
+import type { AnthropicStreamEventData } from "~/lib/types/anthropic"
 import type {
   ResponseCompletedEvent,
   ResponseOutputItemAddedEvent,
@@ -10,7 +10,7 @@ import type {
   ResponseReasoningSummaryPartAddedEvent,
   ResponseReasoningSummaryTextDeltaEvent,
   ResponseReasoningSummaryTextDoneEvent,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/responses"
 
 import {
   createResponsesStreamState,

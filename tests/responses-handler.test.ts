@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
-import type { createResponses as createCopilotResponses } from "../src/services/copilot/create-responses"
+import type { createResponses as createCopilotResponses } from "~/services/copilot/create-responses"
 
 let responsesApiWebSocketEnabled = true
 
@@ -28,19 +28,15 @@ const createResponsesResult = (model: string) => ({
   usage: null,
 })
 
-const { state } = await import("../src/lib/state")
-const { closeUsageStore } = await import("../src/lib/token-usage")
-const { tokenUsageRoute } = await import("../src/routes/token-usage/route")
+const { state } = await import("~/lib/state")
+const { closeUsageStore } = await import("~/lib/token-usage")
+const { tokenUsageRoute } = await import("~/routes/token-usage/route")
 const { responsesHandlerDependencies } = await import(
-  "../src/routes/responses/handler"
+  "~/routes/responses/handler"
 )
-const { responsesRoutes } = await import("../src/routes/responses/route")
-const { responsesUtilsDependencies } = await import(
-  "../src/routes/responses/utils"
-)
-const { generateRequestIdFromPayload, getUUID } = await import(
-  "../src/lib/utils"
-)
+const { responsesRoutes } = await import("~/routes/responses/route")
+const { responsesUtilsDependencies } = await import("~/routes/responses/utils")
+const { generateRequestIdFromPayload, getUUID } = await import("~/lib/utils")
 
 const defaultResponsesHandlerDependencies = {
   ...responsesHandlerDependencies,

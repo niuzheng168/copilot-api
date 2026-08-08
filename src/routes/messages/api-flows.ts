@@ -35,26 +35,26 @@ import {
   getResponsesTransportForModel,
   getResponsesRequestOptions,
 } from "~/routes/responses/utils"
-import {
-  createChatCompletions as createCopilotChatCompletions,
-  type ChatCompletionChunk,
-  type ChatCompletionResponse,
-  type ChatCompletionsPayload,
-  type Message,
-} from "~/services/copilot/create-chat-completions"
+import type {
+  ChatCompletionChunk,
+  ChatCompletionResponse,
+  ChatCompletionsPayload,
+  Message,
+} from "~/lib/types/chat-completions"
+import type {
+  ResponsesResult,
+  ResponseStreamEvent,
+} from "~/lib/types/responses"
+import { createChatCompletions as createCopilotChatCompletions } from "~/services/copilot/create-chat-completions"
 import { createMessages as createCopilotMessages } from "~/services/copilot/create-messages"
-import {
-  createResponses as createCopilotResponses,
-  type ResponsesResult,
-  type ResponseStreamEvent,
-} from "~/services/copilot/create-responses"
+import { createResponses as createCopilotResponses } from "~/services/copilot/create-responses"
 
 import {
   type AnthropicMessagesPayload,
   type AnthropicStreamEventData,
   type AnthropicStreamState,
   type CopilotUsage,
-} from "./anthropic-types"
+} from "~/lib/types/anthropic"
 import {
   translateToAnthropic,
   translateToOpenAI,

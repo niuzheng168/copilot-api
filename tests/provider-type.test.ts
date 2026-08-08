@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test"
 import {
   resolveEffectiveProviderType,
   type ResolvedProviderConfig,
-} from "../src/lib/config"
+} from "~/lib/config"
 
 const createProviderConfig = (
   overrides: Partial<ResolvedProviderConfig> = {},

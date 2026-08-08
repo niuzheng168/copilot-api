@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, mock, test } from "bun:test"
 
-import { state } from "../src/lib/state"
-import { cacheModels, sleep, stopModelsRefreshLoop } from "../src/lib/utils"
+import { state } from "~/lib/state"
+import { cacheModels, sleep, stopModelsRefreshLoop } from "~/lib/utils"
 
 const makeModels = (ids: Array<string>) => ({
   data: ids.map((id) => ({

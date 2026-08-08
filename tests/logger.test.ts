@@ -9,8 +9,8 @@ import {
   debugJsonAsync,
   debugJsonTail,
   shutdownLoggerRuntime,
-} from "../src/lib/logger"
-import { state } from "../src/lib/state"
+} from "~/lib/logger"
+import { state } from "~/lib/state"
 
 const LOG_DIR_ENV = "COPILOT_API_LOG_DIR"
 const originalLogDir = process.env[LOG_DIR_ENV]

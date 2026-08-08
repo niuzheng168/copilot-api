@@ -1,16 +1,16 @@
 import { describe, test, expect } from "bun:test"
 import { z } from "zod"
 
-import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
+import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
 import type { Model } from "~/services/copilot/get-models"
 
-import { COMPACT_REQUEST } from "../src/lib/compact"
-import { state } from "../src/lib/state"
+import { COMPACT_REQUEST } from "~/lib/compact"
+import { state } from "~/lib/state"
 import {
   RICH_TOOL_RESULT_MOVED_TEXT,
   translateToOpenAI,
-} from "../src/routes/messages/non-stream-translation"
-import { getCompactType } from "../src/routes/messages/preprocess"
+} from "~/routes/messages/non-stream-translation"
+import { getCompactType } from "~/routes/messages/preprocess"
 
 // Zod schema for a single message in the chat completion request.
 const messageSchema = z.object({

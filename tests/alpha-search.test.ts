@@ -1,14 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
-import type { ResolvedProviderConfig } from "../src/lib/config"
-import type {
-  ResponsesPayload,
-  ResponsesResult,
-} from "../src/services/copilot/create-responses"
+import type { ResolvedProviderConfig } from "~/lib/config"
+import type { ResponsesPayload, ResponsesResult } from "~/lib/types/responses"
 
-const actualConfigModule = await import("../src/lib/config")
-const actualTokenModule = await import("../src/lib/token")
+const actualConfigModule = await import("~/lib/config")
+const actualTokenModule = await import("~/lib/token")
 
 let codexProviderConfig: ResolvedProviderConfig | null = null
 let openrouterProviderConfig: ResolvedProviderConfig | null = null
@@ -36,20 +33,20 @@ await mock.module("~/lib/token", () => ({
   setupCodexToken: async () => {},
 }))
 
-const { state } = await import("../src/lib/state")
-const { HTTPError } = await import("../src/lib/error")
-const { closeUsageStore } = await import("../src/lib/token-usage")
+const { state } = await import("~/lib/state")
+const { HTTPError } = await import("~/lib/error")
+const { closeUsageStore } = await import("~/lib/token-usage")
 const { forwardCodexAlphaSearch, resolveCodexAlphaSearchUrl } = await import(
-  "../src/services/codex/alpha-search"
+  "~/services/codex/alpha-search"
 )
 const { forwardCodexModels, getModels, resolveCodexModelsUrl } = await import(
-  "../src/services/codex/get-models"
+  "~/services/codex/get-models"
 )
-const { alphaSearchRoutes } = await import("../src/routes/alpha-search/route")
+const { alphaSearchRoutes } = await import("~/routes/alpha-search/route")
 const { alphaSearchResponsesDependencies, resetAlphaSearchState } =
-  await import("../src/routes/alpha-search/alpha-search-responses")
+  await import("~/routes/alpha-search/alpha-search-responses")
 const { providerAlphaSearchRoutes } = await import(
-  "../src/routes/provider/alpha-search/route"
+  "~/routes/provider/alpha-search/route"
 )
 
 const DB_PATH_ENV = "COPILOT_API_SQLITE_DB_PATH"

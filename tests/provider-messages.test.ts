@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
-import type { ResolvedProviderConfig } from "../src/lib/config"
-import type { UsageTokens } from "../src/lib/token-usage"
+import type { ResolvedProviderConfig } from "~/lib/config"
+import type { UsageTokens } from "~/lib/token-usage"
 
-const actualConfigModule = await import("../src/lib/config")
-const actualTokenUsageModule = await import("../src/lib/token-usage")
+const actualConfigModule = await import("~/lib/config")
+const actualTokenUsageModule = await import("~/lib/token-usage")
 
 let providerConfig: ResolvedProviderConfig | null = null
 let upstreamResponseFactory: () => Response
@@ -26,7 +26,7 @@ await mock.module("~/lib/token-usage", () => ({
 }))
 
 const { providerMessageRoutes } = await import(
-  "../src/routes/provider/messages/route"
+  "~/routes/provider/messages/route"
 )
 
 const originalFetch = globalThis.fetch

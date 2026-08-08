@@ -21,7 +21,7 @@ import {
 import { handleProviderMessagesForProvider } from "~/routes/provider/messages/handler"
 import { getResponsesTransportForModel } from "~/routes/responses/utils"
 
-import type { AnthropicMessagesPayload } from "./anthropic-types"
+import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
 import {
   handleWithChatCompletions,
   handleWithMessagesApi,

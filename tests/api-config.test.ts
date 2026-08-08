@@ -1,11 +1,8 @@
 import { afterEach, expect, test } from "bun:test"
 
-import {
-  prepareForCompact,
-  prepareMessageProxyHeaders,
-} from "../src/lib/api-config"
-import { COMPACT_AUTO_CONTINUE, COMPACT_REQUEST } from "../src/lib/compact"
-import { isAlphaSearchCodexPriorityEnabled } from "../src/lib/config"
+import { prepareForCompact, prepareMessageProxyHeaders } from "~/lib/api-config"
+import { COMPACT_AUTO_CONTINUE, COMPACT_REQUEST } from "~/lib/compact"
+import { isAlphaSearchCodexPriorityEnabled } from "~/lib/config"
 
 const originalOauthApp = process.env.COPILOT_API_OAUTH_APP
 

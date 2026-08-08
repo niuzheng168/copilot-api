@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
-import type { ResolvedProviderConfig } from "../src/lib/config"
-import type { ResponsesResult } from "../src/services/copilot/create-responses"
+import type { ResolvedProviderConfig } from "~/lib/config"
+import type { ResponsesResult } from "~/lib/types/responses"
 
-const actualConfigModule = await import("../src/lib/config")
-const actualTokenUsageModule = await import("../src/lib/token-usage")
+const actualConfigModule = await import("~/lib/config")
+const actualTokenUsageModule = await import("~/lib/token-usage")
 
 let providerConfig: ResolvedProviderConfig | null = null
 
@@ -22,13 +22,11 @@ await mock.module("~/lib/token-usage", () => ({
   createProviderTokenUsageRecorder: () => noopTokenUsageRecorder,
 }))
 
-const { responsesRoutes } = await import("../src/routes/responses/route")
+const { responsesRoutes } = await import("~/routes/responses/route")
 const { providerResponsesRoutes } = await import(
-  "../src/routes/provider/responses/route"
+  "~/routes/provider/responses/route"
 )
-const { responsesUtilsDependencies } = await import(
-  "../src/routes/responses/utils"
-)
+const { responsesUtilsDependencies } = await import("~/routes/responses/utils")
 
 const defaultResponsesUtilsDependencies = { ...responsesUtilsDependencies }
 const originalFetch = globalThis.fetch

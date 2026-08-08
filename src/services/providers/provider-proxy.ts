@@ -7,9 +7,9 @@ import {
 } from "undici"
 
 import type { ResolvedProviderConfig } from "~/lib/config"
-import type { AnthropicMessagesPayload } from "~/routes/messages/anthropic-types"
-import type { ChatCompletionsPayload } from "~/services/copilot/create-chat-completions"
-import type { ResponsesPayload } from "~/services/copilot/create-responses"
+import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
+import type { ChatCompletionsPayload } from "~/lib/types/chat-completions"
+import type { ResponsesPayload } from "~/lib/types/responses"
 
 const SHARED_FORWARDABLE_HEADERS = ["accept", "user-agent"] as const
 

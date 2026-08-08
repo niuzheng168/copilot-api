@@ -4,11 +4,8 @@ import consola from "consola"
 import type {
   AnthropicMessagesPayload,
   AnthropicResponse,
-} from "~/routes/messages/anthropic-types"
-import type {
-  ResponsesPayload,
-  ResponsesResult,
-} from "~/services/copilot/create-responses"
+} from "~/lib/types/anthropic"
+import type { ResponsesPayload, ResponsesResult } from "~/lib/types/responses"
 
 import {
   buildSyntheticStreamEvents,
