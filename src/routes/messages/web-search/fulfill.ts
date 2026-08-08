@@ -5,7 +5,7 @@ import { streamSSE } from "hono/streaming"
 
 import type { CompactType } from "~/lib/compact"
 import type { SubagentMarker } from "~/lib/subagent"
-import type { Model } from "~/services/copilot/get-models"
+import type { Model } from "~/lib/types/models"
 
 import {
   getMessageApiWebSearchModel,

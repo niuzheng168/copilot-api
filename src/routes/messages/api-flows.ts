@@ -5,7 +5,7 @@ import { streamSSE } from "hono/streaming"
 
 import type { CompactType } from "~/lib/compact"
 import type { SubagentMarker } from "~/lib/subagent"
-import type { Model } from "~/services/copilot/get-models"
+import type { Model } from "~/lib/types/models"
 
 import { debugJson, debugJsonTail, debugLazy } from "~/lib/logger"
 import { resolveBridgeToolSearchName } from "~/lib/tool-search"
@@ -19,7 +19,7 @@ import {
   type TokenUsageEndpoint,
   type UsageTokens,
 } from "~/lib/token-usage"
-import { parseUserIdMetadata } from "~/lib/utils"
+import { isAsyncIterable, parseUserIdMetadata } from "~/lib/utils"
 import {
   buildErrorEvent,
   createResponsesStreamState,
@@ -476,10 +476,6 @@ const uniqueIndexes = (indexes: Array<number>): Array<number> => [
 const isNonStreaming = (
   response: Awaited<ReturnType<typeof createCopilotChatCompletions>>,
 ): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
-
-const isAsyncIterable = <T>(value: unknown): value is AsyncIterable<T> =>
-  Boolean(value)
-  && typeof (value as AsyncIterable<T>)[Symbol.asyncIterator] === "function"
 
 const createCopilotUsageRecorder = (options: {
   endpoint: TokenUsageEndpoint

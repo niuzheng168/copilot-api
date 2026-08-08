@@ -5,7 +5,7 @@ import type {
   AnthropicMessagesPayload,
   AnthropicResponse,
 } from "~/lib/types/anthropic"
-import type { Model } from "~/services/copilot/get-models"
+import type { Model } from "~/lib/types/models"
 import type {
   ChatCompletionResponse,
   ChatCompletionsPayload,

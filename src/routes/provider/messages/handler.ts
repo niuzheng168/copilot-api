@@ -45,7 +45,7 @@ import {
   normalizeResponsesUsage,
   type UsageTokens,
 } from "~/lib/token-usage"
-import { parseUserIdMetadata } from "~/lib/utils"
+import { isResponsesStream, parseUserIdMetadata } from "~/lib/utils"
 import {
   translateToAnthropic,
   translateToOpenAI,
@@ -87,6 +87,10 @@ import {
   forwardProviderMessages,
   forwardProviderResponses,
 } from "~/services/providers/provider-proxy"
+import {
+  applyMissingExtraBody,
+  applyModelDefaults,
+} from "~/routes/provider/utils"
 import consola from "consola"
 
 const logger = createHandlerLogger("provider-messages-handler")
@@ -449,26 +453,6 @@ const handleOpenAIResponsesProviderMessages = async (
     provider,
     providerConfig,
   })
-}
-
-const applyModelDefaults = (
-  payload: AnthropicMessagesPayload,
-  modelConfig: ModelConfig | undefined,
-): void => {
-  payload.temperature ??= modelConfig?.temperature
-  payload.top_p ??= modelConfig?.topP
-  payload.top_k ??= modelConfig?.topK
-}
-
-const applyMissingExtraBody = (
-  payload: Record<string, unknown>,
-  options: { extraBody: Record<string, unknown> | undefined },
-): void => {
-  for (const [key, value] of Object.entries(options.extraBody ?? {})) {
-    if (!Object.hasOwn(payload, key)) {
-      payload[key] = value
-    }
-  }
 }
 
 const getRequestThinkingBudget = (
@@ -916,13 +900,6 @@ const streamResponsesProviderMessages = ({
 
     recordUsage(usage)
   })
-}
-
-const isResponsesStream = (value: unknown): value is ResponsesStream => {
-  return (
-    Boolean(value)
-    && typeof (value as ResponsesStream)[Symbol.asyncIterator] === "function"
-  )
 }
 
 const parseOpenAICompatibleStreamChunk = (

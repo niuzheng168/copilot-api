@@ -1,12 +1,11 @@
 import consola from "consola"
 import {
   fetch as undiciFetch,
-  getGlobalDispatcher,
-  type Dispatcher,
   type RequestInit as UndiciRequestInit,
 } from "undici"
 
 import type { ResolvedProviderConfig } from "~/lib/config"
+import { createTimeoutDispatcher } from "~/lib/timeout-dispatcher"
 import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
 import type { ChatCompletionsPayload } from "~/lib/types/chat-completions"
 import type { ResponsesPayload } from "~/lib/types/responses"
@@ -138,21 +137,9 @@ export async function forwardProviderModels(
 /** Align with Codex images: long-running generation/edits need a generous cap. */
 const PROVIDER_IMAGES_TIMEOUT_MS = 15 * 60 * 1000
 
-const providerImagesDispatcher = {
-  dispatch(
-    options: Dispatcher.DispatchOptions,
-    handler: Dispatcher.DispatchHandler,
-  ) {
-    return getGlobalDispatcher().dispatch(
-      {
-        ...options,
-        bodyTimeout: PROVIDER_IMAGES_TIMEOUT_MS,
-        headersTimeout: PROVIDER_IMAGES_TIMEOUT_MS,
-      },
-      handler,
-    )
-  },
-} as Dispatcher
+const providerImagesDispatcher = createTimeoutDispatcher(
+  PROVIDER_IMAGES_TIMEOUT_MS,
+)
 
 function resolveProviderRequestUrl(
   providerConfig: ResolvedProviderConfig,

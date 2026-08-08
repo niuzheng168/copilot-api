@@ -14,6 +14,7 @@ import {
   normalizeResponsesUsage,
   type UsageTokens,
 } from "~/lib/token-usage"
+import { isResponsesStream } from "~/lib/utils"
 import {
   applyResponsesApiContextManagement,
   compactInputByLatestCompaction,
@@ -298,10 +299,3 @@ const getResponsesStreamEventUsage = (
 
 const getResponsesEvents = (response: Response): ResponsesStream =>
   events(response)
-
-const isResponsesStream = (value: unknown): value is ResponsesStream => {
-  return (
-    Boolean(value)
-    && typeof (value as ResponsesStream)[Symbol.asyncIterator] === "function"
-  )
-}

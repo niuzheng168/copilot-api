@@ -6,7 +6,7 @@ import { createHandlerLogger } from "~/lib/logger"
 import { toClientModelId } from "~/lib/models"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import { state } from "~/lib/state"
-import type { Model } from "~/services/copilot/get-models"
+import type { Model } from "~/lib/types/models"
 import { getModels as getCodexModels } from "~/services/codex/get-models"
 import { forwardProviderModels } from "~/services/providers/provider-proxy"
 

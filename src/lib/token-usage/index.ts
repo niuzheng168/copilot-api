@@ -1,9 +1,8 @@
 import { requestContext, generateTraceId } from "~/lib/request-context"
 import { state } from "~/lib/state"
-import type { TokenUsagePricingConfig } from "~/lib/config"
 
 import { EventBus } from "../event-bus"
-import { resolveTokenUsageCost } from "./pricing"
+import { resolveTokenUsageCost, type TokenUsagePricingConfig } from "./pricing"
 import {
   enqueueTokenUsageWrite,
   hasAnyToken,

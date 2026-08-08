@@ -1,13 +1,21 @@
-import type {
-  TokenUsagePricingConfig,
-  TokenUsagePricingTier,
-} from "~/lib/config"
-
 import {
   normalizeToken,
   type TokenUsageSource,
   type UsageTokens,
 } from "./store"
+
+export interface TokenUsagePricingTier {
+  cachedInput?: number
+  cacheCreationInput?: number
+  explicitCachedInput?: number
+  input?: number
+  maxInputTokens?: number
+  output?: number
+}
+
+export interface TokenUsagePricingConfig extends TokenUsagePricingTier {
+  tiers?: Array<TokenUsagePricingTier>
+}
 
 export interface CalculatedTokenUsageCost {
   currency: string

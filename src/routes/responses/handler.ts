@@ -16,7 +16,11 @@ import {
   normalizeResponsesUsage,
   type UsageTokens,
 } from "~/lib/token-usage"
-import { generateRequestIdFromPayload, getUUID } from "~/lib/utils"
+import {
+  generateRequestIdFromPayload,
+  getUUID,
+  isAsyncIterable,
+} from "~/lib/utils"
 import type { SubagentMarker } from "~/lib/subagent"
 import type {
   ResponsesPayload,
@@ -199,10 +203,6 @@ export const handleResponses = async (c: Context) => {
   })
   return c.json(result)
 }
-
-const isAsyncIterable = <T>(value: unknown): value is AsyncIterable<T> =>
-  Boolean(value)
-  && typeof (value as AsyncIterable<T>)[Symbol.asyncIterator] === "function"
 
 const isStreamingRequested = (payload: ResponsesPayload): boolean =>
   Boolean(payload.stream)

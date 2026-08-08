@@ -1,6 +1,6 @@
 import type { Context } from "hono"
 
-import type { Model } from "~/services/copilot/get-models"
+import type { Model } from "~/lib/types/models"
 
 import { COMPACT_REQUEST } from "~/lib/compact"
 import {

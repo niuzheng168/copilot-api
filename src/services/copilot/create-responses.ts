@@ -5,7 +5,6 @@ import { createHash } from "node:crypto"
 import type { SubagentMarker } from "~/lib/subagent"
 import type {
   CreateResponsesReturn,
-  ResponseErrorEvent,
   ResponsesPayload,
   ResponsesResult,
   ResponsesStream,
@@ -32,12 +31,11 @@ import {
   createPooledWebSocketStream,
   createWebSocketUrl,
 } from "~/services/responses-websocket"
-
-type ResponsesStreamChunk = {
-  data?: string
-  event?: string
-  id?: string | number
-}
+import {
+  createResponsesSafeStream,
+  encodePoolKeyPart,
+  isTerminalResponsesStreamChunk,
+} from "~/services/responses-websocket-helpers"
 
 interface ResponsesRequestOptions {
   vision: boolean
@@ -195,16 +193,6 @@ const createPooledResponsesWebSocketStream = (
     }),
   )
 
-const createResponsesSafeStream = async function* (
-  source: AsyncIterable<ResponsesStreamChunk>,
-): AsyncGenerator<ResponsesStreamChunk, void, unknown> {
-  try {
-    yield* source
-  } catch (error) {
-    yield createResponsesErrorServerSentEventChunk(getErrorMessage(error))
-  }
-}
-
 export const buildResponsesWebSocketPayload = (
   payload: ResponsesPayload,
   initiator: "agent" | "user",
@@ -237,8 +225,6 @@ const getHeaderValue = (
 
   return match?.[1]
 }
-
-const encodePoolKeyPart = (value: string): string => encodeURIComponent(value)
 
 const createResponsesWebSocketStreamChunk = (
   data: string,
@@ -275,47 +261,4 @@ const createResponsesWebSocketStreamChunk = (
   } catch {
     return { data }
   }
-}
-
-const isTerminalResponsesStreamChunk = (chunk: { data?: string }): boolean => {
-  if (!chunk.data || chunk.data === "[DONE]") {
-    return false
-  }
-
-  try {
-    const parsed = JSON.parse(chunk.data) as { type?: unknown }
-    return (
-      parsed.type === "response.completed"
-      || parsed.type === "response.failed"
-      || parsed.type === "response.incomplete"
-      || parsed.type === "error"
-    )
-  } catch {
-    return false
-  }
-}
-
-const createResponsesErrorServerSentEventChunk = (
-  message: string,
-): ResponsesStreamChunk => {
-  const errorEvent: ResponseErrorEvent = {
-    code: null,
-    message,
-    param: null,
-    sequence_number: 0,
-    type: "error",
-  }
-
-  return {
-    event: errorEvent.type,
-    data: JSON.stringify(errorEvent),
-  }
-}
-
-const getErrorMessage = (error: unknown): string => {
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-
-  return String(error)
 }

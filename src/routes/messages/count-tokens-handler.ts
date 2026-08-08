@@ -13,7 +13,7 @@ import {
 } from "~/lib/provider-model"
 import { getTokenCount } from "~/lib/tokenizer"
 import { handleProviderCountTokensForProvider } from "~/routes/provider/messages/count-tokens-handler"
-import { type Model } from "~/services/copilot/get-models"
+import { type Model } from "~/lib/types/models"
 
 import { findEndpointModel } from "../../lib/models"
 import { type AnthropicMessagesPayload } from "~/lib/types/anthropic"

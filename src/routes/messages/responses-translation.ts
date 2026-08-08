@@ -65,13 +65,13 @@ import {
   type AnthropicUserContentBlock,
   type AnthropicUserMessage,
 } from "~/lib/types/anthropic"
-import { normalizeToolSchema } from "./non-stream-translation"
+import { normalizeToolSchema, THINKING_TEXT } from "./non-stream-translation"
 
 const MESSAGE_TYPE = "message"
 const COMPACTION_SIGNATURE_PREFIX = "cm1#"
 const COMPACTION_SIGNATURE_SEPARATOR = "@"
 
-export const THINKING_TEXT = "Thinking..."
+export { THINKING_TEXT }
 export const REASONING_SUMMARY_SEPARATOR = "\u00A0\n\n"
 const REASONING_SUMMARY_SEPARATOR_PATTERN = /\u00a0\n\n|\u2063\n\n/
 

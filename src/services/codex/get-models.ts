@@ -1,4 +1,4 @@
-import type { Model, ModelsResponse } from "~/services/copilot/get-models"
+import type { Model, ModelsResponse } from "~/lib/types/models"
 import {
   buildCodexRequestHeaders,
   CODEX_API_BASE_URL,

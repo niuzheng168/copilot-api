@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test"
 import { z } from "zod"
 
 import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
-import type { Model } from "~/services/copilot/get-models"
+import type { Model } from "~/lib/types/models"
 
 import { COMPACT_REQUEST } from "~/lib/compact"
 import { state } from "~/lib/state"

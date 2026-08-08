@@ -5,7 +5,7 @@ import type {
   Tool,
   ToolCall,
 } from "~/lib/types/chat-completions"
-import type { Model } from "~/services/copilot/get-models"
+import type { Model } from "~/lib/types/models"
 
 // Encoder type mapping
 const ENCODING_MAP = {
