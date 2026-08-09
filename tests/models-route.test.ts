@@ -62,6 +62,18 @@ const createCopilotModels = (ids: Array<string>): ModelsResponse => ({
   })),
 })
 
+const createDefaultCodexCatalogModels = () => [
+  {
+    slug: "gpt-native",
+    display_name: "GPT Native",
+    base_instructions: "Native instructions",
+    available_in_plans: ["pro"],
+  },
+]
+
+let codexCatalogModels: Array<Record<string, unknown>> =
+  createDefaultCodexCatalogModels()
+
 const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
   const requestUrl =
     typeof url === "string" ? url
@@ -71,14 +83,7 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
   if (requestUrl.startsWith("https://chatgpt.com/backend-api/codex/models")) {
     return Promise.resolve(
       Response.json({
-        models: [
-          {
-            slug: "gpt-native",
-            display_name: "GPT Native",
-            base_instructions: "Native instructions",
-            available_in_plans: ["pro"],
-          },
-        ],
+        models: codexCatalogModels,
       }),
     )
   }
@@ -98,6 +103,18 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
             name: "Kimi K2.5",
             object: "model",
           },
+        ],
+      }),
+    )
+  }
+
+  if (requestUrl === "https://opencode.example/v1/models") {
+    return Promise.resolve(
+      Response.json({
+        object: "list",
+        data: [
+          { id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
+          { id: "gpt-provider-only", name: "GPT Provider Only" },
         ],
       }),
     )
@@ -142,6 +159,7 @@ function createApp() {
 beforeEach(() => {
   enabledProviders = []
   providerConfigs = {}
+  codexCatalogModels = createDefaultCodexCatalogModels()
   state.models = undefined
   fetchMock.mockClear()
   ;(globalThis as unknown as { fetch: typeof fetch }).fetch =
@@ -328,6 +346,97 @@ describe("model routes", () => {
       multi_agent_version: "v2",
       default_reasoning_level: "max",
     })
+  })
+
+  test("copies matching Codex catalog models for provider-prefixed aliases", async () => {
+    const solCatalogModel = {
+      slug: "gpt-5.6-sol",
+      display_name: "GPT-5.6 Sol",
+      description: "Sol catalog description",
+      base_instructions: "Sol catalog instructions",
+      context_window: 372_000,
+      priority: 11,
+      supported_reasoning_levels: [
+        { effort: "high", description: "High reasoning" },
+        { effort: "xhigh", description: "Extra high reasoning" },
+      ],
+      use_responses_lite: false,
+      custom_catalog_field: { source: "sol" },
+    }
+    const lunaCatalogModel = {
+      slug: "gpt-5.6-luna",
+      display_name: "GPT-5.6 Luna",
+      description: "Luna catalog description",
+      base_instructions: "Luna catalog instructions",
+      context_window: 372_000,
+      priority: 13,
+      supported_reasoning_levels: [
+        { effort: "max", description: "Maximum reasoning" },
+      ],
+      use_responses_lite: false,
+      custom_catalog_field: { source: "luna" },
+    }
+    const remoteOnlyCatalogModel = {
+      slug: "gpt-remote-only",
+      display_name: "GPT Remote Only",
+      description: "Only the remote catalog knows this model",
+      priority: 17,
+      use_responses_lite: false,
+    }
+    codexCatalogModels = [
+      solCatalogModel,
+      lunaCatalogModel,
+      remoteOnlyCatalogModel,
+    ]
+    enabledProviders = ["codex", "opencode-go"]
+    providerConfigs = {
+      codex: {
+        apiKey: "codex-token",
+        authType: "oauth2",
+        baseUrl: "https://chatgpt.com/backend-api",
+        name: "codex",
+        type: "openai-responses",
+      },
+      "opencode-go": {
+        apiKey: "opencode-token",
+        authType: "authorization",
+        baseUrl: "https://opencode.example",
+        name: "opencode-go",
+        type: "openai-compatible",
+      },
+    }
+    state.codexAccessToken = "codex-access-token"
+    state.codexAccountId = "account-123"
+
+    const response = await createApp().request("/v1/models", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    expect(
+      body.models.find((model) => model.slug === "codex/gpt-5.6-sol"),
+    ).toEqual({
+      ...solCatalogModel,
+      slug: "codex/gpt-5.6-sol",
+    })
+    expect(
+      body.models.find((model) => model.slug === "opencode-go/gpt-5.6-luna"),
+    ).toEqual({
+      ...lunaCatalogModel,
+      slug: "opencode-go/gpt-5.6-luna",
+    })
+    expect(
+      body.models.find((model) => model.slug === "codex/gpt-remote-only"),
+    ).toEqual({
+      ...remoteOnlyCatalogModel,
+      slug: "codex/gpt-remote-only",
+    })
+    expect(body.models.map((model) => model.slug)).not.toContain(
+      "opencode-go/gpt-provider-only",
+    )
   })
 
   test("skips malformed Copilot model records when merging the Codex catalog", async () => {

@@ -47,6 +47,10 @@ const DEFAULT_REASONING_EFFORTS: Array<CodexReasoningEffort> = [
   "ultra",
 ]
 
+interface MergedCodexModelsOptions {
+  includeCodexProviderAliases?: boolean
+}
+
 export function isCodexUserAgent(userAgent: string | undefined): boolean {
   return CODEX_USER_AGENT_PATTERN.test(userAgent?.trim() ?? "")
 }
@@ -100,6 +104,7 @@ export async function handleMergedCodexModels(
   candidatesRequest:
     | Array<SyntheticCodexModelCandidate>
     | Promise<Array<SyntheticCodexModelCandidate>>,
+  options: MergedCodexModelsOptions = {},
 ): Promise<Response> {
   const [upstreamCatalog, candidates] = await Promise.all([
     tryGetCodexCatalog(c),
@@ -110,23 +115,47 @@ export async function handleMergedCodexModels(
   ])
   const upstreamModels = upstreamCatalog?.models ?? []
   const template = selectTemplate(upstreamModels)
+  const catalogModelsBySlug = new Map(
+    upstreamModels.map((model) => [model.slug, model]),
+  )
   const seenSlugs = new Set(upstreamModels.map((model) => model.slug))
+  const codexProviderAliases =
+    options.includeCodexProviderAliases ?
+      upstreamModels.flatMap((model) => {
+        const slug = `codex/${model.slug}`
+        if (seenSlugs.has(slug)) return []
+        seenSlugs.add(slug)
+        return [{ ...model, slug }]
+      })
+    : []
   const syntheticModels = candidates
     .filter((candidate) => !seenSlugs.has(candidate.slug))
-    .map((candidate, index) =>
-      createSyntheticCodexModel(
-        candidate,
-        template,
-        upstreamModels.length + index,
-      ),
-    )
+    .flatMap((candidate, index) => {
+      const catalogModel =
+        candidate.catalogSlug ?
+          catalogModelsBySlug.get(candidate.catalogSlug)
+        : undefined
+      if (catalogModel) {
+        return [{ ...catalogModel, slug: candidate.slug }]
+      }
+      if (candidate.catalogMatchRequired) return []
+
+      return [
+        createSyntheticCodexModel(
+          candidate,
+          template,
+          upstreamModels.length + index,
+        ),
+      ]
+    })
 
   const response: CodexModelsResponse = {
     ...(upstreamCatalog ?? {}),
-    models: [...upstreamModels, ...syntheticModels],
+    models: [...upstreamModels, ...codexProviderAliases, ...syntheticModels],
   }
   debugJson(logger, "models.codex.merged_response", {
     upstreamCount: upstreamModels.length,
+    codexProviderAliasCount: codexProviderAliases.length,
     syntheticCount: syntheticModels.length,
     models: response,
   })

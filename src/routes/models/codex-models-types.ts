@@ -145,6 +145,8 @@ export interface CodexInstructionsVariables {
 
 export interface SyntheticCodexModelCandidate {
   slug: string
+  catalogSlug?: string
+  catalogMatchRequired?: boolean
   displayName: string
   description: string
   contextWindow: number

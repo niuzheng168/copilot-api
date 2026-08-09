@@ -179,10 +179,11 @@ const CODEX_REASONING_EFFORTS = new Set<CodexReasoningEffort>([
 
 async function getSyntheticCodexModels(
   requestHeaders: Headers,
+  providers: Array<string>,
 ): Promise<Array<SyntheticCodexModelCandidate>> {
   const copilotModels = getCopilotCodexCandidates()
   const providerResults = await Promise.allSettled(
-    listEnabledProviders().map((provider) =>
+    providers.map((provider) =>
       getProviderCodexCandidates(provider, requestHeaders),
     ),
   )
@@ -292,7 +293,8 @@ async function getProviderCodexCandidates(
         providerConfig,
         modelId,
       )
-      if (!isMessagesFallbackProviderType(effectiveType)) {
+      const usesMessagesFallback = isMessagesFallbackProviderType(effectiveType)
+      if (!usesMessagesFallback && effectiveType !== "openai-responses") {
         continue
       }
       const modelConfig = providerConfig.models?.[modelId]
@@ -373,6 +375,8 @@ function createProviderCodexCandidate(
 
   return {
     slug: `${providerConfig.name}/${modelId}`,
+    catalogSlug: modelId,
+    catalogMatchRequired: effectiveType === "openai-responses",
     displayName: `${displayName} (${providerConfig.name})`,
     description: `${displayName} through the ${providerConfig.name} ${adapterName} adapter.`,
     contextWindow: positiveNumber(
@@ -503,9 +507,13 @@ function getBooleanField(
 modelRoutes.get("/", async (c) => {
   try {
     if (isCodexUserAgent(c.req.header("user-agent"))) {
+      const enabledProviders = listEnabledProviders()
       return await handleMergedCodexModels(
         c,
-        getSyntheticCodexModels(c.req.raw.headers),
+        getSyntheticCodexModels(c.req.raw.headers, enabledProviders),
+        {
+          includeCodexProviderAliases: enabledProviders.includes("codex"),
+        },
       )
     }
 
