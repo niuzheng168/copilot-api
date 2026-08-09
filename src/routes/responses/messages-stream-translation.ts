@@ -24,6 +24,9 @@ import {
   type MessagesResponseTranslationContext,
 } from "./messages-translation"
 
+const EMPTY_SIGNATURE_ENCRYPTED_CONTENT =
+  "Y29waWxvdC1hcGk6bWVzc2FnZXMtZW1wdHktc2lnbmF0dXJlOnYx"
+
 interface MessagesStreamChunk {
   data?: string
   event?: string
@@ -433,6 +436,7 @@ function* startContentBlock(
       type: "reasoning",
       status: "in_progress",
       summary: [],
+      encrypted_content: EMPTY_SIGNATURE_ENCRYPTED_CONTENT,
     }
     const output = addOutput(state, item)
     const reasoning: StreamReasoningState = {
@@ -575,7 +579,8 @@ function* translateContentDelta(
 
   if (event.delta.type === "signature_delta" && block.type === "reasoning") {
     block.signature += event.delta.signature
-    block.item.encrypted_content = block.signature
+    block.item.encrypted_content =
+      block.signature || EMPTY_SIGNATURE_ENCRYPTED_CONTENT
     return
   }
 
@@ -676,7 +681,8 @@ function* closeContentBlock(
         part,
       })
     }
-    if (block.signature) block.item.encrypted_content = block.signature
+    block.item.encrypted_content =
+      block.signature || EMPTY_SIGNATURE_ENCRYPTED_CONTENT
   } else if (block.type === "custom_tool") {
     const input = block.decoder.finish()
     block.item.input = input

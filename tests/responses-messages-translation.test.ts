@@ -6,7 +6,9 @@ import type {
   ResponseStreamEvent,
 } from "~/lib/types/responses"
 import {
+  decodeMessagesCompaction,
   encodeMessagesCompaction,
+  MESSAGES_COMPACTION_PREFIX,
   ResponsesMessagesTranslationError,
   translateAnthropicToResponses,
   translateResponsesToMessages,
@@ -22,13 +24,18 @@ const translate = (payload: Omit<ResponsesPayload, "model">) =>
     { model: "claude-sonnet-4.6" },
   )
 
+const expectCanonicalBase64 = (value: string | undefined) => {
+  expect(value).toBeTruthy()
+  if (!value) return
+  expect(Buffer.from(value, "base64").toString("base64")).toBe(value)
+}
+
 describe("Responses Lite to Messages translation", () => {
   test("groups the first five developer prompts into two system blocks", () => {
     const result = translate({
       instructions: "Base instructions",
       input: [
         { role: "developer", content: "Developer one", type: "message" },
-        { role: "user", content: "First user message", type: "message" },
         {
           role: "developer",
           content: [
@@ -41,6 +48,7 @@ describe("Responses Lite to Messages translation", () => {
         { role: "developer", content: "Developer four", type: "message" },
         { role: "developer", content: "Developer five", type: "message" },
         { role: "developer", content: "Developer six", type: "message" },
+        { role: "user", content: "First user message", type: "message" },
         { role: "user", content: "Second user message", type: "message" },
       ],
     })
@@ -62,6 +70,81 @@ describe("Responses Lite to Messages translation", () => {
     expect(result.messagesPayload.messages).toEqual([
       { role: "user", content: "First user message" },
       { role: "user", content: "Second user message" },
+    ])
+  })
+
+  test("converts developer messages after the first user to user messages", () => {
+    const result = translate({
+      input: [
+        { role: "developer", content: "Initial developer", type: "message" },
+        { role: "user", content: "First user message", type: "message" },
+        { role: "developer", content: "Later developer", type: "message" },
+        {
+          role: "developer",
+          content: [
+            { type: "input_text", text: "Later developer, part one" },
+            { type: "input_text", text: "Later developer, part two" },
+            {
+              type: "input_image",
+              image_url: "data:image/png;base64,aGVsbG8=",
+              detail: "auto",
+            },
+          ],
+          type: "message",
+        },
+        { role: "user", content: "Second user message", type: "message" },
+      ],
+    })
+
+    expect(result.messagesPayload.system).toEqual([
+      { type: "text", text: "Initial developer" },
+    ])
+    expect(result.messagesPayload.messages).toEqual([
+      { role: "user", content: "First user message" },
+      { role: "user", content: "Later developer" },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Later developer, part one" },
+          { type: "text", text: "Later developer, part two" },
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/png",
+              data: "aGVsbG8=",
+            },
+          },
+        ],
+      },
+      { role: "user", content: "Second user message" },
+    ])
+  })
+
+  test("translates agent messages and later developer messages to user", () => {
+    const result = translate({
+      input: [
+        { role: "developer", content: "Initial developer", type: "message" },
+        {
+          id: "amsg-1",
+          type: "agent_message",
+          author: "agent-a",
+          recipient: "agent-b",
+          content: [{ type: "input_text", text: "Agent handoff" }],
+        },
+        { role: "developer", content: "Later developer", type: "message" },
+      ],
+    })
+
+    expect(result.messagesPayload.system).toEqual([
+      { type: "text", text: "Initial developer" },
+    ])
+    expect(result.messagesPayload.messages).toEqual([
+      {
+        role: "user",
+        content: [{ type: "text", text: "Agent handoff" }],
+      },
+      { role: "user", content: "Later developer" },
     ])
   })
 
@@ -91,6 +174,17 @@ describe("Responses Lite to Messages translation", () => {
       },
       { role: "user", content: "Continue" },
     ])
+  })
+
+  test("encodes compaction content as canonical Base64", () => {
+    const summary = "Existing handoff"
+    const encoded = encodeMessagesCompaction(summary)
+    const legacy = `${MESSAGES_COMPACTION_PREFIX}${Buffer.from(summary, "utf8").toString("base64url")}`
+
+    expectCanonicalBase64(encoded)
+    expect(decodeMessagesCompaction(encoded)).toBe(summary)
+    expect(decodeMessagesCompaction(legacy)).toBe(summary)
+    expect(decodeMessagesCompaction("not base64")).toBeNull()
   })
 
   test("loads custom tools from input.additional_tools", () => {
@@ -496,6 +590,141 @@ describe("Responses Lite to Messages translation", () => {
     expect(completed?.type).toBe("response.completed")
     if (completed?.type === "response.completed") {
       expect(completed.response.output).toEqual([])
+    }
+  })
+
+  test("uses Base64 encrypted content for stream reasoning signatures", async () => {
+    const translation = translate({
+      input: "Explain the result",
+      stream: true,
+    })
+    const signature = Buffer.from("real-signature", "utf8").toString("base64")
+    const source = [
+      {
+        type: "message_start",
+        message: {
+          content: [],
+          id: "msg_reasoning_stream",
+          model: "claude-sonnet-4.6",
+          role: "assistant",
+          stop_reason: null,
+          stop_sequence: null,
+          type: "message",
+          usage: { input_tokens: 8, output_tokens: 0 },
+        },
+      },
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "thinking", thinking: "Unsigned reasoning" },
+      },
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "signature_delta", signature: "" },
+      },
+      { type: "content_block_stop", index: 0 },
+      {
+        type: "content_block_start",
+        index: 1,
+        content_block: { type: "thinking", thinking: "Signed reasoning" },
+      },
+      {
+        type: "content_block_delta",
+        index: 1,
+        delta: { type: "signature_delta", signature },
+      },
+      { type: "content_block_stop", index: 1 },
+      { type: "message_stop" },
+    ]
+    async function* chunks() {
+      await Promise.resolve()
+      for (const event of source) yield { data: JSON.stringify(event) }
+    }
+
+    const events: Array<ResponseStreamEvent> = []
+    for await (const event of translateMessagesStream(chunks(), translation)) {
+      events.push(event)
+    }
+    const reasoningItems = events.flatMap((event) => {
+      if (
+        event.type !== "response.output_item.added"
+        && event.type !== "response.output_item.done"
+      ) {
+        return []
+      }
+      return event.item.type === "reasoning" ? [event.item] : []
+    })
+
+    expect(reasoningItems).toHaveLength(4)
+    const fallback = reasoningItems[0]?.encrypted_content
+    expect(fallback).toBe(reasoningItems[1]?.encrypted_content)
+    expect(fallback).toBe(reasoningItems[2]?.encrypted_content)
+    expect(reasoningItems[3]?.encrypted_content).toBe(signature)
+    for (const item of reasoningItems) {
+      expectCanonicalBase64(item.encrypted_content)
+    }
+  })
+
+  test("uses Base64 encrypted content for stream compaction", async () => {
+    const translation = translate({
+      input: [
+        { role: "user", content: "Implement the feature", type: "message" },
+        { type: "compaction_trigger" },
+      ],
+      stream: true,
+    })
+    const source = [
+      {
+        type: "message_start",
+        message: {
+          content: [],
+          id: "msg_compaction_stream",
+          model: "claude-sonnet-4.6",
+          role: "assistant",
+          stop_reason: null,
+          stop_sequence: null,
+          type: "message",
+          usage: { input_tokens: 8, output_tokens: 0 },
+        },
+      },
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "text", text: "Current progress" },
+      },
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "text_delta", text: " and next steps" },
+      },
+      { type: "content_block_stop", index: 0 },
+      { type: "message_stop" },
+    ]
+    async function* chunks() {
+      await Promise.resolve()
+      for (const event of source) yield { data: JSON.stringify(event) }
+    }
+
+    const events: Array<ResponseStreamEvent> = []
+    for await (const event of translateMessagesStream(chunks(), translation)) {
+      events.push(event)
+    }
+    const compaction = events.find(
+      (event) =>
+        event.type === "response.output_item.done"
+        && event.item.type === "compaction",
+    )
+
+    expect(compaction?.type).toBe("response.output_item.done")
+    if (
+      compaction?.type === "response.output_item.done"
+      && compaction.item.type === "compaction"
+    ) {
+      expectCanonicalBase64(compaction.item.encrypted_content)
+      expect(decodeMessagesCompaction(compaction.item.encrypted_content)).toBe(
+        "Current progress and next steps",
+      )
     }
   })
 

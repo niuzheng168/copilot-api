@@ -120,6 +120,24 @@ export interface ResponseInputMessage {
   phase?: "commentary" | "final_answer"
 }
 
+export interface ResponseInputAgentMessage {
+  id?: string
+  type: "agent_message"
+  author: string
+  recipient: string
+  content: Array<ResponseInputAgentMessageContent>
+}
+
+export type ResponseInputAgentMessageContent =
+  | {
+      type: "input_text"
+      text: string
+    }
+  | {
+      type: "encrypted_content"
+      encrypted_content: string
+    }
+
 export interface ResponseFunctionToolCallItem {
   type: "function_call"
   call_id: string
@@ -196,6 +214,7 @@ export interface ResponseInputAdditionalTools {
 
 export type ResponseInputItem =
   | ResponseInputMessage
+  | ResponseInputAgentMessage
   | ResponseFunctionToolCallItem
   | ResponseFunctionCallOutputItem
   | ResponseCustomToolCallItem

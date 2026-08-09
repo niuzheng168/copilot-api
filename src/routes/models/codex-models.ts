@@ -44,7 +44,6 @@ const DEFAULT_REASONING_EFFORTS: Array<CodexReasoningEffort> = [
   "high",
   "xhigh",
   "max",
-  "ultra",
 ]
 
 export function isCodexUserAgent(userAgent: string | undefined): boolean {
@@ -166,7 +165,7 @@ export function createSyntheticCodexModel(
     supports_search_tool: false,
     use_responses_lite: true,
     tool_mode: "code_mode_only",
-    multi_agent_version: "v2",
+    multi_agent_version: "v1",
     shell_type: "shell_command",
     experimental_supported_tools: [],
     input_modalities: inputModalities,

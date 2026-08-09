@@ -18,6 +18,7 @@ import type {
 } from "~/lib/types/anthropic"
 import type {
   NamespaceTool,
+  ResponseInputAgentMessage,
   ResponseInputItem,
   ResponseInputMessage,
   ResponseInputReasoning,
@@ -247,14 +248,21 @@ export function translateAnthropicUsage(
 }
 
 export function encodeMessagesCompaction(summary: string): string {
-  return `${MESSAGES_COMPACTION_PREFIX}${Buffer.from(summary, "utf8").toString("base64url")}`
+  const payload = `${MESSAGES_COMPACTION_PREFIX}${Buffer.from(summary, "utf8").toString("base64url")}`
+  return Buffer.from(payload, "utf8").toString("base64")
 }
 
 export function decodeMessagesCompaction(value: string): string | null {
-  if (!value.startsWith(MESSAGES_COMPACTION_PREFIX)) return null
+  let payload = value
+  if (!payload.startsWith(MESSAGES_COMPACTION_PREFIX)) {
+    const decoded = Buffer.from(value, "base64")
+    if (decoded.toString("base64") !== value) return null
+    payload = decoded.toString("utf8")
+  }
+  if (!payload.startsWith(MESSAGES_COMPACTION_PREFIX)) return null
 
   try {
-    const encoded = value.slice(MESSAGES_COMPACTION_PREFIX.length)
+    const encoded = payload.slice(MESSAGES_COMPACTION_PREFIX.length)
     if (!encoded) return null
     return Buffer.from(encoded, "base64url").toString("utf8")
   } catch {
@@ -476,12 +484,21 @@ function translateInputToAnthropic(
   }
   if (!Array.isArray(input)) return { messages, system }
 
+  let userMessageSeen = false
   for (const item of input) {
     const type = getItemType(item)
     switch (type) {
       case undefined:
       case "message": {
-        translateInputMessage(item, messages, system)
+        translateInputMessage(item, messages, system, userMessageSeen)
+        if (getStringField(item, "role") === "user") {
+          userMessageSeen = true
+        }
+        break
+      }
+      case "agent_message": {
+        translateInputAgentMessage(item as ResponseInputAgentMessage, messages)
+        userMessageSeen = true
         break
       }
       case "reasoning": {
@@ -526,6 +543,7 @@ function translateInputMessage(
   item: ResponseInputItem,
   messages: Array<AnthropicInputMessage>,
   system: Array<AnthropicTextBlock>,
+  userMessageSeen: boolean,
 ): void {
   if (!isRecord(item)) {
     throw new ResponsesMessagesTranslationError(
@@ -544,7 +562,7 @@ function translateInputMessage(
     )
   }
 
-  if (role === "developer") return
+  if (role === "developer" && !userMessageSeen) return
 
   if (role === "system") {
     const text = translateSystemContent(item.content, "message.content")
@@ -564,6 +582,14 @@ function translateInputMessage(
   messages.push({ role: "user", content })
 }
 
+function translateInputAgentMessage(
+  item: ResponseInputAgentMessage,
+  messages: Array<AnthropicInputMessage>,
+): void {
+  const content = translateUserContent(item.content, "agent_message.content")
+  messages.push({ role: "user", content })
+}
+
 function appendDeveloperPrompts(
   system: Array<AnthropicTextBlock>,
   input: ResponsesPayload["input"],
@@ -574,10 +600,10 @@ function appendDeveloperPrompts(
   for (const item of input) {
     if (prompts.length >= MAX_DEVELOPER_PROMPTS) break
     const type = getItemType(item)
-    if (
-      (type !== undefined && type !== "message")
-      || getStringField(item, "role") !== "developer"
-    ) {
+    const role = getStringField(item, "role")
+    if (type === "agent_message") break
+    if ((type === undefined || type === "message") && role === "user") break
+    if ((type !== undefined && type !== "message") || role !== "developer") {
       continue
     }
     prompts.push(

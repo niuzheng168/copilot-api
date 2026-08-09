@@ -46,6 +46,12 @@ export async function handleProviderResponsesForProvider(
   },
 ): Promise<Response> {
   const { payload, provider } = options
+
+  debugJson(logger, "Responses request payload:", {
+    payload,
+    provider,
+  })
+
   const providerConfig = await resolveProviderConfig(provider)
   if (!providerConfig) {
     return c.json(
@@ -70,11 +76,6 @@ export async function handleProviderResponsesForProvider(
       targetModel: `${provider}/${payload.model}`,
     })
   }
-
-  debugJson(logger, "Responses request payload:", {
-    payload,
-    provider,
-  })
 
   if (effectiveType !== "openai-responses") {
     return c.json(
