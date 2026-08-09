@@ -105,7 +105,10 @@ beforeEach(async () => {
 
   responsesApiWebSocketEnabled = true
   responsesHandlerDependencies.createResponses = createResponses
+  responsesHandlerDependencies.findEndpointModel = (model) =>
+    state.models?.data.find((candidate) => candidate.id === model)
   responsesHandlerDependencies.isResponsesApiWebSearchEnabled = () => true
+  responsesHandlerDependencies.resolveMappedModel = (model) => model
   responsesUtilsDependencies.getModelResponsesApiCompactThreshold = () =>
     undefined
   responsesUtilsDependencies.isContextManagementEnabledForMessages = () => true

@@ -46,12 +46,13 @@ export const responsesHandlerDependencies = {
   createResponses: createCopilotResponses,
   findEndpointModel,
   isResponsesApiWebSearchEnabled: isConfiguredResponsesApiWebSearchEnabled,
+  resolveMappedModel,
 }
 
 export const handleResponses = async (c: Context) => {
   const payload = await c.req.json<ResponsesPayload>()
   const requestedModel = payload.model
-  payload.model = resolveMappedModel(payload.model)
+  payload.model = responsesHandlerDependencies.resolveMappedModel(payload.model)
   if (payload.model !== requestedModel) {
     consola.debug(
       `Resolved model mapping: ${requestedModel} -> ${payload.model}`,
