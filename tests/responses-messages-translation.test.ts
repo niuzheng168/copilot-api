@@ -23,6 +23,76 @@ const translate = (payload: Omit<ResponsesPayload, "model">) =>
   )
 
 describe("Responses Lite to Messages translation", () => {
+  test("groups the first five developer prompts into two system blocks", () => {
+    const result = translate({
+      instructions: "Base instructions",
+      input: [
+        { role: "developer", content: "Developer one", type: "message" },
+        { role: "user", content: "First user message", type: "message" },
+        {
+          role: "developer",
+          content: [
+            { type: "input_text", text: "Developer two, part one" },
+            { type: "input_text", text: "Developer two, part two" },
+          ],
+          type: "message",
+        },
+        { role: "developer", content: "Developer three", type: "message" },
+        { role: "developer", content: "Developer four", type: "message" },
+        { role: "developer", content: "Developer five", type: "message" },
+        { role: "developer", content: "Developer six", type: "message" },
+        { role: "user", content: "Second user message", type: "message" },
+      ],
+    })
+
+    expect(result.messagesPayload.system).toEqual([
+      { type: "text", text: "Base instructions" },
+      { type: "text", text: "Developer one" },
+      {
+        type: "text",
+        text: [
+          "Developer two, part one",
+          "Developer two, part two",
+          "Developer three",
+          "Developer four",
+          "Developer five",
+        ].join("\n\n"),
+      },
+    ])
+    expect(result.messagesPayload.messages).toEqual([
+      { role: "user", content: "First user message" },
+      { role: "user", content: "Second user message" },
+    ])
+  })
+
+  test("keeps initial developer prompts when replaying a compaction", () => {
+    const result = translate({
+      input: [
+        { role: "developer", content: "Developer one", type: "message" },
+        { role: "developer", content: "Developer two", type: "message" },
+        {
+          id: "cmp-1",
+          type: "compaction",
+          encrypted_content: encodeMessagesCompaction("Existing handoff"),
+        },
+        { role: "user", content: "Continue", type: "message" },
+      ],
+    })
+
+    expect(result.messagesPayload.system).toEqual([
+      { type: "text", text: "Developer one" },
+      { type: "text", text: "Developer two" },
+    ])
+    expect(result.messagesPayload.messages).toEqual([
+      {
+        role: "user",
+        content:
+          "The previous conversation was compacted. Continue from this handoff summary:\n\nExisting handoff",
+      },
+      { role: "user", content: "Continue" },
+    ])
+  })
+
   test("loads custom tools from input.additional_tools", () => {
     const result = translate({
       input: [

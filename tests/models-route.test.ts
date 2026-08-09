@@ -297,6 +297,8 @@ describe("model routes", () => {
       apply_patch_tool_type: "freeform",
       supports_search_tool: false,
       supports_parallel_tool_calls: true,
+      tool_mode: "code_mode_only",
+      multi_agent_version: "v2",
       default_reasoning_level: "max",
     })
   })

@@ -49,6 +49,7 @@ export const MESSAGES_COMPACTION_PROMPT = [
 
 const COMPACTION_REPLAY_PROMPT =
   "The previous conversation was compacted. Continue from this handoff summary:\n\n"
+const MAX_DEVELOPER_PROMPTS = 5
 const TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/u
 const CUSTOM_TOOL_INPUT_SCHEMA: Record<string, unknown> = {
   type: "object",
@@ -116,6 +117,7 @@ export function translateResponsesToMessages(
     normalized.input,
     registry,
     payload.instructions,
+    payload.input,
   )
 
   if (normalized.compaction) {
@@ -456,6 +458,7 @@ function translateInputToAnthropic(
   input: string | Array<ResponseInputItem> | undefined,
   registry: MessagesToolRegistry,
   instructions: string | null | undefined,
+  originalInput: ResponsesPayload["input"],
 ): {
   messages: Array<AnthropicInputMessage>
   system: Array<AnthropicTextBlock>
@@ -465,6 +468,7 @@ function translateInputToAnthropic(
   if (instructions?.trim()) {
     system.push({ type: "text", text: instructions })
   }
+  appendDeveloperPrompts(system, originalInput)
 
   if (typeof input === "string") {
     messages.push({ role: "user", content: input })
@@ -540,7 +544,9 @@ function translateInputMessage(
     )
   }
 
-  if (role === "system" || role === "developer") {
+  if (role === "developer") return
+
+  if (role === "system") {
     const text = translateSystemContent(item.content, "message.content")
     if (text) system.push({ type: "text", text })
     return
@@ -556,6 +562,37 @@ function translateInputMessage(
 
   const content = translateUserContent(item.content, "message.content")
   messages.push({ role: "user", content })
+}
+
+function appendDeveloperPrompts(
+  system: Array<AnthropicTextBlock>,
+  input: ResponsesPayload["input"],
+): void {
+  if (!Array.isArray(input)) return
+
+  const prompts: Array<string> = []
+  for (const item of input) {
+    if (prompts.length >= MAX_DEVELOPER_PROMPTS) break
+    const type = getItemType(item)
+    if (
+      (type !== undefined && type !== "message")
+      || getStringField(item, "role") !== "developer"
+    ) {
+      continue
+    }
+    prompts.push(
+      translateSystemContent(
+        isRecord(item) ? item.content : undefined,
+        "message.content",
+      ),
+    )
+  }
+
+  const [firstPrompt, ...remainingPrompts] = prompts
+  if (firstPrompt) system.push({ type: "text", text: firstPrompt })
+
+  const mergedPrompts = remainingPrompts.filter(Boolean).join("\n\n")
+  if (mergedPrompts) system.push({ type: "text", text: mergedPrompts })
 }
 
 function translateInputReasoning(
