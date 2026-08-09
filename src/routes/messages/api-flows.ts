@@ -83,6 +83,7 @@ export interface FlowBaseOptions {
   requestId: string
   sessionId?: string
   compactType?: CompactType
+  usageEndpoint?: TokenUsageEndpoint
 }
 
 interface ResponsesFlowOptions extends FlowBaseOptions {
@@ -118,7 +119,7 @@ export const handleWithChatCompletions = async (
   })
   prepareCopilotChatCompletionsPayload(openAIPayload)
   const recordUsage = createCopilotUsageRecorder({
-    endpoint: "chat_completions",
+    endpoint: options.usageEndpoint ?? "chat_completions",
     fallbackSessionId: sessionId,
     model: openAIPayload.model,
     payload: anthropicPayload,
@@ -215,7 +216,7 @@ export const handleWithResponsesApi = async (
     requestOptions.subagentMarker?.agent_id,
   )
   const recordUsage = createCopilotUsageRecorder({
-    endpoint: "responses",
+    endpoint: options.usageEndpoint ?? "responses",
     fallbackSessionId: requestOptions.sessionId,
     model: responsesPayload.model,
     payload: anthropicPayload,
@@ -354,7 +355,7 @@ export const handleWithMessagesApi = async (
 
   prepareMessagesApiPayload(anthropicPayload, selectedModel)
   const recordUsage = createCopilotUsageRecorder({
-    endpoint: "messages",
+    endpoint: options.usageEndpoint ?? "messages",
     fallbackSessionId: sessionId,
     model: anthropicPayload.model,
     payload: anthropicPayload,

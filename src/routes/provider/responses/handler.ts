@@ -19,6 +19,7 @@ import {
   applyResponsesApiContextManagement,
   compactInputByLatestCompaction,
 } from "~/routes/responses/utils"
+import { handleResponsesViaMessages } from "~/routes/responses/messages-handler"
 
 import type {
   ResponsesPayload,
@@ -41,19 +42,41 @@ export async function handleProviderResponsesForProvider(
   options: {
     payload: ResponsesPayload
     provider: string
+    publicModel?: string
   },
 ): Promise<Response> {
   const { payload, provider } = options
+  const providerConfig = await resolveProviderConfig(provider)
+  if (!providerConfig) {
+    return c.json(
+      {
+        error: {
+          message: `Provider '${provider}' does not support the /v1/responses endpoint`,
+          type: "invalid_request_error",
+        },
+      },
+      400,
+    )
+  }
+
+  const effectiveType = resolveEffectiveProviderType(
+    providerConfig,
+    payload.model,
+  )
+  if (effectiveType === "anthropic" || effectiveType === "openai-compatible") {
+    return await handleResponsesViaMessages(c, {
+      payload,
+      publicModel: options.publicModel ?? payload.model,
+      targetModel: `${provider}/${payload.model}`,
+    })
+  }
+
   debugJson(logger, "Responses request payload:", {
     payload,
     provider,
   })
-  const providerConfig = await resolveProviderConfig(provider)
-  if (
-    !providerConfig
-    || resolveEffectiveProviderType(providerConfig, payload.model)
-      !== "openai-responses"
-  ) {
+
+  if (effectiveType !== "openai-responses") {
     return c.json(
       {
         error: {

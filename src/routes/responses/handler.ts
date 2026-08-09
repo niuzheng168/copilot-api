@@ -7,9 +7,9 @@ import {
   resolveMappedModel,
 } from "~/lib/config"
 import { createHandlerLogger, debugJson, debugJsonTail } from "~/lib/logger"
+import { findEndpointModel } from "~/lib/models"
 import { parseProviderModelAlias } from "~/lib/provider-model"
 import { handleProviderResponsesForProvider } from "~/routes/provider/responses/handler"
-import { state } from "~/lib/state"
 import {
   createCopilotTokenUsageRecorder,
   normalizeOptionalToken,
@@ -29,6 +29,7 @@ import type {
 } from "~/lib/types/responses"
 import { createResponses as createCopilotResponses } from "~/services/copilot/create-responses"
 
+import { handleResponsesViaMessages } from "./messages-handler"
 import { createStreamIdTracker, fixStreamIds } from "./stream-id-sync"
 import {
   applyResponsesApiContextManagement,
@@ -43,6 +44,7 @@ const logger = createHandlerLogger("responses-handler")
 
 export const responsesHandlerDependencies = {
   createResponses: createCopilotResponses,
+  findEndpointModel,
   isResponsesApiWebSearchEnabled: isConfiguredResponsesApiWebSearchEnabled,
 }
 
@@ -62,6 +64,7 @@ export const handleResponses = async (c: Context) => {
     return await handleProviderResponsesForProvider(c, {
       payload,
       provider: providerModelAlias.provider,
+      publicModel: requestedModel,
     })
   }
 
@@ -82,24 +85,25 @@ export const handleResponses = async (c: Context) => {
 
   const fallbackSessionId = sessionId ?? getUUID(requestId)
   logger.debug("Extracted session ID:", fallbackSessionId)
-  const recordUsage = createCopilotTokenUsageRecorder({
-    endpoint: "responses",
-    fallbackSessionId,
-    model: payload.model,
-  })
-
-  removeUnsupportedTools(payload)
-
-  if (!responsesHandlerDependencies.isResponsesApiWebSearchEnabled()) {
-    removeWebSearchTool(payload)
-  }
-
-  const selectedModel = state.models?.data.find(
-    (model) => model.id === payload.model,
+  const selectedModel = responsesHandlerDependencies.findEndpointModel(
+    payload.model,
   )
+  payload.model = selectedModel?.id ?? payload.model
   const responsesTransport = getResponsesTransportForModel(selectedModel)
 
   if (!responsesTransport) {
+    const supportedEndpoints = selectedModel?.supported_endpoints ?? []
+    if (
+      supportedEndpoints.includes("/v1/messages")
+      || supportedEndpoints.includes("/chat/completions")
+    ) {
+      return await handleResponsesViaMessages(c, {
+        payload,
+        publicModel: requestedModel,
+        targetModel: payload.model,
+      })
+    }
+
     return c.json(
       {
         error: {
@@ -110,6 +114,18 @@ export const handleResponses = async (c: Context) => {
       },
       400,
     )
+  }
+
+  const recordUsage = createCopilotTokenUsageRecorder({
+    endpoint: "responses",
+    fallbackSessionId,
+    model: payload.model,
+  })
+
+  removeUnsupportedTools(payload)
+
+  if (!responsesHandlerDependencies.isResponsesApiWebSearchEnabled()) {
+    removeWebSearchTool(payload)
   }
 
   const sanitizedImageCount = sanitizeOversizedInputImages(

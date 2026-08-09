@@ -68,6 +68,21 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
     : url instanceof URL ? url.toString()
     : url.url
 
+  if (requestUrl.startsWith("https://chatgpt.com/backend-api/codex/models")) {
+    return Promise.resolve(
+      Response.json({
+        models: [
+          {
+            slug: "gpt-native",
+            display_name: "GPT Native",
+            base_instructions: "Native instructions",
+            available_in_plans: ["pro"],
+          },
+        ],
+      }),
+    )
+  }
+
   if (requestUrl === "https://bad.example/v1/models") {
     return Promise.resolve(new Response("upstream failed", { status: 502 }))
   }
@@ -226,6 +241,142 @@ describe("model routes", () => {
     expect(headers.get("authorization")).toBe("Bearer codex-access-token")
     expect(headers.get("chatgpt-account-id")).toBe("account-123")
     expect(headers.get("accept")).toBe("*/*")
+  })
+
+  test("merges Messages-backed models into the Codex response_lite catalog", async () => {
+    const copilotModels = createCopilotModels(["claude-sonnet-4.6"])
+    copilotModels.data[0].supported_endpoints = ["/v1/messages"]
+    copilotModels.data[0].capabilities.supports.tool_calls = true
+    copilotModels.data[0].capabilities.supports.parallel_tool_calls = true
+    state.models = copilotModels
+    providerConfigs = {
+      codex: {
+        apiKey: "codex-token",
+        authType: "oauth2",
+        baseUrl: "https://chatgpt.com/backend-api",
+        name: "codex",
+        type: "openai-responses",
+      },
+    }
+    state.codexAccessToken = "codex-access-token"
+    state.codexAccountId = "account-123"
+
+    const response = await createApp().request("/v1/models?client=codex", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    expect(body.models.map((model) => model.slug)).toEqual([
+      "gpt-native",
+      "claude-sonnet-4-6",
+    ])
+    expect(
+      body.models.find((model) => model.slug === "claude-sonnet-4-6"),
+    ).toMatchObject({
+      use_responses_lite: true,
+      prefer_websockets: false,
+      apply_patch_tool_type: "freeform",
+      supports_search_tool: false,
+      supports_parallel_tool_calls: true,
+      default_reasoning_level: "max",
+    })
+  })
+
+  test("prefers max as the built-in default reasoning effort for Codex models", async () => {
+    const copilotModels = createCopilotModels([
+      "claude-sonnet-4.6",
+      "claude-opus-4.1",
+    ])
+    for (const model of copilotModels.data) {
+      model.supported_endpoints = ["/v1/messages"]
+      model.capabilities.supports.tool_calls = true
+    }
+    copilotModels.data[0].capabilities.supports.reasoning_effort = [
+      "minimal",
+      "low",
+      "medium",
+      "max",
+    ]
+    copilotModels.data[1].capabilities.supports.reasoning_effort = [
+      "low",
+      "medium",
+    ]
+    state.models = copilotModels
+
+    const response = await createApp().request("/v1/models", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    expect(
+      body.models.find((model) => model.slug === "claude-sonnet-4-6"),
+    ).toMatchObject({ default_reasoning_level: "max" })
+    expect(
+      body.models.find((model) => model.slug === "claude-opus-4-1"),
+    ).toMatchObject({ default_reasoning_level: "low" })
+  })
+
+  test("merges Anthropic and OpenAI-compatible provider models for Codex", async () => {
+    enabledProviders = ["anthropic", "chat"]
+    providerConfigs = {
+      anthropic: {
+        apiKey: "anthropic-key",
+        authType: "x-api-key",
+        baseUrl: "https://anthropic.example",
+        models: {
+          "claude-provider": {
+            codex: {
+              contextWindow: 180_000,
+              maxOutputTokens: 24_000,
+              inputModalities: ["text", "image"],
+              reasoningEfforts: ["low", "high"],
+              defaultReasoningEffort: "high",
+              supportsParallelToolCalls: true,
+            },
+          },
+        },
+        name: "anthropic",
+        type: "anthropic",
+      },
+      chat: {
+        apiKey: "chat-key",
+        authType: "authorization",
+        baseUrl: "https://chat.example",
+        models: { "chat-provider": {} },
+        name: "chat",
+        type: "openai-compatible",
+      },
+    }
+
+    const response = await createApp().request("/v1/models", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    const anthropicModel = body.models.find(
+      (model) => model.slug === "anthropic/claude-provider",
+    )
+    expect(anthropicModel).toMatchObject({
+      use_responses_lite: true,
+      context_window: 180_000,
+      max_output_tokens: 24_000,
+      input_modalities: ["text", "image"],
+      default_reasoning_level: "high",
+      supports_parallel_tool_calls: true,
+      supports_search_tool: false,
+    })
+    expect(body.models.map((model) => model.slug)).toContain(
+      "chat/chat-provider",
+    )
   })
 
   test("forwards Codex clients on the provider-scoped models route", async () => {

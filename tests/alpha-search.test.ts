@@ -927,7 +927,7 @@ describe("Alpha search Responses adapter", () => {
     expect(createResponsesMock).not.toHaveBeenCalled()
   })
 
-  test("requires a Responses-capable mapped Copilot model", async () => {
+  test("requires a Responses-capable alpha search model for Messages-backed models", async () => {
     state.models = {
       object: "list",
       data: [
@@ -945,9 +945,35 @@ describe("Alpha search Responses adapter", () => {
     expect(response.status).toBe(400)
     const body = (await response.json()) as { error: { message: string } }
     expect(body.error.message).toContain(
-      "does not support the Copilot Responses endpoint",
+      "Configured alphaSearchModel 'gpt-5-mini' does not support the Responses endpoint",
     )
     expect(createResponsesMock).not.toHaveBeenCalled()
+  })
+
+  test("redirects Messages-backed alpha search to alphaSearchModel", async () => {
+    state.models = {
+      object: "list",
+      data: [
+        {
+          capabilities: { limits: {} },
+          id: "gpt-5.6-sol",
+          supported_endpoints: ["/chat/completions"],
+        },
+        {
+          capabilities: { limits: {} },
+          id: "gpt-5-mini",
+          supported_endpoints: ["/responses"],
+        },
+      ],
+    } as typeof state.models
+
+    const response = await requestFallback(
+      createFallbackPayload({ search_query: [{ q: "redirect search" }] }),
+    )
+
+    expect(response.status).toBe(200)
+    expect(createResponsesMock).toHaveBeenCalledTimes(1)
+    expect(createResponsesMock.mock.calls[0]?.[0].model).toBe("gpt-5-mini")
   })
 
   test("keeps stable deduplicated search references across turns", async () => {

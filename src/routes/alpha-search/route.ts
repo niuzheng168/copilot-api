@@ -2,12 +2,15 @@ import { Hono, type Context } from "hono"
 import consola from "consola"
 
 import {
+  getAlphaSearchModel,
   isAlphaSearchCodexPriorityEnabled,
+  resolveEffectiveProviderType,
   resolveMappedModel,
   type ResolvedProviderConfig,
 } from "~/lib/config"
 import { forwardError } from "~/lib/error"
 import { createHandlerLogger, debugJsonAsync } from "~/lib/logger"
+import { findEndpointModel } from "~/lib/models"
 import { parseProviderModelAlias } from "~/lib/provider-model"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import type {
@@ -136,7 +139,8 @@ export async function handleAlphaSearchRequest(
     )
   }
 
-  const providerModelAlias = parseProviderModelAlias(payload.model)
+  const resolvedRequestedModel = payload.model
+  let providerModelAlias = parseProviderModelAlias(payload.model)
   if (providerModelAlias) {
     payload.model = providerModelAlias.model
     if (providerModelAlias.provider === "codex") {
@@ -156,6 +160,42 @@ export async function handleAlphaSearchRequest(
     }
   }
 
+  const messagesBackedModel = await isMessagesBackedModel(
+    resolvedRequestedModel,
+  )
+  if (messagesBackedModel) {
+    const searchModel = getAlphaSearchModel()
+    if (!searchModel) {
+      return invalidRequest(
+        c,
+        "alphaSearchModel is disabled; Messages-backed Codex models require a native Responses search model",
+      )
+    }
+    const resolvedSearchModel = resolveMappedModel(searchModel)
+    if (!(await isNativeResponsesModel(resolvedSearchModel))) {
+      return invalidRequest(
+        c,
+        `Configured alphaSearchModel '${searchModel}' does not support the Responses endpoint required for alpha search`,
+      )
+    }
+    consola.debug(
+      `Redirected alpha search model: ${resolvedRequestedModel} -> ${resolvedSearchModel}`,
+    )
+    payload.model = resolvedSearchModel
+    providerModelAlias = parseProviderModelAlias(payload.model)
+    if (providerModelAlias) {
+      payload.model = providerModelAlias.model
+      if (providerModelAlias.provider === "codex") {
+        return await handleCodexRequest(
+          c,
+          createAlphaSearchRequest(c.req.raw, payload),
+        )
+      }
+    }
+  }
+  const fallbackRequestedModel =
+    messagesBackedModel ? payload.model : requestedModel
+
   if (providerModelAlias) {
     return await handleAlphaSearchResponses(c, {
       provider: providerModelAlias.provider,
@@ -166,9 +206,47 @@ export async function handleAlphaSearchRequest(
   return await handleAlphaSearchResponses(c, {
     request: {
       ...payload,
-      model: requestedModel,
+      model: fallbackRequestedModel,
     },
   })
+}
+
+async function isMessagesBackedModel(model: string): Promise<boolean> {
+  const providerAlias = parseProviderModelAlias(model)
+  if (providerAlias) {
+    const providerConfig = await resolveProviderConfig(providerAlias.provider)
+    if (!providerConfig) return false
+    const effectiveType = resolveEffectiveProviderType(
+      providerConfig,
+      providerAlias.model,
+    )
+    return (
+      effectiveType === "anthropic" || effectiveType === "openai-compatible"
+    )
+  }
+
+  const endpoints = findEndpointModel(model)?.supported_endpoints ?? []
+  return (
+    (endpoints.includes("/v1/messages")
+      || endpoints.includes("/chat/completions"))
+    && !endpoints.includes("/responses")
+    && !endpoints.includes("ws:/responses")
+  )
+}
+
+async function isNativeResponsesModel(model: string): Promise<boolean> {
+  const providerAlias = parseProviderModelAlias(model)
+  if (providerAlias) {
+    const providerConfig = await resolveProviderConfig(providerAlias.provider)
+    return (
+      providerConfig !== null
+      && resolveEffectiveProviderType(providerConfig, providerAlias.model)
+        === "openai-responses"
+    )
+  }
+
+  const endpoints = findEndpointModel(model)?.supported_endpoints ?? []
+  return endpoints.includes("/responses") || endpoints.includes("ws:/responses")
 }
 
 alphaSearchRoutes.post("/", async (c) => {

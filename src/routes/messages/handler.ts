@@ -13,6 +13,7 @@ import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { findEndpointModel } from "~/lib/models"
 import { parseProviderModelAlias } from "~/lib/provider-model"
 import { state } from "~/lib/state"
+import type { TokenUsageEndpoint } from "~/lib/token-usage"
 import {
   generateRequestIdFromPayload,
   getRootSessionId,
@@ -52,24 +53,46 @@ export const messagesFlowHandlers = {
 export async function handleCompletion(c: Context) {
   const anthropicPayload = await c.req.json<AnthropicMessagesPayload>()
 
+  return await handleCompletionPayload(c, anthropicPayload)
+}
+
+export interface CompletionPayloadOptions {
+  compactType?: ReturnType<typeof getCompactType>
+  skipClaudeAutoModel?: boolean
+  skipModelMapping?: boolean
+  skipWebSearch?: boolean
+  usageEndpoint?: TokenUsageEndpoint
+}
+
+export async function handleCompletionPayload(
+  c: Context,
+  anthropicPayload: AnthropicMessagesPayload,
+  dispatchOptions: CompletionPayloadOptions = {},
+) {
   const requestedModel = anthropicPayload.model
-  anthropicPayload.model = resolveMappedModel(anthropicPayload.model)
+  if (!dispatchOptions.skipModelMapping) {
+    anthropicPayload.model = resolveMappedModel(anthropicPayload.model)
+  }
   if (anthropicPayload.model !== requestedModel) {
     consola.debug(
       `Resolved model mapping: ${requestedModel} -> ${anthropicPayload.model}`,
     )
   }
 
-  const webSearchResult = await tryHandleWebSearch(c, anthropicPayload, {
-    logger,
-    forwardToProvider: (ctx, payload, provider) =>
-      handleProviderMessagesForProvider(ctx, { payload, provider }),
-  })
-  if (webSearchResult) return webSearchResult
+  if (!dispatchOptions.skipWebSearch) {
+    const webSearchResult = await tryHandleWebSearch(c, anthropicPayload, {
+      logger,
+      forwardToProvider: (ctx, payload, provider) =>
+        handleProviderMessagesForProvider(ctx, { payload, provider }),
+    })
+    if (webSearchResult) return webSearchResult
+  }
 
   const claudeAutoModel = getClaudeAutoModel()
   const shouldUseClaudeAutoModel = Boolean(
-    claudeAutoModel && isClaudeAutoModelRequest(anthropicPayload),
+    !dispatchOptions.skipClaudeAutoModel
+      && claudeAutoModel
+      && isClaudeAutoModelRequest(anthropicPayload),
   )
   if (claudeAutoModel && shouldUseClaudeAutoModel) {
     consola.debug(
@@ -84,6 +107,7 @@ export async function handleCompletion(c: Context) {
     return await handleProviderMessagesForProvider(c, {
       payload: anthropicPayload,
       provider: providerModelAlias.provider,
+      usageEndpoint: dispatchOptions.usageEndpoint,
     })
   }
 
@@ -101,7 +125,8 @@ export async function handleCompletion(c: Context) {
   let sessionId = getRootSessionId(anthropicPayload, c)
 
   // claude code and opencode compact / auto-continue detection
-  const compactType = getCompactType(anthropicPayload)
+  const compactType =
+    dispatchOptions.compactType ?? getCompactType(anthropicPayload)
 
   // fix claude code 2.0.28+ warmup request consume premium request, forcing small model if no tools are used
   // set "CLAUDE_CODE_SUBAGENT_MODEL": "you small model" also can avoid this
@@ -161,6 +186,7 @@ export async function handleCompletion(c: Context) {
         sessionId,
         compactType,
         logger,
+        usageEndpoint: dispatchOptions.usageEndpoint,
       },
     )
   }
@@ -176,6 +202,7 @@ export async function handleCompletion(c: Context) {
         sessionId,
         compactType,
         logger,
+        usageEndpoint: dispatchOptions.usageEndpoint,
       },
     )
   }
@@ -190,6 +217,7 @@ export async function handleCompletion(c: Context) {
       sessionId,
       compactType,
       logger,
+      usageEndpoint: dispatchOptions.usageEndpoint,
     },
   )
 }
