@@ -87,6 +87,22 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
     return Promise.resolve(new Response("upstream failed", { status: 502 }))
   }
 
+  if (requestUrl === "https://kimi.example/v1/models") {
+    return Promise.resolve(
+      Response.json({
+        object: "list",
+        data: [
+          {
+            id: "kimi-k2.5",
+            input_modalities: ["text"],
+            name: "Kimi K2.5",
+            object: "model",
+          },
+        ],
+      }),
+    )
+  }
+
   const providerModelIds: Record<string, string> = {
     "first.example": "first-model",
     "second.example": "second-model",
@@ -377,6 +393,31 @@ describe("model routes", () => {
     expect(body.models.map((model) => model.slug)).toContain(
       "chat/chat-provider",
     )
+  })
+
+  test("adds image input to Kimi Codex models by default", async () => {
+    enabledProviders = ["kimi"]
+    providerConfigs = {
+      kimi: {
+        apiKey: "kimi-key",
+        authType: "authorization",
+        baseUrl: "https://kimi.example",
+        name: "kimi",
+        type: "openai-compatible",
+      },
+    }
+
+    const response = await createApp().request("/v1/models", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    expect(
+      body.models.find((model) => model.slug === "kimi/kimi-k2.5"),
+    ).toMatchObject({ input_modalities: ["text", "image"] })
   })
 
   test("forwards Codex clients on the provider-scoped models route", async () => {

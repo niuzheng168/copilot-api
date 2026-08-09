@@ -372,10 +372,11 @@ function createProviderCodexCandidate(
         ?? getFirstPositiveNumber(remoteModel, ["max_output_tokens"]),
       32_000,
     ),
-    inputModalities:
-      configuredModalities.length > 0 ? configuredModalities
-      : remoteModalities.length > 0 ? remoteModalities
-      : ["text"],
+    inputModalities: resolveInputModalities(
+      providerConfig.name,
+      configuredModalities,
+      remoteModalities,
+    ),
     reasoningEfforts,
     defaultReasoningEffort: selectDefaultReasoningEffort(
       reasoningEfforts,
@@ -428,6 +429,20 @@ function normalizeInputModalities(value: unknown): Array<"text" | "image"> {
       ),
     ),
   ]
+}
+
+function resolveInputModalities(
+  providerName: string,
+  configuredModalities: Array<"text" | "image">,
+  remoteModalities: Array<"text" | "image">,
+): Array<"text" | "image"> {
+  if (configuredModalities.length > 0) return configuredModalities
+  if (providerName === "kimi") {
+    const modalities: Array<"text" | "image"> =
+      remoteModalities.length > 0 ? remoteModalities : ["text"]
+    return [...new Set<"text" | "image">([...modalities, "image"])]
+  }
+  return remoteModalities.length > 0 ? remoteModalities : ["text"]
 }
 
 function selectDefaultReasoningEffort(
