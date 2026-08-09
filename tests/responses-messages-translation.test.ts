@@ -147,6 +147,7 @@ describe("Responses Lite to Messages translation", () => {
         { role: "user", content: "Continue", type: "message" },
         { type: "compaction_trigger" },
       ],
+      tool_choice: "auto",
     })
 
     expect(result.compaction).toBe(true)
@@ -162,7 +163,7 @@ describe("Responses Lite to Messages translation", () => {
         },
       },
     ])
-    expect(result.messagesPayload.tool_choice).toEqual({ type: "none" })
+    expect(result.messagesPayload.tool_choice).toEqual({ type: "auto" })
   })
 
   test("does not support Responses tool search mode", () => {

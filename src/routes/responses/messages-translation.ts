@@ -140,10 +140,7 @@ export function translateResponsesToMessages(
       normalized.compaction || registry.tools.length > 0 ?
         registry.tools
       : undefined,
-    tool_choice:
-      normalized.compaction ?
-        { type: "none" }
-      : translateToolChoice(payload.tool_choice, registry),
+    tool_choice: translateToolChoice(payload.tool_choice, registry),
     ...(reasoningEffort ? { output_config: { effort: reasoningEffort } } : {}),
     ...((
       payload.service_tier === "auto"
