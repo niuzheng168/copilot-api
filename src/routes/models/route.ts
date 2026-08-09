@@ -180,13 +180,14 @@ const CODEX_REASONING_EFFORTS = new Set<CodexReasoningEffort>([
 async function getSyntheticCodexModels(
   requestHeaders: Headers,
 ): Promise<Array<SyntheticCodexModelCandidate>> {
-  const copilotModels = (state.models?.data ?? [])
-    .filter(isCopilotMessagesFallbackModel)
-    .map(createCopilotCodexCandidate)
-  const providerModels = await Promise.all(
+  const copilotModels = getCopilotCodexCandidates()
+  const providerResults = await Promise.allSettled(
     listEnabledProviders().map((provider) =>
       getProviderCodexCandidates(provider, requestHeaders),
     ),
+  )
+  const providerModels = providerResults.flatMap((result) =>
+    result.status === "fulfilled" ? result.value : [],
   )
 
   const seen = new Set<string>()
@@ -195,6 +196,23 @@ async function getSyntheticCodexModels(
     seen.add(candidate.slug)
     return true
   })
+}
+
+function getCopilotCodexCandidates(): Array<SyntheticCodexModelCandidate> {
+  const candidates: Array<SyntheticCodexModelCandidate> = []
+  for (const model of state.models?.data ?? []) {
+    try {
+      if (isCopilotMessagesFallbackModel(model)) {
+        candidates.push(createCopilotCodexCandidate(model))
+      }
+    } catch (error) {
+      logger.warn("models.codex.copilot_skip_error", {
+        modelId: model.id,
+        error,
+      })
+    }
+  }
+  return candidates
 }
 
 function isCopilotMessagesFallbackModel(model: Model): boolean {

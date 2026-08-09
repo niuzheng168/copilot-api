@@ -124,6 +124,8 @@ export async function forwardProviderResponses(
   })
 }
 
+const PROVIDER_MODELS_TIMEOUT_MS = 15_000
+
 export async function forwardProviderModels(
   providerConfig: ResolvedProviderConfig,
   requestHeaders: Headers,
@@ -131,6 +133,7 @@ export async function forwardProviderModels(
   return await fetch(`${providerConfig.baseUrl}/v1/models`, {
     method: "GET",
     headers: buildProviderUpstreamHeaders(providerConfig, requestHeaders),
+    signal: AbortSignal.timeout(PROVIDER_MODELS_TIMEOUT_MS),
   })
 }
 

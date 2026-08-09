@@ -103,6 +103,10 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
     )
   }
 
+  if (requestUrl === "https://reject.example/v1/models") {
+    return Promise.reject(new Error("connection refused"))
+  }
+
   const providerModelIds: Record<string, string> = {
     "first.example": "first-model",
     "second.example": "second-model",
@@ -207,6 +211,29 @@ describe("model routes", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  test("ignores providers whose models fetch rejects when merging the Codex catalog", async () => {
+    const copilotModels = createCopilotModels(["claude-sonnet-4.6"])
+    copilotModels.data[0].supported_endpoints = ["/v1/messages"]
+    copilotModels.data[0].capabilities.supports.tool_calls = true
+    state.models = copilotModels
+    enabledProviders = ["reject"]
+    providerConfigs = {
+      reject: createProviderConfig("reject", "https://reject.example"),
+    }
+
+    const response = await createApp().request("/v1/models?client=codex", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    expect(body.models.map((model) => model.slug)).toEqual([
+      "claude-sonnet-4-6",
+    ])
+  })
+
   test("adds built-in Codex provider models without calling upstream", async () => {
     enabledProviders = ["codex"]
     providerConfigs = {
@@ -301,6 +328,28 @@ describe("model routes", () => {
       multi_agent_version: "v2",
       default_reasoning_level: "max",
     })
+  })
+
+  test("skips malformed Copilot model records when merging the Codex catalog", async () => {
+    const copilotModels = createCopilotModels(["claude-sonnet-4.6"])
+    copilotModels.data[0].supported_endpoints = ["/v1/messages"]
+    copilotModels.data[0].capabilities.supports.tool_calls = true
+    copilotModels.data.push({
+      id: "broken-model",
+    } as unknown as ModelsResponse["data"][number])
+    state.models = copilotModels
+
+    const response = await createApp().request("/v1/models?client=codex", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    expect(body.models.map((model) => model.slug)).toEqual([
+      "claude-sonnet-4-6",
+    ])
   })
 
   test("prefers max as the built-in default reasoning effort for Codex models", async () => {

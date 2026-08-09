@@ -95,7 +95,10 @@ export async function handleMergedCodexModels(
 ): Promise<Response> {
   const [upstreamCatalog, candidates] = await Promise.all([
     tryGetCodexCatalog(c),
-    candidatesRequest,
+    Promise.resolve(candidatesRequest).catch((error: unknown) => {
+      logger.warn("models.codex.candidates_error", { error })
+      return []
+    }),
   ])
   const upstreamModels = upstreamCatalog?.models ?? []
   const template = selectTemplate(upstreamModels)
