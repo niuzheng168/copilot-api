@@ -28,6 +28,31 @@ describe("CustomToolInputStreamDecoder", () => {
     }
   })
 
+  test("accepts JSON whitespace around streamed wrapper prefix tokens", () => {
+    const result = decodeChunks([
+      " \n",
+      "{",
+      "\t",
+      '"',
+      "input",
+      '"',
+      "\r",
+      ": ",
+      '"',
+      "const",
+      " results",
+      " =",
+      " []",
+      '"',
+      " \n",
+      "}",
+      "\t",
+    ])
+
+    expect(result.deltas).toEqual(["const", " results", " =", " []"])
+    expect(result.input).toBe("const results = []")
+  })
+
   test("keeps an escaped quote and brace inside the streamed input", () => {
     const decoder = new CustomToolInputStreamDecoder()
 
@@ -49,7 +74,9 @@ describe("CustomToolInputStreamDecoder", () => {
   })
 
   test.each([
+    ["missing object", '"input":"x"}'],
     ["wrong prefix", '{"value":"x"}'],
+    ["invalid separator", '{"input"="x"}'],
     ["non-string input", '{"input":42}'],
     ["invalid escape", '{"input":"\\q"}'],
     ["invalid Unicode escape", '{"input":"\\u12x4"}'],

@@ -426,7 +426,7 @@ describe("Responses Lite to Messages translation", () => {
         index: 0,
         delta: {
           type: "input_json_delta",
-          partial_json: '{"input":"*** Begin',
+          partial_json: '{"input": "*** Begin',
         },
       },
       {

@@ -1,6 +1,6 @@
 import { ResponsesMessagesTranslationError } from "./messages-translation"
 
-const CUSTOM_TOOL_INPUT_PREFIX = '{"input":"'
+const CUSTOM_TOOL_INPUT_PREFIX_TOKENS = ["{", '"input"', ":", '"'] as const
 
 type DecoderState = "prefix" | "input" | "suffix" | "done"
 type EscapeState = "plain" | "escaped" | "unicode"
@@ -12,7 +12,8 @@ export class CustomToolInputStreamDecoder {
   private failed = false
   private finished = false
   private offset = 0
-  private prefixOffset = 0
+  private prefixCharOffset = 0
+  private prefixTokenOffset = 0
   private safeInputLength = 0
   private state: DecoderState = "prefix"
   private unicodeDigitsRemaining = 0
@@ -50,11 +51,17 @@ export class CustomToolInputStreamDecoder {
 
   private consume(char: string, deltaParts: Array<string>): void {
     if (this.state === "prefix") {
-      if (char !== CUSTOM_TOOL_INPUT_PREFIX[this.prefixOffset]) {
+      const token = CUSTOM_TOOL_INPUT_PREFIX_TOKENS[this.prefixTokenOffset]
+      if (this.prefixCharOffset === 0 && isJsonWhitespace(char)) return
+      if (!token || char !== token[this.prefixCharOffset]) {
         return this.fail("unexpected custom tool input prefix")
       }
-      this.prefixOffset += 1
-      if (this.prefixOffset === CUSTOM_TOOL_INPUT_PREFIX.length) {
+      this.prefixCharOffset += 1
+      if (this.prefixCharOffset < token.length) return
+
+      this.prefixTokenOffset += 1
+      this.prefixCharOffset = 0
+      if (this.prefixTokenOffset === CUSTOM_TOOL_INPUT_PREFIX_TOKENS.length) {
         this.state = "input"
       }
       return
