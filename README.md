@@ -409,8 +409,7 @@ enabled = false
 ```
 
 > [!NOTE]
-> This configuration is specific to Codex and the GitHub Copilot provider. `name` must be set to `"OpenAI"`. It can help mitigate Codex local compact cache miss issues.
-> If you are using the codex provider, it is recommended to set `base_url` to `"http://localhost:4141/codex"`.
+> `name` must be set to `"OpenAI"`.
 
 When a Codex client (`User-Agent` starts with `codex`) requests the top-level `GET /v1/models`, the gateway merges native Codex models with models available through the Messages adapter. The latter advertise `use_responses_lite: true`: `/v1/responses` uses **Responses → Messages** for Anthropic providers, while OpenAI-compatible providers and Chat-only Copilot models reuse the existing Messages route for **Responses → Messages → Chat Completions**, then translate streaming or JSON results back to Responses.
 

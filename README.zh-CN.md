@@ -437,8 +437,7 @@ enabled = false
 ```
 
 > [!NOTE]
-> 此配置仅限于 Codex 与 GitHub Copilot provider。`name` 一定要配置为 `"OpenAI"`。它可以缓解 Codex local compact 不命中缓存的问题。
-> 如果使用 codex provider，建议将 `base_url` 配置为 `"http://localhost:4141/codex"`。
+> `name` 一定要配置为 `"OpenAI"`。
 
 Codex 客户端（`User-Agent` 以 `codex` 开头）请求顶层 `GET /v1/models` 时，网关会把原生 Codex 模型与可通过 Messages 适配的模型合并返回。后者会声明 `use_responses_lite: true`：调用 `/v1/responses` 后，Anthropic provider 走 **Responses → Messages**，OpenAI 兼容 provider 以及只支持 Chat 的 Copilot 模型则复用现有 Messages 路由继续走 **Responses → Messages → Chat Completions**，最终统一翻译回 Responses（包括流式事件）。
 

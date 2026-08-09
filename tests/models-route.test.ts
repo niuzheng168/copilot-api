@@ -348,6 +348,39 @@ describe("model routes", () => {
     })
   })
 
+  test("uses the default Codex template when the Codex provider is missing", async () => {
+    const copilotModels = createCopilotModels(["claude-sonnet-4.6"])
+    copilotModels.data[0].supported_endpoints = ["/v1/messages"]
+    copilotModels.data[0].capabilities.supports.tool_calls = true
+    state.models = copilotModels
+    enabledProviders = ["claude"]
+    providerConfigs = {
+      claude: createProviderConfig("claude", "https://claude.example"),
+    }
+
+    const response = await createApp().request("/v1/models?client=codex", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    const synthetic = body.models.find(
+      (model) => model.slug === "claude-sonnet-4-6",
+    )
+    expect(synthetic).toMatchObject({
+      display_name: "claude-sonnet-4.6",
+    })
+    expect(synthetic?.available_in_plans).toContain("pro")
+    const modelMessages = synthetic?.model_messages as
+      | { instructions_template?: string }
+      | undefined
+    expect(modelMessages?.instructions_template).toContain(
+      "You are Codex, an agent based on GPT-5.",
+    )
+  })
+
   test("copies matching Codex catalog models for provider-prefixed aliases", async () => {
     const solCatalogModel = {
       slug: "gpt-5.6-sol",
