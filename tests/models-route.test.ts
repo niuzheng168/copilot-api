@@ -389,6 +389,37 @@ describe("model routes", () => {
     ).toMatchObject({ default_reasoning_level: "low" })
   })
 
+  test("defaults reasoning efforts to high, xhigh, max, and ultra for Codex models", async () => {
+    const copilotModels = createCopilotModels(["claude-sonnet-4.6"])
+    copilotModels.data[0].supported_endpoints = ["/v1/messages"]
+    copilotModels.data[0].capabilities.supports.tool_calls = true
+    state.models = copilotModels
+    enabledProviders = ["chat"]
+    providerConfigs = {
+      chat: createProviderConfig("chat", "https://chat.example"),
+    }
+
+    const response = await createApp().request("/v1/models", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    for (const slug of ["claude-sonnet-4-6", "chat/qwen-plus"]) {
+      expect(body.models.find((model) => model.slug === slug)).toMatchObject({
+        default_reasoning_level: "max",
+        supported_reasoning_levels: [
+          { effort: "high", description: "high reasoning effort" },
+          { effort: "xhigh", description: "xhigh reasoning effort" },
+          { effort: "max", description: "max reasoning effort" },
+          { effort: "ultra", description: "ultra reasoning effort" },
+        ],
+      })
+    }
+  })
+
   test("merges Anthropic and OpenAI-compatible provider models for Codex", async () => {
     enabledProviders = ["anthropic", "chat"]
     providerConfigs = {

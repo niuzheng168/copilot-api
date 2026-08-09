@@ -6,6 +6,7 @@ import { resolveProviderConfig } from "~/lib/provider-resolver"
 import type {
   CodexModel,
   CodexModelsResponse,
+  CodexReasoningEffort,
   SyntheticCodexModelCandidate,
 } from "~/routes/models/codex-models-types"
 import { forwardCodexModels } from "~/services/codex/get-models"
@@ -37,6 +38,13 @@ const FALLBACK_AVAILABLE_IN_PLANS: CodexModel["available_in_plans"] = [
   "sci",
   "self_serve_business_usage_based",
   "team",
+]
+
+const DEFAULT_REASONING_EFFORTS: Array<CodexReasoningEffort> = [
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
 ]
 
 export function isCodexUserAgent(userAgent: string | undefined): boolean {
@@ -133,7 +141,7 @@ export function createSyntheticCodexModel(
   const reasoningEfforts =
     candidate.reasoningEfforts.length > 0 ?
       candidate.reasoningEfforts
-    : [candidate.defaultReasoningEffort]
+    : DEFAULT_REASONING_EFFORTS
   const defaultReasoningEffort =
     reasoningEfforts.includes(candidate.defaultReasoningEffort) ?
       candidate.defaultReasoningEffort
