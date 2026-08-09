@@ -325,7 +325,7 @@ describe("model routes", () => {
       supports_search_tool: false,
       supports_parallel_tool_calls: true,
       tool_mode: "code_mode_only",
-      multi_agent_version: "v1",
+      multi_agent_version: "v2",
       default_reasoning_level: "max",
     })
   })
@@ -389,7 +389,7 @@ describe("model routes", () => {
     ).toMatchObject({ default_reasoning_level: "low" })
   })
 
-  test("defaults reasoning efforts to high, xhigh, and max for Codex models", async () => {
+  test("defaults reasoning efforts to high, xhigh, max, and ultra for Codex models", async () => {
     const copilotModels = createCopilotModels(["claude-sonnet-4.6"])
     copilotModels.data[0].supported_endpoints = ["/v1/messages"]
     copilotModels.data[0].capabilities.supports.tool_calls = true
@@ -414,6 +414,7 @@ describe("model routes", () => {
           { effort: "high", description: "high reasoning effort" },
           { effort: "xhigh", description: "xhigh reasoning effort" },
           { effort: "max", description: "max reasoning effort" },
+          { effort: "ultra", description: "ultra reasoning effort" },
         ],
       })
     }

@@ -753,6 +753,12 @@ function translateUserContentPart(
   if (type === "input_text" || type === "output_text" || type === "text") {
     return { type: "text", text: requireStringField(part, "text", path) }
   }
+  if (type === "encrypted_content") {
+    return {
+      type: "text",
+      text: requireStringField(part, "encrypted_content", path),
+    }
+  }
   if (type === "input_image") {
     return translateImagePart(part, path)
   }

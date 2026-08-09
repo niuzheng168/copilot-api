@@ -130,7 +130,13 @@ describe("Responses Lite to Messages translation", () => {
           type: "agent_message",
           author: "agent-a",
           recipient: "agent-b",
-          content: [{ type: "input_text", text: "Agent handoff" }],
+          content: [
+            { type: "input_text", text: "Agent handoff" },
+            {
+              type: "encrypted_content",
+              encrypted_content: "encrypted-handoff",
+            },
+          ],
         },
         { role: "developer", content: "Later developer", type: "message" },
       ],
@@ -142,7 +148,10 @@ describe("Responses Lite to Messages translation", () => {
     expect(result.messagesPayload.messages).toEqual([
       {
         role: "user",
-        content: [{ type: "text", text: "Agent handoff" }],
+        content: [
+          { type: "text", text: "Agent handoff" },
+          { type: "text", text: "encrypted-handoff" },
+        ],
       },
       { role: "user", content: "Later developer" },
     ])
