@@ -65,6 +65,42 @@ describe("Responses Lite to Messages translation", () => {
     ])
   })
 
+  test("merges input reasoning with the following assistant message", () => {
+    const result = translate({
+      input: [
+        { role: "user", content: "What is 2 + 2?", type: "message" },
+        {
+          id: "reasoning-1",
+          type: "reasoning",
+          summary: [{ type: "summary_text", text: "Calculate the sum." }],
+          encrypted_content: "reasoning-signature",
+        },
+        {
+          role: "assistant",
+          content: [{ type: "output_text", text: "4" }],
+          type: "message",
+        },
+        { role: "user", content: "Thanks", type: "message" },
+      ],
+    })
+
+    expect(result.messagesPayload.messages).toEqual([
+      { role: "user", content: "What is 2 + 2?" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "thinking",
+            thinking: "Calculate the sum.",
+            signature: "reasoning-signature",
+          },
+          { type: "text", text: "4" },
+        ],
+      },
+      { role: "user", content: "Thanks" },
+    ])
+  })
+
   test("restores namespace on Responses function calls", () => {
     const translation = translate({
       input: [

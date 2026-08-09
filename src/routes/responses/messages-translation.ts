@@ -548,8 +548,8 @@ function translateInputMessage(
 
   if (role === "assistant") {
     const blocks = translateAssistantContent(item.content, "message.content")
-    if (blocks.length > 0) {
-      messages.push({ role: "assistant", content: blocks })
+    for (const block of blocks) {
+      appendAssistantBlock(messages, block)
     }
     return
   }
