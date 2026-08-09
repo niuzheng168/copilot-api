@@ -1,10 +1,6 @@
 import { createHash } from "node:crypto"
 
-import {
-  compactMessageSections,
-  compactSummaryPromptStart,
-  compactTextOnlyGuard,
-} from "~/lib/compact"
+import { compactTextOnlyGuard } from "~/lib/compact"
 import type {
   AnthropicAssistantContentBlock,
   AnthropicAssistantMessage,
@@ -37,11 +33,16 @@ import type {
 export const MESSAGES_COMPACTION_PREFIX = "copilot-api:messages-compaction:v1:"
 
 export const MESSAGES_COMPACTION_PROMPT = [
-  `${compactSummaryPromptStart}.`,
-  "Create a handoff summary for another model that will resume this coding task.",
+  "You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.",
+  "Do NOT continue the task, make changes, or call any tools. Your only output must be the handoff summary.",
   "",
-  `${compactMessageSections[0]} Summarize all unfinished work and clear next steps.`,
-  `${compactMessageSections[1]} Summarize progress, decisions, constraints, modified files, and critical data needed to continue.`,
+  "Include:",
+  "- Current progress and key decisions made",
+  "- Important context, constraints, or user preferences",
+  "- What remains to be done (clear next steps)",
+  "- Any critical data, examples, or references needed to continue",
+  "",
+  "Be concise, structured, and focused on helping the next LLM seamlessly continue the work.",
   "",
   compactTextOnlyGuard,
 ].join("\n")

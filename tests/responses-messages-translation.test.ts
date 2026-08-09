@@ -166,6 +166,35 @@ describe("Responses Lite to Messages translation", () => {
     expect(result.messagesPayload.tool_choice).toEqual({ type: "auto" })
   })
 
+  test("uses the Codex local handoff prompt for compaction requests", () => {
+    const expectedPrompt = [
+      "You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.",
+      "Do NOT continue the task, make changes, or call any tools. Your only output must be the handoff summary.",
+      "",
+      "Include:",
+      "- Current progress and key decisions made",
+      "- Important context, constraints, or user preferences",
+      "- What remains to be done (clear next steps)",
+      "- Any critical data, examples, or references needed to continue",
+      "",
+      "Be concise, structured, and focused on helping the next LLM seamlessly continue the work.",
+      "",
+      "CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.",
+    ].join("\n")
+
+    const result = translate({
+      input: [
+        { role: "user", content: "Implement the feature", type: "message" },
+        { type: "compaction_trigger" },
+      ],
+    })
+
+    expect(result.messagesPayload.messages).toEqual([
+      { role: "user", content: "Implement the feature" },
+      { role: "user", content: expectedPrompt },
+    ])
+  })
+
   test("does not support Responses tool search mode", () => {
     expect(() =>
       translate({
