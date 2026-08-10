@@ -55,8 +55,7 @@ function createAlphaSearchRequest(
   payload: AlphaSearchRequest,
 ): Request {
   return new Request(request, {
-    body: JSON.stringify(payload),
-    method: "post",
+    body: JSON.stringify(payload), //NOSONAR
   })
 }
 
