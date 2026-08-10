@@ -494,6 +494,55 @@ describe("Codex alpha search forwarding", () => {
     )
   })
 
+  test("supports srvx-style wrapped requests when rebuilding the Codex request", async () => {
+    // srvx's Node adapter wraps incoming requests in a class whose prototype
+    // chain satisfies `instanceof Request` without native Request internals.
+    const realRequest = new Request("http://localhost/alpha/search?q=srvx", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-client-header": "kept",
+      },
+      body: JSON.stringify(alphaSearchPayload),
+    })
+    class RequestWrapper {
+      get url() {
+        return realRequest.url
+      }
+      get method() {
+        return realRequest.method
+      }
+      get headers() {
+        return realRequest.headers
+      }
+      get signal() {
+        return realRequest.signal
+      }
+      clone() {
+        return realRequest.clone()
+      }
+    }
+    Object.setPrototypeOf(RequestWrapper.prototype, Request.prototype)
+    const wrappedRequest = new RequestWrapper() as unknown as Request
+    expect(wrappedRequest instanceof Request).toBe(true)
+
+    const response = await createApp().fetch(wrappedRequest)
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(
+      "https://chatgpt.com/backend-api/codex/alpha/search?q=srvx",
+    )
+    const headers = new Headers(init?.headers)
+    expect(headers.get("content-type")).toBe("application/json")
+    expect(headers.get("x-client-header")).toBe("kept")
+    expect(await new Response(init?.body).json()).toEqual({
+      ...alphaSearchPayload,
+      model: "gpt-5.6-sol",
+    })
+  })
+
   test("returns 404 when the Codex provider is unavailable", async () => {
     codexProviderConfig = null
 
@@ -528,6 +577,26 @@ describe("Alpha search Responses adapter", () => {
     const [, init] = fetchMock.mock.calls[0] ?? []
     expect(await new Response(init?.body).json()).toMatchObject({
       model: "gpt-5.6-sol",
+    })
+  })
+
+  test("rewrites non-gpt models to gpt-5.6-luna when prioritizing Codex", async () => {
+    const response = await createApp().request("/alpha/search", {
+      method: "POST",
+      body: JSON.stringify(
+        createFallbackPayload(
+          { search_query: [{ q: "non-gpt model" }] },
+          { model: "claude-opus-4.1" },
+        ),
+      ),
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponsesMock).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, init] = fetchMock.mock.calls[0] ?? []
+    expect(await new Response(init?.body).json()).toMatchObject({
+      model: "gpt-5.6-luna",
     })
   })
 

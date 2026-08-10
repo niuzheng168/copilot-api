@@ -54,8 +54,15 @@ function createAlphaSearchRequest(
   request: Request,
   payload: AlphaSearchRequest,
 ): Request {
-  return new Request(request, {
-    body: JSON.stringify(payload), //NOSONAR
+  // Rebuild from primitives instead of cloning: under Node runtimes srvx
+  // wraps incoming requests in a proxy class whose prototype chain satisfies
+  // `instanceof Request` without the native internals, so `new Request(req)`
+  // throws "Cannot read properties of undefined (reading 'window')".
+  return new Request(request.url, {
+    body: JSON.stringify(payload),
+    headers: request.headers,
+    method: request.method,
+    signal: request.signal,
   })
 }
 
@@ -153,6 +160,9 @@ export async function handleAlphaSearchRequest(
   if (isAlphaSearchCodexPriorityEnabled()) {
     const codexProviderConfig = await resolveProviderConfig("codex")
     if (codexProviderConfig) {
+      if (!payload.model.startsWith("gpt")) {
+        payload.model = "gpt-5.6-luna"
+      }
       return await forwardCodexAlphaSearchRequest(
         createAlphaSearchRequest(c.req.raw, payload),
       )
