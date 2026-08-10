@@ -65,12 +65,104 @@ describe("Responses Lite to Messages translation", () => {
           "Developer four",
           "Developer five",
         ].join("\n\n"),
+        cache_control: { type: "ephemeral" },
       },
     ])
     expect(result.messagesPayload.messages).toEqual([
       { role: "user", content: "First user message" },
-      { role: "user", content: "Second user message" },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Second user message",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
     ])
+  })
+
+  test("adds ephemeral cache_control to the last system block and the last message tail", () => {
+    const result = translate({
+      instructions: "Base instructions",
+      input: [
+        { role: "user", content: "First user message", type: "message" },
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: "Second user, part one" },
+            { type: "input_text", text: "Second user, part two" },
+          ],
+          type: "message",
+        },
+      ],
+    })
+
+    expect(result.messagesPayload.system).toEqual([
+      {
+        type: "text",
+        text: "Base instructions",
+        cache_control: { type: "ephemeral" },
+      },
+    ])
+    expect(result.messagesPayload.messages).toEqual([
+      { role: "user", content: "First user message" },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Second user, part one" },
+          {
+            type: "text",
+            text: "Second user, part two",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
+    ])
+  })
+
+  test("leaves a trailing empty content array without cache_control", () => {
+    const result = translate({
+      input: [{ role: "user", content: [], type: "message" }],
+    })
+
+    expect(result.messagesPayload.messages).toEqual([
+      { role: "user", content: [] },
+    ])
+  })
+
+  test("does not mark a trailing thinking block with cache_control", () => {
+    const result = translate({
+      input: [
+        { role: "user", content: "What is 2 + 2?", type: "message" },
+        {
+          id: "reasoning-1",
+          type: "reasoning",
+          summary: [{ type: "summary_text", text: "Calculate the sum." }],
+          encrypted_content: "reasoning-signature",
+        },
+      ],
+    })
+
+    expect(result.messagesPayload.messages).toEqual([
+      { role: "user", content: "What is 2 + 2?" },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "thinking",
+            thinking: "Calculate the sum.",
+            signature: "reasoning-signature",
+          },
+        ],
+      },
+    ])
+    const lastMessage = result.messagesPayload.messages.at(-1)
+    if (!lastMessage || !Array.isArray(lastMessage.content)) {
+      throw new Error("Expected the trailing message to carry block content")
+    }
+    expect(lastMessage.content.at(-1)).not.toHaveProperty("cache_control")
   })
 
   test("converts developer messages after the first user to user messages", () => {
@@ -97,7 +189,11 @@ describe("Responses Lite to Messages translation", () => {
     })
 
     expect(result.messagesPayload.system).toEqual([
-      { type: "text", text: "Initial developer" },
+      {
+        type: "text",
+        text: "Initial developer",
+        cache_control: { type: "ephemeral" },
+      },
     ])
     expect(result.messagesPayload.messages).toEqual([
       { role: "user", content: "First user message" },
@@ -117,7 +213,16 @@ describe("Responses Lite to Messages translation", () => {
           },
         ],
       },
-      { role: "user", content: "Second user message" },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Second user message",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
     ])
   })
 
@@ -143,7 +248,11 @@ describe("Responses Lite to Messages translation", () => {
     })
 
     expect(result.messagesPayload.system).toEqual([
-      { type: "text", text: "Initial developer" },
+      {
+        type: "text",
+        text: "Initial developer",
+        cache_control: { type: "ephemeral" },
+      },
     ])
     expect(result.messagesPayload.messages).toEqual([
       {
@@ -153,7 +262,16 @@ describe("Responses Lite to Messages translation", () => {
           { type: "text", text: "encrypted-handoff" },
         ],
       },
-      { role: "user", content: "Later developer" },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Later developer",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
     ])
   })
 
@@ -173,7 +291,11 @@ describe("Responses Lite to Messages translation", () => {
 
     expect(result.messagesPayload.system).toEqual([
       { type: "text", text: "Developer one" },
-      { type: "text", text: "Developer two" },
+      {
+        type: "text",
+        text: "Developer two",
+        cache_control: { type: "ephemeral" },
+      },
     ])
     expect(result.messagesPayload.messages).toEqual([
       {
@@ -181,7 +303,16 @@ describe("Responses Lite to Messages translation", () => {
         content:
           "The previous conversation was compacted. Continue from this handoff summary:\n\nExisting handoff",
       },
-      { role: "user", content: "Continue" },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Continue",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
     ])
   })
 
@@ -234,7 +365,16 @@ describe("Responses Lite to Messages translation", () => {
       name: "apply_patch",
     })
     expect(result.messagesPayload.messages).toEqual([
-      { role: "user", content: "Update the file" },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Update the file",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
     ])
   })
 
@@ -270,7 +410,16 @@ describe("Responses Lite to Messages translation", () => {
           { type: "text", text: "4" },
         ],
       },
-      { role: "user", content: "Thanks" },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Thanks",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
     ])
   })
 
@@ -400,7 +549,16 @@ describe("Responses Lite to Messages translation", () => {
 
     expect(result.messagesPayload.messages).toEqual([
       { role: "user", content: "Implement the feature" },
-      { role: "user", content: expectedPrompt },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: expectedPrompt,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
     ])
   })
 
@@ -602,7 +760,7 @@ describe("Responses Lite to Messages translation", () => {
     }
   })
 
-  test("uses Base64 encrypted content for stream reasoning signatures", async () => {
+  test("uses an empty encrypted content fallback for unsigned stream reasoning", async () => {
     const translation = translate({
       input: "Explain the result",
       stream: true,
@@ -666,13 +824,11 @@ describe("Responses Lite to Messages translation", () => {
     })
 
     expect(reasoningItems).toHaveLength(4)
-    const fallback = reasoningItems[0]?.encrypted_content
-    expect(fallback).toBe(reasoningItems[1]?.encrypted_content)
-    expect(fallback).toBe(reasoningItems[2]?.encrypted_content)
+    expect(reasoningItems[0]?.encrypted_content).toBe("")
+    expect(reasoningItems[1]?.encrypted_content).toBe("")
+    expect(reasoningItems[2]?.encrypted_content).toBe("")
     expect(reasoningItems[3]?.encrypted_content).toBe(signature)
-    for (const item of reasoningItems) {
-      expectCanonicalBase64(item.encrypted_content)
-    }
+    expectCanonicalBase64(reasoningItems[3]?.encrypted_content)
   })
 
   test("uses Base64 encrypted content for stream compaction", async () => {

@@ -24,8 +24,7 @@ import {
   type MessagesResponseTranslationContext,
 } from "./messages-translation"
 
-const EMPTY_SIGNATURE_ENCRYPTED_CONTENT =
-  "Y29waWxvdC1hcGk6bWVzc2FnZXMtZW1wdHktc2lnbmF0dXJlOnYx"
+const EMPTY_SIGNATURE_ENCRYPTED_CONTENT = ""
 
 interface MessagesStreamChunk {
   data?: string

@@ -4,6 +4,7 @@ import { compactTextOnlyGuard } from "~/lib/compact"
 import type {
   AnthropicAssistantContentBlock,
   AnthropicAssistantMessage,
+  AnthropicCacheControl,
   AnthropicDocumentBlock,
   AnthropicImageBlock,
   AnthropicInputMessage,
@@ -130,6 +131,8 @@ export function translateResponsesToMessages(
       "Responses input must contain at least one translatable message",
     )
   }
+
+  applyEphemeralCacheControl(messages, system)
 
   const reasoningEffort = translateReasoningEffort(payload.reasoning?.effort)
   const messagesPayload: AnthropicMessagesPayload = {
@@ -1011,6 +1014,37 @@ function resolveMetadataUserId(payload: ResponsesPayload): string | undefined {
   if (payload.safety_identifier?.trim()) return payload.safety_identifier
   if (payload.prompt_cache_key?.trim()) return payload.prompt_cache_key
   return undefined
+}
+
+const EPHEMERAL_CACHE_CONTROL: AnthropicCacheControl = { type: "ephemeral" }
+
+// Mark the stable prompt prefix for Anthropic prompt caching: the last system
+// block plus the tail block of the final message.
+function applyEphemeralCacheControl(
+  messages: Array<AnthropicInputMessage>,
+  system: Array<AnthropicTextBlock>,
+): void {
+  const lastSystemBlock = system.at(-1)
+  if (lastSystemBlock) {
+    lastSystemBlock.cache_control = { ...EPHEMERAL_CACHE_CONTROL }
+  }
+
+  const lastMessage = messages.at(-1)
+  if (!lastMessage) return
+
+  if (typeof lastMessage.content === "string") {
+    const textBlock: AnthropicTextBlock = {
+      type: "text",
+      text: lastMessage.content,
+      cache_control: { ...EPHEMERAL_CACHE_CONTROL },
+    }
+    lastMessage.content = [textBlock]
+    return
+  }
+
+  const lastBlock = lastMessage.content.at(-1)
+  if (!lastBlock || lastBlock.type === "thinking") return
+  lastBlock.cache_control = { ...EPHEMERAL_CACHE_CONTROL }
 }
 
 function appendAssistantBlock(
