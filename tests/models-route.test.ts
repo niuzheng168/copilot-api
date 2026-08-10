@@ -115,6 +115,7 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
         data: [
           { id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
           { id: "gpt-provider-only", name: "GPT Provider Only" },
+          { id: "qwen3-coder", name: "Qwen3 Coder" },
         ],
       }),
     )
@@ -449,24 +450,33 @@ describe("model routes", () => {
     const body = (await response.json()) as {
       models: Array<Record<string, unknown> & { slug: string }>
     }
+    expect(body.models.find((model) => model.slug === "gpt-5.6-sol")).toEqual(
+      solCatalogModel,
+    )
     expect(
       body.models.find((model) => model.slug === "codex/gpt-5.6-sol"),
     ).toEqual({
       ...solCatalogModel,
       slug: "codex/gpt-5.6-sol",
+      display_name: "codex GPT-5.6 Sol",
     })
     expect(
       body.models.find((model) => model.slug === "opencode-go/gpt-5.6-luna"),
     ).toEqual({
       ...lunaCatalogModel,
       slug: "opencode-go/gpt-5.6-luna",
+      display_name: "opencode-go GPT-5.6 Luna",
     })
     expect(
       body.models.find((model) => model.slug === "codex/gpt-remote-only"),
     ).toEqual({
       ...remoteOnlyCatalogModel,
       slug: "codex/gpt-remote-only",
+      display_name: "codex GPT Remote Only",
     })
+    expect(
+      body.models.find((model) => model.slug === "opencode-go/qwen3-coder"),
+    ).toMatchObject({ display_name: "Qwen3 Coder (opencode-go)" })
     expect(body.models.map((model) => model.slug)).not.toContain(
       "opencode-go/gpt-provider-only",
     )

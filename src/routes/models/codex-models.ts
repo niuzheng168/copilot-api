@@ -266,6 +266,7 @@ After deleting anything material, briefly tell the user what was removed and whe
 
 interface MergedCodexModelsOptions {
   includeCodexProviderAliases?: boolean
+  codexProviderName?: string
 }
 
 export function isCodexUserAgent(userAgent: string | undefined): boolean {
@@ -342,7 +343,7 @@ export async function handleMergedCodexModels(
         const slug = `codex/${model.slug}`
         if (seenSlugs.has(slug)) return []
         seenSlugs.add(slug)
-        return [{ ...model, slug }]
+        return [createCatalogAlias(model, slug, options.codexProviderName)]
       })
     : []
   const syntheticModels = candidates
@@ -353,7 +354,13 @@ export async function handleMergedCodexModels(
           catalogModelsBySlug.get(candidate.catalogSlug)
         : undefined
       if (catalogModel) {
-        return [{ ...catalogModel, slug: candidate.slug }]
+        return [
+          createCatalogAlias(
+            catalogModel,
+            candidate.slug,
+            candidate.providerName,
+          ),
+        ]
       }
       if (candidate.catalogMatchRequired) return []
 
@@ -377,6 +384,27 @@ export async function handleMergedCodexModels(
     models: response,
   })
   return c.json(response)
+}
+
+function createCatalogAlias(
+  model: CodexModel,
+  slug: string,
+  providerName: string | undefined,
+): CodexModel {
+  const alias = { ...model, slug }
+  const prefix = providerName?.trim()
+  if (
+    !prefix
+    || typeof alias.display_name !== "string"
+    || alias.display_name.startsWith(`${prefix} `)
+  ) {
+    return alias
+  }
+
+  return {
+    ...alias,
+    display_name: `${prefix} ${alias.display_name}`,
+  }
 }
 
 export function createSyntheticCodexModel(

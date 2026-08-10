@@ -377,6 +377,7 @@ function createProviderCodexCandidate(
     slug: `${providerConfig.name}/${modelId}`,
     catalogSlug: modelId,
     catalogMatchRequired: effectiveType === "openai-responses",
+    providerName: providerConfig.name,
     displayName: `${displayName} (${providerConfig.name})`,
     description: `${displayName} through the ${providerConfig.name} ${adapterName} adapter.`,
     contextWindow: positiveNumber(
@@ -508,11 +509,15 @@ modelRoutes.get("/", async (c) => {
   try {
     if (isCodexUserAgent(c.req.header("user-agent"))) {
       const enabledProviders = listEnabledProviders()
+      const codexProviderName = enabledProviders.find(
+        (provider) => provider === "codex",
+      )
       return await handleMergedCodexModels(
         c,
         getSyntheticCodexModels(c.req.raw.headers, enabledProviders),
         {
-          includeCodexProviderAliases: enabledProviders.includes("codex"),
+          includeCodexProviderAliases: codexProviderName !== undefined,
+          codexProviderName,
         },
       )
     }

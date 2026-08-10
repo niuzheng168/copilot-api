@@ -147,6 +147,7 @@ export interface SyntheticCodexModelCandidate {
   slug: string
   catalogSlug?: string
   catalogMatchRequired?: boolean
+  providerName?: string
   displayName: string
   description: string
   contextWindow: number
