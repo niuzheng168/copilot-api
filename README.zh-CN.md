@@ -429,6 +429,11 @@ request_max_retries = 3
 stream_max_retries = 1
 stream_idle_timeout_ms = 300000
 
+[features.code_mode]
+excluded_tool_namespaces = [
+    "mcp__codex_apps__sites"
+]
+
 [features]
 remote_compaction_v2 = true
 
@@ -438,6 +443,8 @@ enabled = false
 
 > [!NOTE]
 > `name` 一定要配置为 `"OpenAI"`。
+>
+> 对于不支持 `tool_search` 的模型，建议按上面的配置将 `mcp__codex_apps__sites` 添加到 `features.code_mode.excluded_tool_namespaces` 中。否则每次提问可能会额外消耗 1 万多个 tokens。
 
 Codex 客户端（`User-Agent` 以 `codex` 开头）请求顶层 `GET /v1/models` 时，网关会把原生 Codex 模型与可通过 Messages 适配的模型合并返回。后者会声明 `use_responses_lite: true`：调用 `/v1/responses` 后，Anthropic provider 走 **Responses → Messages**，OpenAI 兼容 provider 以及只支持 Chat 的 Copilot 模型则复用现有 Messages 路由继续走 **Responses → Messages → Chat Completions**，最终统一翻译回 Responses（包括流式事件）。
 
