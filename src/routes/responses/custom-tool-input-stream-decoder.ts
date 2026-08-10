@@ -2,7 +2,7 @@ import { ResponsesMessagesTranslationError } from "./messages-translation"
 
 const CUSTOM_TOOL_INPUT_PREFIX_TOKENS = ["{", '"input"', ":", '"'] as const
 
-type DecoderState = "prefix" | "input" | "suffix" | "done"
+type DecoderState = "prefix" | "input" | "suffix" | "trailing" | "done"
 type EscapeState = "plain" | "escaped" | "unicode"
 
 export class CustomToolInputStreamDecoder {
@@ -16,6 +16,9 @@ export class CustomToolInputStreamDecoder {
   private prefixTokenOffset = 0
   private safeInputLength = 0
   private state: DecoderState = "prefix"
+  private trailingDepth = 0
+  private trailingEscaped = false
+  private trailingInString = false
   private unicodeDigitsRemaining = 0
 
   append(partialJson: string): string {
@@ -69,8 +72,45 @@ export class CustomToolInputStreamDecoder {
 
     if (this.state === "suffix") {
       if (isJsonWhitespace(char)) return
-      if (char !== "}") return this.fail('expected "}" after the input string')
-      this.state = "done"
+      if (char === "}") {
+        this.state = "done"
+        return
+      }
+      if (char === ",") {
+        // Tolerate extra properties after the input string; skip them until
+        // the wrapper object closes.
+        this.state = "trailing"
+        this.trailingDepth = 1
+        return
+      }
+      return this.fail('expected "}" or "," after the input string')
+    }
+
+    if (this.state === "trailing") {
+      if (this.trailingInString) {
+        if (this.trailingEscaped) {
+          this.trailingEscaped = false
+          return
+        }
+        if (char === "\\") {
+          this.trailingEscaped = true
+          return
+        }
+        if (char === '"') this.trailingInString = false
+        return
+      }
+      if (char === '"') {
+        this.trailingInString = true
+        return
+      }
+      if (char === "{" || char === "[") {
+        this.trailingDepth += 1
+        return
+      }
+      if (char === "}" || char === "]") {
+        this.trailingDepth -= 1
+        if (this.trailingDepth === 0) this.state = "done"
+      }
       return
     }
 

@@ -73,6 +73,47 @@ describe("CustomToolInputStreamDecoder", () => {
     expect(decodeChunks(['{"input":""', " \n}\t"]).input).toBe("")
   })
 
+  test("ignores extra properties after the input string", () => {
+    const input = 'quote: " brace: } slash: \\'
+    const wrapped = JSON.stringify({
+      input,
+      timeout_ms: 1000,
+      nested: { a: [1, true, null, { b: "]}" }], note: 'x"y\\z' },
+    })
+
+    for (let split = 0; split <= wrapped.length; split += 1) {
+      const result = decodeChunks([
+        wrapped.slice(0, split),
+        wrapped.slice(split),
+      ])
+      expect(result.deltas.join("")).toBe(input)
+      expect(result.input).toBe(input)
+    }
+  })
+
+  test("accepts whitespace around extra properties", () => {
+    const result = decodeChunks([
+      '{"input":"do work"',
+      ' , "timeout_ms": 120000 , "flag": false }',
+    ])
+
+    expect(result.deltas).toEqual(["do work"])
+    expect(result.input).toBe("do work")
+  })
+
+  test("rejects an unclosed wrapper after extra properties", () => {
+    const decoder = new CustomToolInputStreamDecoder()
+    decoder.append('{"input":"x", "timeout_ms": 1000')
+    expect(() => decoder.finish()).toThrow("wrapper was complete")
+  })
+
+  test("rejects data after the wrapper closes behind extra properties", () => {
+    const decoder = new CustomToolInputStreamDecoder()
+    expect(() => decoder.append('{"input":"x", "a": [1, {"b": 2}]}x')).toThrow(
+      "unexpected data after the input wrapper",
+    )
+  })
+
   test.each([
     ["missing object", '"input":"x"}'],
     ["wrong prefix", '{"value":"x"}'],
