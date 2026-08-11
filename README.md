@@ -401,13 +401,9 @@ request_max_retries = 3
 stream_max_retries = 1
 stream_idle_timeout_ms = 300000
 
-[features.code_mode]
-excluded_tool_namespaces = [
-    "mcp__codex_apps__sites"
-]
-
 [features]
 remote_compaction_v2 = true
+apps = false
 
 [analytics]
 enabled = false
@@ -416,7 +412,7 @@ enabled = false
 > [!NOTE]
 > `name` must be set to `"OpenAI"`.
 >
-> For models that do not support `tool_search`, we recommend disabling `mcp__codex_apps__sites` by adding it to `features.code_mode.excluded_tool_namespaces` as shown above. Otherwise, each prompt may consume more than 10,000 additional tokens.
+> For third-party models that do not support `tool_search`, we recommend disabling features.apps. Otherwise, each prompt may consume an additional 20,000 or more tokens.
 
 When a Codex client (`User-Agent` starts with `codex`) requests the top-level `GET /v1/models`, the gateway merges native Codex models with models available through the Messages adapter. The latter advertise `use_responses_lite: true`: `/v1/responses` uses **Responses → Messages** for Anthropic providers, while OpenAI-compatible providers and Chat-only Copilot models reuse the existing Messages route for **Responses → Messages → Chat Completions**, then translate streaming or JSON results back to Responses.
 
