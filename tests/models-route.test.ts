@@ -9,6 +9,7 @@ const actualTokenModule = await import("~/lib/token")
 
 let enabledProviders: Array<string> = []
 let providerConfigs: Record<string, ResolvedProviderConfig | null> = {}
+let codexSetupError: Error | null = null
 
 await mock.module("~/lib/config", () => ({
   ...actualConfigModule,
@@ -19,7 +20,10 @@ await mock.module("~/lib/config", () => ({
 
 await mock.module("~/lib/token", () => ({
   ...actualTokenModule,
-  setupCodexToken: async () => {},
+  setupCodexToken: () => {
+    if (codexSetupError) return Promise.reject(codexSetupError)
+    return Promise.resolve()
+  },
 }))
 
 const { state } = await import("~/lib/state")
@@ -125,6 +129,10 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
     return Promise.reject(new Error("connection refused"))
   }
 
+  if (requestUrl === "https://invalid.example/v1/models") {
+    return Promise.resolve(Response.json({ models: [] }))
+  }
+
   const providerModelIds: Record<string, string> = {
     "first.example": "first-model",
     "second.example": "second-model",
@@ -160,6 +168,7 @@ function createApp() {
 beforeEach(() => {
   enabledProviders = []
   providerConfigs = {}
+  codexSetupError = null
   codexCatalogModels = createDefaultCodexCatalogModels()
   state.models = undefined
   fetchMock.mockClear()
@@ -230,6 +239,40 @@ describe("model routes", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
+  test("falls back to pricing models for each failed provider models request", async () => {
+    enabledProviders = ["deepseek", "kimi", "opencode-go"]
+    providerConfigs = {
+      deepseek: createProviderConfig("deepseek", "https://bad.example"),
+      kimi: createProviderConfig("kimi", "https://reject.example"),
+      "opencode-go": createProviderConfig(
+        "opencode-go",
+        "https://invalid.example",
+      ),
+    }
+
+    const response = await createApp().request("/v1/models")
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      data: Array<Record<string, unknown> & { id: string }>
+    }
+    const modelIds = body.data.map((model) => model.id)
+    expect(modelIds).toContain("deepseek/deepseek-v4-flash")
+    expect(modelIds).toContain("deepseek/deepseek-v4-pro")
+    expect(modelIds).toContain("kimi/k3")
+    expect(modelIds).toContain("kimi/k3-256k")
+    expect(modelIds).toContain("opencode-go/hy3")
+    expect(modelIds).toContain("opencode-go/gpt-5.6-luna")
+    expect(
+      body.data.find((model) => model.id === "deepseek/deepseek-v4-flash"),
+    ).toMatchObject({
+      display_name: "deepseek-v4-flash",
+      object: "model",
+      owned_by: "deepseek",
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
   test("ignores providers whose models fetch rejects when merging the Codex catalog", async () => {
     const copilotModels = createCopilotModels(["claude-sonnet-4.6"])
     copilotModels.data[0].supported_endpoints = ["/v1/messages"]
@@ -253,6 +296,33 @@ describe("model routes", () => {
     ])
   })
 
+  test("uses pricing models for failed providers in the Codex catalog", async () => {
+    enabledProviders = ["deepseek", "kimi", "opencode-go"]
+    providerConfigs = {
+      deepseek: createProviderConfig("deepseek", "https://bad.example"),
+      kimi: createProviderConfig("kimi", "https://reject.example"),
+      "opencode-go": createProviderConfig(
+        "opencode-go",
+        "https://invalid.example",
+      ),
+    }
+
+    const response = await createApp().request("/v1/models", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    const modelSlugs = body.models.map((model) => model.slug)
+    expect(modelSlugs).toContain("deepseek/deepseek-v4-flash")
+    expect(modelSlugs).toContain("kimi/k3")
+    expect(modelSlugs).toContain("opencode-go/hy3")
+    expect(modelSlugs).toContain("opencode-go/qwen3.7-plus")
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
   test("adds built-in Codex provider models without calling upstream", async () => {
     enabledProviders = ["codex"]
     providerConfigs = {
@@ -271,6 +341,27 @@ describe("model routes", () => {
     const body = (await response.json()) as { data: Array<{ id: string }> }
     expect(body.data.map((model) => model.id)).toContain("codex/gpt-5.4")
     expect(body.data.map((model) => model.id)).toContain("codex/gpt-5.6-sol")
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  test("does not use pricing models when Codex credential setup fails", async () => {
+    enabledProviders = ["codex"]
+    providerConfigs = {
+      codex: {
+        apiKey: "codex-token",
+        authType: "oauth2",
+        baseUrl: "https://chatgpt.com/backend-api",
+        name: "codex",
+        type: "openai-responses",
+      },
+    }
+    codexSetupError = new Error("refresh failed")
+
+    const response = await createApp().request("/v1/models")
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { data: Array<{ id: string }> }
+    expect(body.data).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -309,7 +400,6 @@ describe("model routes", () => {
     const copilotModels = createCopilotModels(["claude-sonnet-4.6"])
     copilotModels.data[0].supported_endpoints = ["/v1/messages"]
     copilotModels.data[0].capabilities.supports.tool_calls = true
-    copilotModels.data[0].capabilities.supports.parallel_tool_calls = true
     state.models = copilotModels
     providerConfigs = {
       codex: {
@@ -581,14 +671,11 @@ describe("model routes", () => {
         baseUrl: "https://anthropic.example",
         models: {
           "claude-provider": {
-            codex: {
-              contextWindow: 180_000,
-              maxOutputTokens: 24_000,
-              inputModalities: ["text", "image"],
-              reasoningEfforts: ["low", "high"],
-              defaultReasoningEffort: "high",
-              supportsParallelToolCalls: true,
-            },
+            contextWindow: 180_000,
+            maxOutputTokens: 24_000,
+            inputModalities: ["text", "image"],
+            reasoningEfforts: ["low", "high"],
+            defaultReasoningEffort: "high",
           },
         },
         name: "anthropic",

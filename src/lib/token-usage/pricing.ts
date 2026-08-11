@@ -380,6 +380,13 @@ const BUILTIN_PROVIDER_PRICING: Record<
   },
 }
 
+export function getBuiltinProviderModelIds(
+  providerName: string,
+): Array<string> {
+  const normalizedProviderName = providerName.trim().toLowerCase()
+  return Object.keys(BUILTIN_PROVIDER_PRICING[normalizedProviderName] ?? {})
+}
+
 export function resolveTokenUsageCost(
   input: TokenUsageCostInput,
 ): CalculatedTokenUsageCost | null {

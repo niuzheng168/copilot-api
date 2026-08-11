@@ -445,7 +445,7 @@ export function createSyntheticCodexModel(
     experimental_supported_tools: [],
     input_modalities: inputModalities,
     supports_image_detail_original: false,
-    supports_parallel_tool_calls: candidate.supportsParallelToolCalls,
+    supports_parallel_tool_calls: true,
     context_window: candidate.contextWindow,
     max_context_window: candidate.contextWindow,
     max_output_tokens: candidate.maxOutputTokens,

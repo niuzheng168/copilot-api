@@ -56,21 +56,15 @@ export interface ModelConfig {
   topK?: number
   extraBody?: Record<string, unknown>
   contextCache?: boolean
-  pricing?: TokenUsagePricingConfig
-  supportPdf?: boolean
-  toolContentSupportType?: Array<ToolContentSupportType>
-  type?: ProviderType
-  codex?: CodexModelCapabilitiesConfig
-}
-
-export interface CodexModelCapabilitiesConfig {
-  enabled?: boolean
   contextWindow?: number
   maxOutputTokens?: number
   inputModalities?: Array<"text" | "image">
   reasoningEfforts?: Array<CodexReasoningEffort>
   defaultReasoningEffort?: CodexReasoningEffort
-  supportsParallelToolCalls?: boolean
+  pricing?: TokenUsagePricingConfig
+  supportPdf?: boolean
+  toolContentSupportType?: Array<ToolContentSupportType>
+  type?: ProviderType
 }
 
 export type CodexReasoningEffort =
