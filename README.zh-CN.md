@@ -431,6 +431,7 @@ stream_idle_timeout_ms = 300000
 
 [features]
 remote_compaction_v2 = true
+#optional
 apps = false
 
 [analytics]
