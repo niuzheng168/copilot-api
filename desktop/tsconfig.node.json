@@ -8,6 +8,7 @@
     "src/locales/**/*",
     "src/types/**/*",
     "../src/lib/api-config.ts",
+    "../src/lib/builtin-provider-models.ts",
     "../src/lib/compact.ts",
     "../src/lib/config-store.ts",
     "../src/lib/config.ts",

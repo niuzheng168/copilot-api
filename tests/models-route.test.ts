@@ -112,6 +112,24 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
     )
   }
 
+  if (requestUrl === "https://deepseek.example/v1/models") {
+    return Promise.resolve(
+      Response.json({
+        object: "list",
+        data: [
+          {
+            id: "deepseek-v4-pro",
+            context_window: 128_000,
+            input_modalities: ["text", "image"],
+            max_output_tokens: 8_000,
+            name: "DeepSeek V4 Pro",
+            object: "model",
+          },
+        ],
+      }),
+    )
+  }
+
   if (requestUrl === "https://opencode.example/v1/models") {
     return Promise.resolve(
       Response.json({
@@ -320,7 +338,91 @@ describe("model routes", () => {
     expect(modelSlugs).toContain("kimi/k3")
     expect(modelSlugs).toContain("opencode-go/hy3")
     expect(modelSlugs).toContain("opencode-go/qwen3.7-plus")
+    expect(
+      body.models.find((model) => model.slug === "deepseek/deepseek-v4-flash"),
+    ).toMatchObject({
+      context_window: 1_000_000,
+      input_modalities: ["text"],
+      max_output_tokens: 64_000,
+    })
+    expect(body.models.find((model) => model.slug === "kimi/k3")).toMatchObject(
+      {
+        context_window: 1_048_576,
+        input_modalities: ["text", "image"],
+        max_output_tokens: 64_000,
+      },
+    )
+    expect(
+      body.models.find((model) => model.slug === "opencode-go/hy3"),
+    ).toMatchObject({
+      context_window: 256_000,
+      input_modalities: ["text"],
+      max_output_tokens: 64_000,
+    })
+    expect(
+      body.models.find((model) => model.slug === "opencode-go/qwen3.7-plus"),
+    ).toMatchObject({
+      context_window: 1_000_000,
+      input_modalities: ["text", "image"],
+      max_output_tokens: 64_000,
+    })
     expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  test("prefers user model config over upstream and built-in defaults", async () => {
+    enabledProviders = ["deepseek"]
+    providerConfigs = {
+      deepseek: {
+        ...createProviderConfig("deepseek", "https://deepseek.example"),
+        models: {
+          "deepseek-v4-pro": {
+            contextWindow: 123_456,
+            inputModalities: ["text"],
+            maxOutputTokens: 4_096,
+          },
+        },
+      },
+    }
+
+    const response = await createApp().request("/v1/models", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    expect(
+      body.models.find((model) => model.slug === "deepseek/deepseek-v4-pro"),
+    ).toMatchObject({
+      context_window: 123_456,
+      input_modalities: ["text"],
+      max_output_tokens: 4_096,
+    })
+  })
+
+  test("prefers upstream capabilities over built-in catalog defaults", async () => {
+    enabledProviders = ["deepseek"]
+    providerConfigs = {
+      deepseek: createProviderConfig("deepseek", "https://deepseek.example"),
+    }
+
+    const response = await createApp().request("/v1/models", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    expect(
+      body.models.find((model) => model.slug === "deepseek/deepseek-v4-pro"),
+    ).toMatchObject({
+      context_window: 128_000,
+      input_modalities: ["text", "image"],
+      max_output_tokens: 8_000,
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   test("adds built-in Codex provider models without calling upstream", async () => {

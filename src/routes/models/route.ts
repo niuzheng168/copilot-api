@@ -8,12 +8,12 @@ import {
   type ProviderType,
   type ResolvedProviderConfig,
 } from "~/lib/config"
+import { builtinProviderModelRegistry } from "~/lib/builtin-provider-models"
 import { forwardError } from "~/lib/error"
 import { createHandlerLogger } from "~/lib/logger"
 import { toClientModelId } from "~/lib/models"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import { state } from "~/lib/state"
-import { getBuiltinProviderModelIds } from "~/lib/token-usage/pricing"
 import type { Model } from "~/lib/types/models"
 import { getModels as getCodexModels } from "~/services/codex/get-models"
 import { forwardProviderModels } from "~/services/providers/provider-proxy"
@@ -68,7 +68,7 @@ function getStringField(
 function getBuiltinProviderModelRecords(
   provider: string,
 ): Array<Record<string, unknown>> {
-  return getBuiltinProviderModelIds(provider).map((id) => ({
+  return builtinProviderModelRegistry.getModelIds(provider).map((id) => ({
     id,
     name: id,
     object: "model",
@@ -375,6 +375,10 @@ function createProviderCodexCandidate(
   modelConfig: ModelConfig | undefined,
   effectiveType: ProviderType,
 ): SyntheticCodexModelCandidate {
+  const builtinModelConfig = builtinProviderModelRegistry.getModelConfig(
+    providerConfig.name,
+    modelId,
+  )
   const configuredReasoningEfforts = normalizeReasoningEfforts(
     modelConfig?.reasoningEfforts,
   )
@@ -387,6 +391,9 @@ function createProviderCodexCandidate(
   )
   const remoteModalities = normalizeInputModalities(
     remoteModel?.input_modalities ?? remoteModel?.modalities,
+  )
+  const builtinModalities = normalizeInputModalities(
+    builtinModelConfig?.inputModalities,
   )
   const displayName =
     getStringField(remoteModel ?? {}, "display_name")
@@ -409,18 +416,21 @@ function createProviderCodexCandidate(
           "context_length",
           "max_context_length",
           "max_model_len",
-        ]),
+        ])
+        ?? builtinModelConfig?.contextWindow,
       256_000,
     ),
     maxOutputTokens: positiveNumber(
       modelConfig?.maxOutputTokens
-        ?? getFirstPositiveNumber(remoteModel, ["max_output_tokens"]),
+        ?? getFirstPositiveNumber(remoteModel, ["max_output_tokens"])
+        ?? builtinModelConfig?.maxOutputTokens,
       32_000,
     ),
     inputModalities: resolveInputModalities(
       providerConfig.name,
       configuredModalities,
       remoteModalities,
+      builtinModalities,
     ),
     reasoningEfforts,
     defaultReasoningEffort: selectDefaultReasoningEffort(
@@ -476,14 +486,18 @@ function resolveInputModalities(
   providerName: string,
   configuredModalities: Array<"text" | "image">,
   remoteModalities: Array<"text" | "image">,
+  builtinModalities: Array<"text" | "image">,
 ): Array<"text" | "image"> {
   if (configuredModalities.length > 0) return configuredModalities
   if (providerName === "kimi") {
     const modalities: Array<"text" | "image"> =
-      remoteModalities.length > 0 ? remoteModalities : ["text"]
+      remoteModalities.length > 0 ? remoteModalities
+      : builtinModalities.length > 0 ? builtinModalities
+      : ["text"]
     return [...new Set<"text" | "image">([...modalities, "image"])]
   }
-  return remoteModalities.length > 0 ? remoteModalities : ["text"]
+  if (remoteModalities.length > 0) return remoteModalities
+  return builtinModalities.length > 0 ? builtinModalities : ["text"]
 }
 
 function selectDefaultReasoningEffort(

@@ -715,9 +715,9 @@ Copilot API 现在使用子命令结构，主要命令包括：
     - `supportPdf`：可选，控制该模型是否支持 PDF/document content。默认 `false`，不支持时会把 PDF 转成提示文本；设为 `true` 时会把 PDF/document 转成 OpenAI Chat Completions 的 file part。
     - `toolContentSupportType`：可选，配置该模型的 tool result content 支持能力，值为 `array`、`image`、`pdf` 的数组。provider 侧未配置时默认只发送 string tool content。若 `supportPdf` 为 `true` 但这里不包含 `pdf`，tool result 里的 file part 会被转成 user role 消息。Copilot 主链路不使用这个 provider 默认，仍按 array + image 且不支持 PDF 的能力处理。
     - `type`：可选，按模型覆盖 provider 的协议类型。支持 `anthropic`、`openai-compatible` 和 `openai-responses`。设置后，provider 的 `/v1/messages` 路由会使用该模型的 type 替代 provider 级别的 type 进行请求路由、认证头解析和上游端点选择。适用于 OpenCode Go 等上游对不同模型同时支持 OpenAI 兼容和 Anthropic Messages API 的 provider。覆盖 type 时，认证头按覆盖后 type 的默认值解析（Anthropic 默认 `x-api-key`；OpenAI 兼容/Responses 默认 `authorization`）。
-    - `contextWindow`：可选，模型合并到 Codex UA 模型列表时声明的上下文窗口 token 上限；例如 `1000000` 表示 1M token 上下文。
-    - `maxOutputTokens`：可选，Codex UA 模型列表中声明的最大输出 token 数；配置和上游元数据均未提供时，默认为 `32000`。
-    - `inputModalities`：可选，Codex 支持的输入类型；模型同时支持文本和图片时配置为 `["text", "image"]`。
+    - `contextWindow`：可选，模型合并到 Codex UA 模型列表时声明的上下文窗口 token 上限；例如 `1000000` 表示 1M token 上下文。用户未配置时依次使用上游元数据、非 GPT 模型的内置目录和 `256000`。
+    - `maxOutputTokens`：可选，Codex UA 模型列表中声明的最大输出 token 数。用户未配置时优先使用上游元数据，其次使用非 GPT 模型的内置目录（内置默认值最高为 `64000`），最后默认为 `32000`。
+    - `inputModalities`：可选，Codex 支持的输入类型；模型同时支持文本和图片时配置为 `["text", "image"]`。用户未配置时优先使用上游元数据，再使用非 GPT 模型的内置目录。GPT 模型不注入这些内置能力默认值，继续使用原生 Codex catalog 或上游元数据。
     - `reasoningEfforts`：可选，Codex 支持的推理档位。配置和上游元数据均未提供时，默认为 `["high", "xhigh", "max", "ultra"]`。
     - `defaultReasoningEffort`：可选，Codex 默认推理档位；可用档位包含 `max` 时默认取 `max`，否则取配置的第一个档位。合成 Codex 模型始终启用并行工具调用。
 - **smallModel：** 无工具预热消息的回退模型（例如 Claude Code 的探测请求）；默认是 `gpt-5-mini`。网关会对无工具的预热或探测请求强制使用该小模型，以避免消耗 premium 请求。该行为仅在 GitHub Copilot 账户为非 token-based 计费时生效（`token_based_billing` 为 false）；对于 token-based 计费账户，预热小模型回退会被跳过，因为不存在需要节省的 premium 请求配额。
