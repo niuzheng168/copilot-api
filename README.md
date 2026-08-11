@@ -403,7 +403,7 @@ stream_idle_timeout_ms = 300000
 
 [features]
 remote_compaction_v2 = true
-#optional
+# optional: set false only when the model does not support tool_search
 apps = false
 
 [analytics]
