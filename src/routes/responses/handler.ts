@@ -26,6 +26,7 @@ import type { SubagentMarker } from "~/lib/subagent"
 import type {
   ResponsesPayload,
   ResponsesResult,
+  ResponsesTransport,
   ResponseStreamEvent,
 } from "~/lib/types/responses"
 import { createResponses as createCopilotResponses } from "~/services/copilot/create-responses"
@@ -93,15 +94,21 @@ export const handleResponses = async (c: Context) => {
   payload.model = selectedModel?.id ?? payload.model
   const responsesTransport = getResponsesTransportForModel(selectedModel)
 
-  if (!responsesTransport) {
-    if (shouldFallbackToMessages(c, payload.model, selectedModel)) {
-      return await handleResponsesViaMessages(c, {
-        payload,
-        publicModel: requestedModel,
-        targetModel: payload.model,
-      })
-    }
+  const useMessagesFallback = shouldFallbackToMessages(
+    c,
+    payload.model,
+    selectedModel,
+    responsesTransport,
+  )
+  if (useMessagesFallback) {
+    return await handleResponsesViaMessages(c, {
+      payload,
+      publicModel: requestedModel,
+      targetModel: payload.model,
+    })
+  }
 
+  if (!responsesTransport) {
     return c.json(
       {
         error: {
@@ -226,9 +233,14 @@ const shouldFallbackToMessages = (
   c: Context,
   modelId: string,
   selectedModel: { supported_endpoints?: Array<string> } | undefined,
+  responsesTransport: ResponsesTransport | null,
 ): boolean => {
   if (isCodexUserAgent(c.req.header("user-agent"))) {
     return !modelId.startsWith("gpt")
+  }
+
+  if (responsesTransport) {
+    return false
   }
 
   const supportedEndpoints = selectedModel?.supported_endpoints ?? []
