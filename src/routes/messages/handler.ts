@@ -13,6 +13,7 @@ import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { findEndpointModel } from "~/lib/models"
 import { parseProviderModelAlias } from "~/lib/provider-model"
 import { state } from "~/lib/state"
+import type { SubagentMarker } from "~/lib/subagent"
 import type { TokenUsageEndpoint } from "~/lib/token-usage"
 import {
   generateRequestIdFromPayload,
@@ -62,6 +63,9 @@ export interface CompletionPayloadOptions {
   skipModelMapping?: boolean
   skipWebSearch?: boolean
   usageEndpoint?: TokenUsageEndpoint
+  subagentMarker?: SubagentMarker | null
+  sessionId?: string
+  requestId?: string
 }
 
 export async function handleCompletionPayload(
@@ -117,12 +121,15 @@ export async function handleCompletionPayload(
 
   sanitizeIdeTools(anthropicPayload)
 
-  const subagentMarker = parseSubagentMarkerFromFirstUser(anthropicPayload)
+  const subagentMarker =
+    dispatchOptions.subagentMarker
+    ?? parseSubagentMarkerFromFirstUser(anthropicPayload)
   if (subagentMarker) {
     debugJson(logger, "Detected Subagent marker:", subagentMarker)
   }
 
-  let sessionId = getRootSessionId(anthropicPayload, c)
+  let sessionId =
+    dispatchOptions.sessionId ?? getRootSessionId(anthropicPayload, c)
 
   // claude code and opencode compact / auto-continue detection
   const compactType =
@@ -163,7 +170,9 @@ export async function handleCompletionPayload(
     applyLastMessageCacheControl(anthropicPayload, lastMessageCacheControl)
   }
 
-  const requestId = generateRequestIdFromPayload(anthropicPayload, sessionId)
+  const requestId =
+    dispatchOptions.requestId
+    ?? generateRequestIdFromPayload(anthropicPayload, sessionId)
   logger.debug("Generated request ID:", requestId)
 
   if (!sessionId) {

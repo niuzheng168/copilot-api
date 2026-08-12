@@ -4,6 +4,7 @@ import { streamSSE } from "hono/streaming"
 
 import { COMPACT_REQUEST } from "~/lib/compact"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
+import type { SubagentMarker } from "~/lib/subagent"
 import type { AnthropicResponse } from "~/lib/types/anthropic"
 import type { ResponsesPayload } from "~/lib/types/responses"
 import { handleCompletionPayload } from "~/routes/messages/handler"
@@ -31,6 +32,9 @@ export async function handleResponsesViaMessages(
     payload: ResponsesPayload
     publicModel: string
     targetModel: string
+    subagentMarker?: SubagentMarker | null
+    requestId?: string
+    sessionId?: string
   },
 ): Promise<Response> {
   try {
@@ -59,6 +63,9 @@ export async function handleResponsesViaMessages(
           skipModelMapping: true,
           skipWebSearch: true,
           usageEndpoint: "responses",
+          subagentMarker: options.subagentMarker,
+          requestId: options.requestId,
+          sessionId: options.sessionId,
         },
       )
 

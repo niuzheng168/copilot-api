@@ -105,6 +105,9 @@ export const handleResponses = async (c: Context) => {
       payload,
       publicModel: requestedModel,
       targetModel: payload.model,
+      subagentMarker,
+      requestId,
+      sessionId: fallbackSessionId,
     })
   }
 
