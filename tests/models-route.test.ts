@@ -683,6 +683,7 @@ describe("model routes", () => {
       ...solCatalogModel,
       slug: "codex/gpt-5.6-sol",
       display_name: "codex GPT-5.6 Sol",
+      priority: 1_000,
     })
     expect(
       body.models.find((model) => model.slug === "opencode-go/gpt-5.6-luna"),
@@ -690,6 +691,7 @@ describe("model routes", () => {
       ...lunaCatalogModel,
       slug: "opencode-go/gpt-5.6-luna",
       display_name: "opencode-go GPT-5.6 Luna",
+      priority: 3_000,
     })
     expect(
       body.models.find((model) => model.slug === "codex/gpt-remote-only"),
@@ -697,6 +699,7 @@ describe("model routes", () => {
       ...remoteOnlyCatalogModel,
       slug: "codex/gpt-remote-only",
       display_name: "codex GPT Remote Only",
+      priority: 1_002,
     })
     expect(
       body.models.find((model) => model.slug === "opencode-go/qwen3-coder"),
@@ -704,6 +707,50 @@ describe("model routes", () => {
     expect(body.models.map((model) => model.slug)).not.toContain(
       "opencode-go/gpt-provider-only",
     )
+  })
+
+  test("orders merged Codex models as catalog, codex, copilot, opencode-go, then providers", async () => {
+    const copilotModels = createCopilotModels(["claude-sonnet-4.6"])
+    copilotModels.data[0].supported_endpoints = ["/v1/messages"]
+    copilotModels.data[0].capabilities.supports.tool_calls = true
+    state.models = copilotModels
+    enabledProviders = ["codex", "kimi", "opencode-go"]
+    providerConfigs = {
+      codex: {
+        apiKey: "codex-token",
+        authType: "oauth2",
+        baseUrl: "https://chatgpt.com/backend-api",
+        name: "codex",
+        type: "openai-responses",
+      },
+      kimi: createProviderConfig("kimi", "https://kimi.example"),
+      "opencode-go": createProviderConfig(
+        "opencode-go",
+        "https://opencode.example",
+      ),
+    }
+    state.codexAccessToken = "codex-access-token"
+    state.codexAccountId = "account-123"
+
+    const response = await createApp().request("/v1/models?client=codex", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    expect(body.models.map((model) => model.slug)).toEqual([
+      "gpt-native",
+      "codex/gpt-native",
+      "claude-sonnet-4-6",
+      "opencode-go/qwen3-coder",
+      "kimi/kimi-k2.5",
+    ])
+    const priorities = body.models.map((model) =>
+      typeof model.priority === "number" ? model.priority : 0,
+    )
+    expect(priorities).toEqual([...priorities].sort((a, b) => a - b))
   })
 
   test("skips malformed Copilot model records when merging the Codex catalog", async () => {

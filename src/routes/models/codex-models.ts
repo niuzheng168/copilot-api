@@ -45,6 +45,14 @@ const DEFAULT_REASONING_EFFORTS: Array<CodexReasoningEffort> = [
   "ultra",
 ]
 
+// Codex clients sort models by the `priority` field. The group bases keep the
+// merged list ordered as: upstream catalog, codex provider aliases, copilot
+// models, opencode-go models, then models from other providers.
+const CODEX_ALIAS_PRIORITY_BASE = 1_000
+const COPILOT_PRIORITY_BASE = 2_000
+const OPENCODE_GO_PRIORITY_BASE = 3_000
+const PROVIDER_PRIORITY_BASE = 4_000
+
 const DEFAULT_CODEX_TEMPLATE: CodexModel = {
   slug: "gpt-5.6-sol",
   display_name: "GPT-5.6-Sol",
@@ -339,43 +347,54 @@ export async function handleMergedCodexModels(
   const seenSlugs = new Set(upstreamModels.map((model) => model.slug))
   const codexProviderAliases =
     options.includeCodexProviderAliases ?
-      upstreamModels.flatMap((model) => {
+      upstreamModels.flatMap((model, index) => {
         const slug = `codex/${model.slug}`
         if (seenSlugs.has(slug)) return []
         seenSlugs.add(slug)
-        return [createCatalogAlias(model, slug, options.codexProviderName)]
+        return [
+          {
+            ...createCatalogAlias(model, slug, options.codexProviderName),
+            priority: CODEX_ALIAS_PRIORITY_BASE + index,
+          },
+        ]
       })
     : []
   const syntheticModels = candidates
     .filter((candidate) => !seenSlugs.has(candidate.slug))
     .flatMap((candidate, index) => {
+      const priorityBase = getCandidatePriorityBase(candidate)
       const catalogModel =
         candidate.catalogSlug ?
           catalogModelsBySlug.get(candidate.catalogSlug)
         : undefined
       if (catalogModel) {
         return [
-          createCatalogAlias(
-            catalogModel,
-            candidate.slug,
-            candidate.providerName,
-          ),
+          {
+            ...createCatalogAlias(
+              catalogModel,
+              candidate.slug,
+              candidate.providerName,
+            ),
+            priority: priorityBase + index,
+          },
         ]
       }
       if (candidate.catalogMatchRequired) return []
 
       return [
-        createSyntheticCodexModel(
-          candidate,
-          template,
-          upstreamModels.length + index,
-        ),
+        createSyntheticCodexModel(candidate, template, priorityBase + index),
       ]
     })
 
+  const models = [
+    ...upstreamModels,
+    ...codexProviderAliases,
+    ...syntheticModels,
+  ].sort((a, b) => getModelPriority(a) - getModelPriority(b))
+
   const response: CodexModelsResponse = {
     ...(upstreamCatalog ?? {}),
-    models: [...upstreamModels, ...codexProviderAliases, ...syntheticModels],
+    models,
   }
   debugJson(logger, "models.codex.merged_response", {
     upstreamCount: upstreamModels.length,
@@ -514,6 +533,20 @@ function selectTemplate(models: Array<CodexModel>): CodexModel {
     ?? models[0]
     ?? DEFAULT_CODEX_TEMPLATE
   )
+}
+
+function getModelPriority(model: CodexModel): number {
+  return typeof model.priority === "number" && Number.isFinite(model.priority) ?
+      model.priority
+    : 0
+}
+
+function getCandidatePriorityBase(
+  candidate: SyntheticCodexModelCandidate,
+): number {
+  if (!candidate.providerName) return COPILOT_PRIORITY_BASE
+  if (candidate.providerName === "opencode-go") return OPENCODE_GO_PRIORITY_BASE
+  return PROVIDER_PRIORITY_BASE
 }
 
 function isCodexModelsResponse(value: unknown): value is CodexModelsResponse {
