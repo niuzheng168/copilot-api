@@ -9,6 +9,7 @@ import {
 import { createHandlerLogger, debugJson, debugJsonTail } from "~/lib/logger"
 import { findEndpointModel } from "~/lib/models"
 import { parseProviderModelAlias } from "~/lib/provider-model"
+import { isCodexUserAgent } from "~/routes/models/codex-models"
 import { handleProviderResponsesForProvider } from "~/routes/provider/responses/handler"
 import {
   createCopilotTokenUsageRecorder,
@@ -93,11 +94,7 @@ export const handleResponses = async (c: Context) => {
   const responsesTransport = getResponsesTransportForModel(selectedModel)
 
   if (!responsesTransport) {
-    const supportedEndpoints = selectedModel?.supported_endpoints ?? []
-    if (
-      supportedEndpoints.includes("/v1/messages")
-      || supportedEndpoints.includes("/chat/completions")
-    ) {
+    if (shouldFallbackToMessages(c, payload.model, selectedModel)) {
       return await handleResponsesViaMessages(c, {
         payload,
         publicModel: requestedModel,
@@ -224,6 +221,22 @@ export const handleResponses = async (c: Context) => {
 
 const isStreamingRequested = (payload: ResponsesPayload): boolean =>
   Boolean(payload.stream)
+
+const shouldFallbackToMessages = (
+  c: Context,
+  modelId: string,
+  selectedModel: { supported_endpoints?: Array<string> } | undefined,
+): boolean => {
+  if (isCodexUserAgent(c.req.header("user-agent"))) {
+    return !modelId.startsWith("gpt")
+  }
+
+  const supportedEndpoints = selectedModel?.supported_endpoints ?? []
+  return (
+    supportedEndpoints.includes("/v1/messages")
+    || supportedEndpoints.includes("/chat/completions")
+  )
+}
 
 const parseResponsesStreamEvent = (
   chunk: unknown,
