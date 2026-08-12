@@ -124,6 +124,7 @@ export const handleResponses = async (c: Context) => {
   })
 
   removeUnsupportedTools(payload)
+  fillEmptyNamespaceToolDescriptions(payload)
 
   if (!responsesHandlerDependencies.isResponsesApiWebSearchEnabled()) {
     removeWebSearchTool(payload)
@@ -269,6 +270,36 @@ export const removeUnsupportedTools = (payload: ResponsesPayload): void => {
   })
   if (dropped.length > 0) {
     logger.debug("Removed unsupported tools:", dropped)
+  }
+}
+
+export const fillEmptyNamespaceToolDescriptions = (
+  payload: ResponsesPayload,
+): void => {
+  fillEmptyNamespaceDescriptions(payload.tools)
+
+  if (!Array.isArray(payload.input)) return
+
+  for (const item of payload.input) {
+    if (!item || typeof item !== "object") continue
+    fillEmptyNamespaceDescriptions((item as Record<string, unknown>).tools)
+  }
+}
+
+const fillEmptyNamespaceDescriptions = (tools: unknown): void => {
+  if (!Array.isArray(tools)) return
+
+  for (const tool of tools) {
+    if (!tool || typeof tool !== "object") continue
+
+    const namespaceTool = tool as Record<string, unknown>
+    if (
+      namespaceTool.type === "namespace"
+      && namespaceTool.description === ""
+      && typeof namespaceTool.name === "string"
+    ) {
+      namespaceTool.description = namespaceTool.name
+    }
   }
 }
 

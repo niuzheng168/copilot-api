@@ -538,6 +538,47 @@ describe("responses handler token usage", () => {
     expect(createResponses.mock.calls[0][0].tools?.[0]).toEqual(applyPatchTool)
   })
 
+  test("fills empty namespace descriptions before forwarding to Copilot Responses", async () => {
+    createResponses.mockImplementation((payload) =>
+      Promise.resolve(createResponsesResult(payload.model)),
+    )
+
+    const app = createApp()
+    const response = await app.request("/v1/responses", {
+      body: JSON.stringify({
+        input: [
+          {
+            call_id: "call-search",
+            type: "tool_search_output",
+            tools: [
+              {
+                description: "",
+                name: "workspace",
+                tools: [],
+                type: "namespace",
+              },
+            ],
+          },
+        ],
+        model: "gpt-test",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponses).toHaveBeenCalledTimes(1)
+    expect(
+      (
+        createResponses.mock.calls[0][0].input?.[0] as {
+          tools: Array<{ description: string }>
+        }
+      ).tools[0].description,
+    ).toBe("workspace")
+  })
+
   test("disables context management for gpt-5.6 models even when responses context management is enabled", async () => {
     state.models = {
       object: "list",
