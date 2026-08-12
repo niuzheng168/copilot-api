@@ -541,38 +541,6 @@ describe("model routes", () => {
     })
   })
 
-  test("merges Responses-backed Copilot models into the Codex catalog", async () => {
-    const copilotModels = createCopilotModels([
-      "gpt-responses-http",
-      "gpt-responses-websocket",
-    ])
-    copilotModels.data[0].supported_endpoints = ["/responses"]
-    copilotModels.data[1].supported_endpoints = ["ws:/responses"]
-    for (const model of copilotModels.data) {
-      model.capabilities.supports.tool_calls = true
-    }
-    state.models = copilotModels
-
-    const response = await createApp().request("/v1/models?client=codex", {
-      headers: { "user-agent": "codex-cli/1.0.0" },
-    })
-
-    expect(response.status).toBe(200)
-    const body = (await response.json()) as {
-      models: Array<Record<string, unknown> & { slug: string }>
-    }
-    expect(body.models.map((model) => model.slug)).toEqual([
-      "gpt-responses-http",
-      "gpt-responses-websocket",
-    ])
-    expect(body.models[0]?.description).toBe(
-      "gpt-responses-http through the Copilot Responses API.",
-    )
-    expect(body.models[1]?.description).toBe(
-      "gpt-responses-websocket through the Copilot Responses API.",
-    )
-  })
-
   test("uses the default Codex template when the Codex provider is missing", async () => {
     const copilotModels = createCopilotModels(["claude-sonnet-4.6"])
     copilotModels.data[0].supported_endpoints = ["/v1/messages"]

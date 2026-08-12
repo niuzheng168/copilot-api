@@ -255,7 +255,7 @@ function getCopilotCodexCandidates(): Array<SyntheticCodexModelCandidate> {
   const candidates: Array<SyntheticCodexModelCandidate> = []
   for (const model of state.models?.data ?? []) {
     try {
-      if (isCopilotCodexCandidate(model)) {
+      if (isCopilotMessagesFallbackModel(model)) {
         candidates.push(createCopilotCodexCandidate(model))
       }
     } catch (error) {
@@ -268,15 +268,16 @@ function getCopilotCodexCandidates(): Array<SyntheticCodexModelCandidate> {
   return candidates
 }
 
-function isCopilotCodexCandidate(model: Model): boolean {
+function isCopilotMessagesFallbackModel(model: Model): boolean {
   const endpoints = model.supported_endpoints ?? []
   return (
     endpoints.some(
       (endpoint) =>
         endpoint === MESSAGES_ENDPOINT
-        || endpoint === CHAT_COMPLETIONS_ENDPOINT
-        || RESPONSES_ENDPOINTS.has(endpoint),
-    ) && model.capabilities.supports.tool_calls !== false
+        || endpoint === CHAT_COMPLETIONS_ENDPOINT,
+    )
+    && !endpoints.some((endpoint) => RESPONSES_ENDPOINTS.has(endpoint))
+    && model.capabilities.supports.tool_calls !== false
   )
 }
 
@@ -286,17 +287,13 @@ function createCopilotCodexCandidate(
   const reasoningEfforts = normalizeReasoningEfforts(
     model.capabilities.supports.reasoning_effort,
   )
-  const usesNativeResponses = model.supported_endpoints?.some((endpoint) =>
-    RESPONSES_ENDPOINTS.has(endpoint),
-  )
   const usesNativeMessages =
     model.supported_endpoints?.includes(MESSAGES_ENDPOINT)
   return {
     slug: toClientModelId(model.id),
     displayName: model.name,
     description:
-      usesNativeResponses ? `${model.name} through the Copilot Responses API.`
-      : usesNativeMessages ?
+      usesNativeMessages ?
         `${model.name} through the Copilot Messages adapter.`
       : `${model.name} through the Copilot Messages-to-Chat adapter.`,
     contextWindow: positiveNumber(
