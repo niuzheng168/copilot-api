@@ -7,6 +7,7 @@ import type { ResponsesResult } from "~/lib/types/responses"
 
 let providerConfig: ResolvedProviderConfig | null = null
 
+const { closeUsageStore } = await import("~/lib/token-usage")
 const { responsesRoutes } = await import("~/routes/responses/route")
 const { providerResponsesRoutes } = await import(
   "~/routes/provider/responses/route"
@@ -31,6 +32,8 @@ const defaultProviderResponsesHandlerDependencies = {
 const defaultResponsesHandlerDependencies = { ...responsesHandlerDependencies }
 const defaultResponsesUtilsDependencies = { ...responsesUtilsDependencies }
 const originalFetch = globalThis.fetch
+
+const DB_PATH_ENV = "COPILOT_API_SQLITE_DB_PATH"
 
 const createResponsesResult = (model: string): ResponsesResult => ({
   created_at: 0,
@@ -83,7 +86,10 @@ const createApp = () => {
   return app
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  process.env[DB_PATH_ENV] = ":memory:"
+  await closeUsageStore()
+
   providerConfig = {
     apiKey: "provider-key",
     authType: "authorization",
@@ -112,7 +118,7 @@ beforeEach(() => {
     fetchMock as unknown as typeof fetch
 })
 
-afterEach(() => {
+afterEach(async () => {
   ;(globalThis as unknown as { fetch: typeof fetch }).fetch = originalFetch
   providerConfig = null
   Object.assign(
@@ -128,6 +134,9 @@ afterEach(() => {
     defaultResponsesHandlerDependencies,
   )
   Object.assign(responsesUtilsDependencies, defaultResponsesUtilsDependencies)
+
+  await closeUsageStore()
+  Reflect.deleteProperty(process.env, DB_PATH_ENV)
 })
 
 describe("provider Responses context management", () => {
