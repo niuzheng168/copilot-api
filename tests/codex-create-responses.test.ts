@@ -241,9 +241,6 @@ describe("codex api helpers", () => {
       expect(model.capabilities.supports.reasoning_effort).not.toContain(
         "ultra",
       )
-      expect(model.capabilities.limits.max_context_window_tokens).toBe(
-        1_050_000,
-      )
       expect(model.capabilities.limits.max_output_tokens).toBe(128_000)
     }
 

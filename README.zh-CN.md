@@ -426,7 +426,7 @@ requires_openai_auth = true
 supports_websockets = false
 wire_api = "responses"
 request_max_retries = 3
-stream_max_retries = 1
+stream_max_retries = 3
 stream_idle_timeout_ms = 300000
 
 [features]
@@ -444,6 +444,8 @@ enabled = false
 > 对于不支持 `tool_search` 的第三方模型，我们建议禁用 features.apps。否则，每个提示可能会额外消耗 20,000 多个 token。
 
 Codex 客户端（`User-Agent` 以 `codex` 开头）请求顶层 `GET /v1/models` 时，网关会把原生 Codex 模型与可通过 Messages 适配的模型合并返回。后者会声明 `use_responses_lite: true`：调用 `/v1/responses` 后，Anthropic provider 走 **Responses → Messages**，OpenAI 兼容 provider 以及只支持 Chat 的 Copilot 模型则复用现有 Messages 路由继续走 **Responses → Messages → Chat Completions**，最终统一翻译回 Responses（包括流式事件）。
+
+对 Codex 客户端而言，只有 `gpt-*` Copilot 模型走原生 Responses API；非 GPT Copilot 模型一律走适配路径，即使声明支持原生 `/responses` 也不例外。
 
 Responses Lite 的工具定义从 `input` 中的 `additional_tools` 读取，而不是依赖顶层 `tools`。该适配支持 function、`namespace` 和 custom tool；`apply_patch` 需要由客户端声明为 `type: "custom"`，不会作为独立工具类型特殊处理。工具调用返回时会恢复原始 `name` 与 `namespace`；压缩请求在裁剪旧历史前先保存工具定义，因此压缩期间也不会丢失工具。Messages 回退路径不支持 Responses `tool_search` 模式。Anthropic 的 `output_config.effort` 仍只使用项目既有的合法档位；Responses 的 `minimal` 会降级为 `low`，`none` 则不向 Anthropic 发送 effort。
 

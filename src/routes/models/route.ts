@@ -280,27 +280,39 @@ function isCopilotCodexCandidate(model: Model): boolean {
   )
 }
 
+function describeCopilotAdapter(model: Model): string {
+  const supportsResponses = model.supported_endpoints?.some((endpoint) =>
+    RESPONSES_ENDPOINTS.has(endpoint),
+  )
+  // Codex clients only use the native Responses API for gpt-* models; other
+  // models fall back to the Messages route even when they advertise native
+  // /responses support (see shouldFallbackToMessages).
+  if (model.id.startsWith("gpt") && supportsResponses) {
+    return `${model.name} through the Copilot Responses API.`
+  }
+  // Mirrors the Messages route dispatch order: native Messages first, then
+  // the Messages-to-Responses translation, then Messages-to-Chat.
+  if (model.supported_endpoints?.includes(MESSAGES_ENDPOINT)) {
+    return `${model.name} through the Copilot Messages adapter.`
+  }
+  if (supportsResponses) {
+    return `${model.name} through the Copilot Messages-to-Responses adapter.`
+  }
+  return `${model.name} through the Copilot Messages-to-Chat adapter.`
+}
+
 function createCopilotCodexCandidate(
   model: Model,
 ): SyntheticCodexModelCandidate {
   const reasoningEfforts = normalizeReasoningEfforts(
     model.capabilities.supports.reasoning_effort,
   )
-  const usesNativeResponses = model.supported_endpoints?.some((endpoint) =>
-    RESPONSES_ENDPOINTS.has(endpoint),
-  )
-  const usesNativeMessages =
-    model.supported_endpoints?.includes(MESSAGES_ENDPOINT)
   return {
     slug: toClientModelId(model.id),
     displayName: model.name,
-    description:
-      usesNativeResponses ? `${model.name} through the Copilot Responses API.`
-      : usesNativeMessages ?
-        `${model.name} through the Copilot Messages adapter.`
-      : `${model.name} through the Copilot Messages-to-Chat adapter.`,
+    description: describeCopilotAdapter(model),
     contextWindow: positiveNumber(
-      model.capabilities.limits.max_context_window_tokens,
+      model.capabilities.limits.max_prompt_tokens,
       256_000,
     ),
     maxOutputTokens: positiveNumber(
@@ -485,6 +497,14 @@ function normalizeInputModalities(value: unknown): Array<"text" | "image"> {
   ]
 }
 
+function fallbackModalities(
+  remoteModalities: Array<"text" | "image">,
+  builtinModalities: Array<"text" | "image">,
+): Array<"text" | "image"> {
+  if (remoteModalities.length > 0) return remoteModalities
+  return builtinModalities.length > 0 ? builtinModalities : ["text"]
+}
+
 function resolveInputModalities(
   providerName: string,
   configuredModalities: Array<"text" | "image">,
@@ -492,15 +512,11 @@ function resolveInputModalities(
   builtinModalities: Array<"text" | "image">,
 ): Array<"text" | "image"> {
   if (configuredModalities.length > 0) return configuredModalities
+  const modalities = fallbackModalities(remoteModalities, builtinModalities)
   if (providerName === "kimi") {
-    const modalities: Array<"text" | "image"> =
-      remoteModalities.length > 0 ? remoteModalities
-      : builtinModalities.length > 0 ? builtinModalities
-      : ["text"]
     return [...new Set<"text" | "image">([...modalities, "image"])]
   }
-  if (remoteModalities.length > 0) return remoteModalities
-  return builtinModalities.length > 0 ? builtinModalities : ["text"]
+  return modalities
 }
 
 function selectDefaultReasoningEffort(

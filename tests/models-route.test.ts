@@ -573,6 +573,34 @@ describe("model routes", () => {
     )
   })
 
+  test("describes non-GPT Responses-capable Copilot models as adapter-backed", async () => {
+    const copilotModels = createCopilotModels([
+      "claude-sonnet-4.6",
+      "gemini-3-pro",
+    ])
+    copilotModels.data[0].supported_endpoints = ["/responses", "/v1/messages"]
+    copilotModels.data[1].supported_endpoints = ["/responses"]
+    for (const model of copilotModels.data) {
+      model.capabilities.supports.tool_calls = true
+    }
+    state.models = copilotModels
+
+    const response = await createApp().request("/v1/models?client=codex", {
+      headers: { "user-agent": "codex-cli/1.0.0" },
+    })
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      models: Array<Record<string, unknown> & { slug: string }>
+    }
+    expect(body.models[0]?.description).toBe(
+      "claude-sonnet-4.6 through the Copilot Messages adapter.",
+    )
+    expect(body.models[1]?.description).toBe(
+      "gemini-3-pro through the Copilot Messages-to-Responses adapter.",
+    )
+  })
+
   test("uses the default Codex template when the Codex provider is missing", async () => {
     const copilotModels = createCopilotModels(["claude-sonnet-4.6"])
     copilotModels.data[0].supported_endpoints = ["/v1/messages"]
