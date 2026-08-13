@@ -178,10 +178,10 @@ export class CustomToolInputStreamDecoder {
     this.safeInputLength = 0
   }
 
-  private fail(reason: string): never {
+  private fail(_reason: string): never {
     this.failed = true
     throw new ResponsesMessagesTranslationError(
-      `Messages API returned invalid custom tool input JSON at offset ${this.offset}: ${reason}`,
+      `Invalid tool input JSON. Expected format: {"input":"..."}`,
       502,
     )
   }
