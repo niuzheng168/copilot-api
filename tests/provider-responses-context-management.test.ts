@@ -2,32 +2,33 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
 import type { ResolvedProviderConfig } from "~/lib/config"
+import { state } from "~/lib/state"
 import type { ResponsesResult } from "~/lib/types/responses"
 
-const actualConfigModule = await import("~/lib/config")
-const actualTokenUsageModule = await import("~/lib/token-usage")
-
 let providerConfig: ResolvedProviderConfig | null = null
-
-const noopTokenUsageRecorder = () => {}
-
-await mock.module("~/lib/config", () => ({
-  ...actualConfigModule,
-  getProviderConfig: () => providerConfig,
-  resolveMappedModel: (model: string) => model,
-}))
-
-await mock.module("~/lib/token-usage", () => ({
-  ...actualTokenUsageModule,
-  createProviderTokenUsageRecorder: () => noopTokenUsageRecorder,
-}))
 
 const { responsesRoutes } = await import("~/routes/responses/route")
 const { providerResponsesRoutes } = await import(
   "~/routes/provider/responses/route"
 )
+const { providerMessagesHandlerDependencies } = await import(
+  "~/routes/provider/messages/handler"
+)
+const { providerResponsesHandlerDependencies } = await import(
+  "~/routes/provider/responses/handler"
+)
+const { responsesHandlerDependencies } = await import(
+  "~/routes/responses/handler"
+)
 const { responsesUtilsDependencies } = await import("~/routes/responses/utils")
 
+const defaultProviderMessagesHandlerDependencies = {
+  ...providerMessagesHandlerDependencies,
+}
+const defaultProviderResponsesHandlerDependencies = {
+  ...providerResponsesHandlerDependencies,
+}
+const defaultResponsesHandlerDependencies = { ...responsesHandlerDependencies }
 const defaultResponsesUtilsDependencies = { ...responsesUtilsDependencies }
 const originalFetch = globalThis.fetch
 
@@ -94,6 +95,12 @@ beforeEach(() => {
     type: "openai-responses",
   }
 
+  const resolveProviderConfig = () => Promise.resolve(providerConfig)
+  providerMessagesHandlerDependencies.resolveProviderConfig =
+    resolveProviderConfig
+  providerResponsesHandlerDependencies.resolveProviderConfig =
+    resolveProviderConfig
+  responsesHandlerDependencies.resolveMappedModel = (model) => model
   responsesUtilsDependencies.getModelResponsesApiCompactThreshold = () =>
     undefined
   responsesUtilsDependencies.isContextManagementEnabledForMessages = () => true
@@ -108,6 +115,18 @@ beforeEach(() => {
 afterEach(() => {
   ;(globalThis as unknown as { fetch: typeof fetch }).fetch = originalFetch
   providerConfig = null
+  Object.assign(
+    providerMessagesHandlerDependencies,
+    defaultProviderMessagesHandlerDependencies,
+  )
+  Object.assign(
+    providerResponsesHandlerDependencies,
+    defaultProviderResponsesHandlerDependencies,
+  )
+  Object.assign(
+    responsesHandlerDependencies,
+    defaultResponsesHandlerDependencies,
+  )
   Object.assign(responsesUtilsDependencies, defaultResponsesUtilsDependencies)
 })
 
@@ -320,6 +339,116 @@ describe("provider Responses context management", () => {
       model: string
     }
     expect(body.model).toBe("gpt-test")
+    expect((init as RequestInit).signal).toBeInstanceOf(AbortSignal)
+  })
+
+  test("propagates provider-scoped client cancellation upstream without a 500", async () => {
+    let upstreamSignal: AbortSignal | undefined
+    const upstreamStarted = createDeferred()
+    fetchMock.mockImplementation((_url, init) => {
+      const signal = init?.signal
+      if (!(signal instanceof AbortSignal)) {
+        throw new Error("Expected upstream abort signal")
+      }
+      upstreamSignal = signal
+      upstreamStarted.resolve()
+      return new Promise<Response>((_resolve, reject) => {
+        if (signal.aborted) {
+          reject(
+            signal.reason instanceof Error ?
+              signal.reason
+            : new Error("Provider request aborted"),
+          )
+          return
+        }
+        signal.addEventListener(
+          "abort",
+          () =>
+            reject(
+              signal.reason instanceof Error ?
+                signal.reason
+              : new Error("Provider request aborted"),
+            ),
+          { once: true },
+        )
+      })
+    })
+    const controller = new AbortController()
+    const responsePromise = createApp().fetch(
+      new Request("http://localhost/openai/v1/responses", {
+        body: JSON.stringify({ input: "hello", model: "gpt-test" }),
+        headers: { "content-type": "application/json" },
+        method: "POST",
+        signal: controller.signal,
+      }),
+    )
+    await upstreamStarted.promise
+
+    controller.abort()
+
+    const response = await responsePromise
+    expect(upstreamSignal?.aborted).toBe(true)
+    expect(response.status).toBe(499)
+  })
+
+  test("propagates provider-prefixed Codex cancellation upstream", async () => {
+    const originalCodexAccessToken = state.codexAccessToken
+    const originalCodexAccountId = state.codexAccountId
+    let upstreamSignal: AbortSignal | undefined
+    const upstreamStarted = createDeferred()
+    providerConfig = {
+      apiKey: "",
+      authType: "oauth2",
+      baseUrl: "https://chatgpt.example/backend-api",
+      models: { "gpt-test": {} },
+      name: "codex",
+      type: "openai-responses",
+    }
+    state.codexAccessToken = "synthetic-codex-token"
+    state.codexAccountId = "synthetic-account"
+    fetchMock.mockImplementation((url, init) => {
+      expect(url).toBe("https://chatgpt.example/backend-api/codex/responses")
+      const signal = init?.signal
+      if (!(signal instanceof AbortSignal)) {
+        throw new Error("Expected upstream abort signal")
+      }
+      upstreamSignal = signal
+      upstreamStarted.resolve()
+      return new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener(
+          "abort",
+          () =>
+            reject(
+              signal.reason instanceof Error ?
+                signal.reason
+              : new Error("Codex request aborted"),
+            ),
+          { once: true },
+        )
+      })
+    })
+
+    try {
+      const controller = new AbortController()
+      const responsePromise = createApp().fetch(
+        new Request("http://localhost/codex/v1/responses", {
+          body: JSON.stringify({ input: "hello", model: "gpt-test" }),
+          headers: { "content-type": "application/json" },
+          method: "POST",
+          signal: controller.signal,
+        }),
+      )
+      await upstreamStarted.promise
+
+      controller.abort()
+
+      const response = await responsePromise
+      expect(upstreamSignal?.aborted).toBe(true)
+      expect(response.status).toBe(499)
+    } finally {
+      state.codexAccessToken = originalCodexAccessToken
+      state.codexAccountId = originalCodexAccountId
+    }
   })
 
   test("adapts Responses Lite through Messages to Chat Completions", async () => {
@@ -512,3 +641,14 @@ describe("provider Responses context management", () => {
     })
   })
 })
+
+const createDeferred = (): {
+  promise: Promise<void>
+  resolve: () => void
+} => {
+  let resolve!: () => void
+  const promise = new Promise<void>((deferredResolve) => {
+    resolve = deferredResolve
+  })
+  return { promise, resolve }
+}
