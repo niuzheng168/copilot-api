@@ -462,10 +462,12 @@ export const normalizeResponsesTransportConfig = (
   ),
 })
 
-const positiveIntegerOrDefault = (value: unknown, fallback: number): number =>
-  typeof value === "number" && Number.isFinite(value) && value > 0 ?
-    Math.floor(value)
-  : fallback
+const positiveIntegerOrDefault = (value: unknown, fallback: number): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback
+
+  const normalized = Math.floor(value)
+  return normalized > 0 ? normalized : fallback
+}
 
 export function getAnthropicApiKey(): string | undefined {
   const config = getConfig()

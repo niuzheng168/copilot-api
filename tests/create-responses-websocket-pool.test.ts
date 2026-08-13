@@ -265,6 +265,24 @@ test("Responses websocket pool reuses the same connection for matching pool keys
   expect(MockWebSocket.instances[0]?.sent).toHaveLength(2)
 })
 
+test("Responses websocket does not reuse a pooled connection for an already aborted request", async () => {
+  await collectStreamChunks(createTestPooledStream("already-aborted"))
+  const controller = new AbortController()
+  controller.abort(new Error("cancelled before start"))
+
+  expect(
+    await getRejectedError(
+      collectStreamChunks(
+        createTestPooledStream("already-aborted", {
+          signal: controller.signal,
+        }),
+      ),
+    ),
+  ).toHaveProperty("message", "cancelled before start")
+  expect(MockWebSocket.instances).toHaveLength(1)
+  expect(MockWebSocket.instances[0]?.sent).toHaveLength(1)
+})
+
 test("Responses websocket open failure includes the underlying reason", async () => {
   MockWebSocket.failOpen = true
   MockWebSocket.failOpenEvent = {

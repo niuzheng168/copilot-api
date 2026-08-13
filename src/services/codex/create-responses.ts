@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 
-import { events, type ServerSentEventMessage } from "fetch-event-stream"
+import type { ServerSentEventMessage } from "fetch-event-stream"
 
 import type {
   CreateResponsesReturn,
@@ -29,7 +29,10 @@ import {
   encodePoolKeyPart,
   isTerminalResponsesStreamChunk,
 } from "~/services/responses-websocket-helpers"
-import { fetchResponsesWithLifecycle } from "~/services/responses-http"
+import {
+  createResponsesHttpEventStream,
+  fetchResponsesWithLifecycle,
+} from "~/services/responses-http"
 import { requestContext } from "~/lib/request-context"
 import consola from "consola"
 
@@ -281,52 +284,13 @@ export async function forwardCodexResponses(
   }
 
   if (normalizedPayload.stream) {
-    return createCodexResponsesHttpStream(response, options.signal)
+    return createResponsesSafeStream(
+      createResponsesHttpEventStream(response, options.signal),
+      { signal: options.signal },
+    )
   }
 
   return (await response.json()) as ResponsesResult
-}
-
-const createCodexResponsesHttpStream = async function* (
-  response: Response,
-  signal?: AbortSignal,
-): ResponsesStream {
-  const responseBody = response.body
-  if (!responseBody) {
-    return
-  }
-
-  const reader =
-    responseBody.getReader() as ReadableStreamDefaultReader<Uint8Array>
-  const readerBackedBody = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      const result = await reader.read()
-      if (result.done) {
-        controller.close()
-        return
-      }
-
-      controller.enqueue(result.value)
-    },
-    async cancel(reason) {
-      await reader.cancel(reason)
-    },
-  })
-
-  try {
-    yield* createResponsesSafeStream(
-      events(new Response(readerBackedBody), signal),
-      { signal },
-    )
-  } finally {
-    try {
-      await reader.cancel()
-    } catch {
-      // The reader may already have failed or been cancelled downstream.
-    } finally {
-      reader.releaseLock()
-    }
-  }
 }
 
 const normalizeCodexResponsesPayload = (

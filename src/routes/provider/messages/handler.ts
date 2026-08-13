@@ -88,6 +88,7 @@ import {
   forwardProviderMessages,
   forwardProviderResponses,
 } from "~/services/providers/provider-proxy"
+import { createResponsesHttpEventStream } from "~/services/responses-http"
 import {
   applyMissingExtraBody,
   applyModelDefaults,
@@ -333,7 +334,10 @@ const handleOpenAIResponsesProviderWebSearchMessages = async (
       errorMessagePrefix: `${provider} web search responses stream`,
       parseEvent: (data) =>
         parseResponsesProviderStreamChunk(data, providerConfig),
-      upstreamResponse: events(upstreamResponse),
+      upstreamResponse: createResponsesHttpEventStream(
+        upstreamResponse,
+        c.req.raw.signal,
+      ),
       logger,
     })
     return respondWebSearchProviderMessagesJson(c, {
@@ -467,7 +471,10 @@ const handleOpenAIResponsesProviderMessages = async (
       pricingCurrency: providerConfig.pricingCurrency,
       provider,
       providerConfig,
-      upstreamResponse: events(upstreamResponse),
+      upstreamResponse: createResponsesHttpEventStream(
+        upstreamResponse,
+        c.req.raw.signal,
+      ),
       usageEndpoint,
     })
   }

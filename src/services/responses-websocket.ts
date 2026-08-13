@@ -158,6 +158,7 @@ const runPooledWebSocketRequest = async function* <TPayload, TChunk>(
   request: PooledWebSocketRequest<TPayload>,
   options: PooledWebSocketStreamOptions<TChunk>,
 ): AsyncIterable<TChunk> {
+  throwIfAborted(request.signal)
   const { entry, pooled } = getPooledWebSocketRequestTarget(request, options)
   const release = acquirePooledWebSocketEntry(request.poolKey, entry, pooled)
   let messageStream: WebSocketMessageStream | null = null
@@ -170,6 +171,7 @@ const runPooledWebSocketRequest = async function* <TPayload, TChunk>(
       pooled,
       options,
     )
+    throwIfAborted(request.signal)
     messageStream = createWebSocketMessageStream(
       websocket,
       request.signal,
@@ -416,7 +418,6 @@ const openWebSocket = async ({
     const timer = setTimeout(() => {
       fail(new ResponsesWebSocketOpenTimeoutError(openTimeoutMs))
     }, openTimeoutMs)
-    unrefTimer(timer)
 
     const cleanup = () => {
       clearTimeout(timer)
@@ -504,7 +505,6 @@ const createWebSocketMessageStream = <TChunk>(
         ),
       )
     }, options.streamInactivityTimeoutMs)
-    unrefTimer(inactivityTimer)
   }
 
   const onMessage = (event: { data: unknown }) => {
@@ -629,6 +629,10 @@ const toAbortReason = (reason: unknown): Error => {
   const error = new Error("The operation was aborted")
   error.name = "AbortError"
   return error
+}
+
+const throwIfAborted = (signal: AbortSignal | undefined): void => {
+  if (signal?.aborted) throw toAbortReason(signal.reason)
 }
 
 const toError = (value: unknown): Error => {

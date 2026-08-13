@@ -1,3 +1,5 @@
+import { events, type ServerSentEventMessage } from "fetch-event-stream"
+
 export interface ResponsesHttpLifecycleOptions {
   headersTimeoutMs: number
   signal?: AbortSignal
@@ -71,7 +73,6 @@ const createRequestLifecycle = (
         new ResponsesHeadersTimeoutError(options.headersTimeoutMs),
       )
     }, options.headersTimeoutMs)
-    unrefTimer(headersTimer)
   }
 
   const clearHeadersTimer = () => {
@@ -172,6 +173,43 @@ const createManagedResponseBody = (
   })
 }
 
+export const createResponsesHttpEventStream = async function* (
+  response: Response,
+  signal?: AbortSignal,
+): AsyncGenerator<ServerSentEventMessage, void, unknown> {
+  const responseBody = response.body
+  if (!responseBody) return
+
+  const reader =
+    responseBody.getReader() as ReadableStreamDefaultReader<Uint8Array>
+  const readerBackedBody = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const result = await reader.read()
+      if (result.done) {
+        controller.close()
+        return
+      }
+
+      controller.enqueue(result.value)
+    },
+    async cancel(reason) {
+      await reader.cancel(reason)
+    },
+  })
+
+  try {
+    yield* events(new Response(readerBackedBody), signal)
+  } finally {
+    try {
+      await reader.cancel()
+    } catch {
+      // The managed response may already have failed or been cancelled.
+    } finally {
+      reader.releaseLock()
+    }
+  }
+}
+
 const readWithLifecycle = async (
   reader: {
     read: () => Promise<{ done: boolean; value?: Uint8Array }>
@@ -189,8 +227,6 @@ const readWithLifecycle = async (
       lifecycle.abort(error)
       settle(() => reject(error))
     }, options.streamInactivityTimeoutMs)
-    unrefTimer(timer)
-
     const onAbort = () => {
       settle(() => reject(toAbortReason(signal.reason)))
     }
@@ -229,14 +265,4 @@ const toAbortReason = (reason: unknown): Error => {
 const toError = (value: unknown): Error => {
   if (value instanceof Error) return value
   return new Error(String(value))
-}
-
-const unrefTimer = (timer: ReturnType<typeof setTimeout>): void => {
-  if (
-    typeof timer === "object"
-    && "unref" in timer
-    && typeof timer.unref === "function"
-  ) {
-    timer.unref()
-  }
 }

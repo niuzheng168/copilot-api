@@ -1,5 +1,4 @@
 import consola from "consola"
-import { events } from "fetch-event-stream"
 import { createHash } from "node:crypto"
 
 import type { SubagentMarker } from "~/lib/subagent"
@@ -37,7 +36,10 @@ import {
   encodePoolKeyPart,
   isTerminalResponsesStreamChunk,
 } from "~/services/responses-websocket-helpers"
-import { fetchResponsesWithLifecycle } from "~/services/responses-http"
+import {
+  createResponsesHttpEventStream,
+  fetchResponsesWithLifecycle,
+} from "~/services/responses-http"
 
 interface ResponsesRequestOptions {
   vision: boolean
@@ -127,7 +129,10 @@ const createHttpResponses = async (
   }
 
   if (payload.stream) {
-    return createResponsesSafeStream(events(response), { signal })
+    return createResponsesSafeStream(
+      createResponsesHttpEventStream(response, signal),
+      { signal },
+    )
   }
 
   return (await response.json()) as ResponsesResult

@@ -5,6 +5,7 @@ import {
   normalizeResponsesTransportConfig,
 } from "~/lib/config"
 import {
+  createResponsesHttpEventStream,
   fetchResponsesWithLifecycle,
   ResponsesHeadersTimeoutError,
   ResponsesStreamInactivityTimeoutError,
@@ -24,12 +25,55 @@ test("Responses transport configuration validates positive integer limits", () =
       websocketMaxBufferedBytes: -1,
       websocketMaxBufferedMessages: Number.NaN,
       websocketOpenTimeoutMs: 45,
+      websocketPoolIdleTimeoutMs: 0.5,
     }),
   ).toEqual({
     ...defaultResponsesTransportConfig,
     headersTimeoutMs: 12,
     websocketOpenTimeoutMs: 45,
   })
+})
+
+test("early SSE iterator return cancels the managed upstream body", async () => {
+  let cancelledBodies = 0
+  ;(globalThis as unknown as { fetch: typeof fetch }).fetch = mock(() =>
+    Promise.resolve(
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                'event: response.completed\ndata: {"type":"response.completed"}\n\n',
+              ),
+            )
+          },
+          cancel() {
+            cancelledBodies += 1
+          },
+        }),
+      ),
+    ),
+  ) as unknown as typeof fetch
+
+  const response = await fetchResponsesWithLifecycle(
+    "https://upstream.example/responses",
+    { method: "POST" },
+    {
+      headersTimeoutMs: 100,
+      streamInactivityTimeoutMs: 100,
+    },
+  )
+  const iterator =
+    createResponsesHttpEventStream(response)[Symbol.asyncIterator]()
+
+  expect((await iterator.next()).value).toHaveProperty(
+    "event",
+    "response.completed",
+  )
+  await iterator.return?.()
+
+  expect(cancelledBodies).toBe(1)
+  expect(response.body?.locked).toBe(false)
 })
 
 test("downstream cancellation aborts only its upstream HTTP request", async () => {

@@ -1,6 +1,5 @@
 import type { Context } from "hono"
 
-import { events } from "fetch-event-stream"
 import { streamSSE } from "hono/streaming"
 
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
@@ -30,6 +29,7 @@ import type {
 import { forwardCodexResponses } from "~/services/codex/create-responses"
 import { getModels as getCodexModels } from "~/services/codex/get-models"
 import { createResponsesSafeStream } from "~/services/responses-websocket-helpers"
+import { createResponsesHttpEventStream } from "~/services/responses-http"
 import {
   createProviderProxyResponse,
   forwardProviderResponses,
@@ -339,4 +339,7 @@ const getResponsesStreamEventUsage = (
 const getResponsesEvents = (
   response: Response,
   signal?: AbortSignal,
-): ResponsesStream => createResponsesSafeStream(events(response), { signal })
+): ResponsesStream =>
+  createResponsesSafeStream(createResponsesHttpEventStream(response, signal), {
+    signal,
+  })
