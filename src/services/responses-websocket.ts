@@ -182,11 +182,15 @@ const runPooledWebSocketRequest = async function* <TPayload, TChunk>(
 
     for await (const data of messageStream.iterable) {
       const chunk = options.createChunk(data)
-      yield chunk
-
-      if (options.isTerminalChunk(chunk)) {
+      const isTerminal = options.isTerminalChunk(chunk)
+      if (isTerminal) {
         messageStream.complete()
         reusable = true
+      }
+
+      yield chunk
+
+      if (isTerminal) {
         return
       }
     }

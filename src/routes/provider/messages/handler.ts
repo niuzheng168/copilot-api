@@ -89,6 +89,7 @@ import {
   forwardProviderResponses,
 } from "~/services/providers/provider-proxy"
 import { createResponsesHttpEventStream } from "~/services/responses-http"
+import { createResponsesSafeStream } from "~/services/responses-websocket-helpers"
 import {
   applyMissingExtraBody,
   applyModelDefaults,
@@ -471,9 +472,9 @@ const handleOpenAIResponsesProviderMessages = async (
       pricingCurrency: providerConfig.pricingCurrency,
       provider,
       providerConfig,
-      upstreamResponse: createResponsesHttpEventStream(
-        upstreamResponse,
-        c.req.raw.signal,
+      upstreamResponse: createResponsesSafeStream(
+        createResponsesHttpEventStream(upstreamResponse, c.req.raw.signal),
+        { signal: c.req.raw.signal },
       ),
       usageEndpoint,
     })

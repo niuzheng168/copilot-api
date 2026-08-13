@@ -3,6 +3,7 @@ import { Hono } from "hono"
 
 import type { ResolvedProviderConfig } from "~/lib/config"
 import type { UsageTokens } from "~/lib/token-usage"
+import { ResponsesStreamInactivityTimeoutError } from "~/services/responses-http"
 
 const actualConfigModule = await import("~/lib/config")
 const actualTokenUsageModule = await import("~/lib/token-usage")
@@ -153,6 +154,18 @@ const createThinkingStreamResponse = (
   })
 }
 
+const createFailingResponsesStream = (): Response =>
+  new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new ResponsesStreamInactivityTimeoutError(25))
+      },
+    }),
+    {
+      headers: { "content-type": "text/event-stream; charset=utf-8" },
+    },
+  )
+
 const parseStreamData = (text: string): Array<Record<string, unknown>> =>
   text
     .split("\n")
@@ -285,5 +298,33 @@ describe("provider Messages Anthropic forwarding", () => {
       input_tokens: 4,
       output_tokens: 3,
     })
+  })
+})
+
+describe("provider Messages Responses forwarding", () => {
+  test("emits an Anthropic error event and records usage when the upstream stream fails", async () => {
+    providerConfig = {
+      ...createProviderConfig("responses"),
+      type: "openai-responses",
+    }
+    upstreamResponseFactory = createFailingResponsesStream
+
+    const response = await createApp().request("/responses/v1/messages", {
+      body: JSON.stringify(createMessagesPayload({ stream: true })),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(parseStreamData(await response.text())).toEqual([
+      {
+        error: {
+          message: "Responses upstream stream was inactive for 25ms",
+          type: "api_error",
+        },
+        type: "error",
+      },
+    ])
+    expect(recordedUsages).toEqual([{}])
   })
 })

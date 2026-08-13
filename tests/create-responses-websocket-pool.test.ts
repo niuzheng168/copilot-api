@@ -265,6 +265,21 @@ test("Responses websocket pool reuses the same connection for matching pool keys
   expect(MockWebSocket.instances[0]?.sent).toHaveLength(2)
 })
 
+test("Responses websocket remains reusable when the consumer stops after the terminal chunk", async () => {
+  const stream = createResponsesSafeStream(
+    createTestPooledStream("terminal-break"),
+  )
+  for await (const chunk of stream) {
+    expect(chunk.event).toBe("response.completed")
+    break
+  }
+
+  await collectStreamChunks(createTestPooledStream("terminal-break"))
+
+  expect(MockWebSocket.instances).toHaveLength(1)
+  expect(MockWebSocket.instances[0]?.sent).toHaveLength(2)
+})
+
 test("Responses websocket does not reuse a pooled connection for an already aborted request", async () => {
   await collectStreamChunks(createTestPooledStream("already-aborted"))
   const controller = new AbortController()
