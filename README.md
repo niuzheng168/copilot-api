@@ -417,6 +417,10 @@ enabled = false
 
 When a Codex client (`User-Agent` starts with `codex`) requests the top-level `GET /v1/models`, the gateway merges native Codex models with models available through the Messages adapter. The latter advertise `use_responses_lite: true`: `/v1/responses` uses **Responses → Messages** for Anthropic providers, while OpenAI-compatible providers and Chat-only Copilot models reuse the existing Messages route for **Responses → Messages → Chat Completions**, then translate streaming or JSON results back to Responses.
 
+The merged catalog is what Codex shows in its model picker, including the models exposed by your configured providers:
+
+<img src="./docs/screenshots/codex-models.png" alt="Codex model picker showing models provided by the gateway" width="900" />
+
 For Codex clients, only `gpt-*` Copilot models use the native Responses API; non-GPT Copilot models always go through the adapter, even when they advertise native `/responses` support. The same Codex rule applies on provider `/v1/responses` routes (top-level `provider/model` aliases and `/:provider/v1/responses`): for `openai-responses` providers, non-`gpt-*` models fall back to the Messages adapter, while `gpt-*` models keep native Responses forwarding.
 
 Responses Lite tool definitions are read from `input.additional_tools`, without relying on top-level `tools`. Function, `namespace`, and custom tools are supported; clients must declare `apply_patch` as `type: "custom"`, and it is not handled as a standalone special tool type. Returned calls recover their original `name` and `namespace`. Tools are collected before old history is trimmed, so compaction requests retain them. The Messages fallback does not support Responses `tool_search` mode. Anthropic `output_config.effort` keeps the project's existing valid levels; Responses `minimal` maps to `low`, while `none` omits Anthropic effort.
