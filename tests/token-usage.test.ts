@@ -241,6 +241,19 @@ describe("token usage storage", () => {
     expect(page.items[0]?.total_tokens).toBe(25)
   })
 
+  test("normalizes and returns reasoning effort", async () => {
+    recordTokenUsageEvent({
+      endpoint: "responses",
+      input_tokens: 10,
+      model: "gpt-test",
+      reasoningEffort: "  XHIGH  ",
+      source: "copilot",
+    })
+
+    const page = await fetchEventsPage()
+    expect(page.items[0]?.reasoning_effort).toBe("xhigh")
+  })
+
   test("calculates built-in Codex GPT-5.6 prices with cached input discount", async () => {
     const expectedCosts = [
       { model: "gpt-5.6-sol", totalCostNanos: 96_000_000 },

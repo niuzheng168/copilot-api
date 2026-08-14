@@ -52,6 +52,7 @@ export interface PersistedTokenUsageEvent {
   model: string
   output_tokens: number
   provider_name: string | null
+  reasoning_effort: string | null
   session_id: string
   source: TokenUsageSource
   total_cost_nanos: number | null
@@ -88,6 +89,7 @@ export interface TokenUsageEventRecord {
   model: string
   output_tokens: number
   provider_name: string | null
+  reasoning_effort: string | null
   session_id: string
   source: TokenUsageSource
   total_nano_aiu: number | null
@@ -184,6 +186,7 @@ function initializeTokenUsageDb(db: SqliteDatabase): void {
       endpoint TEXT NOT NULL,
       provider_name TEXT,
       model TEXT NOT NULL,
+      reasoning_effort TEXT,
       input_tokens INTEGER NOT NULL DEFAULT 0,
       output_tokens INTEGER NOT NULL DEFAULT 0,
       cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
@@ -196,6 +199,7 @@ function initializeTokenUsageDb(db: SqliteDatabase): void {
     )
   `)
   ensureColumn(db, "user_id", "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, "reasoning_effort", "TEXT")
   ensureColumn(db, "total_tokens", "INTEGER NOT NULL DEFAULT 0")
   ensureColumn(db, "total_nano_aiu", "INTEGER")
   ensureColumn(db, "cost_currency", "TEXT")
@@ -252,6 +256,11 @@ export function normalizeOptionalToken(
     : normalizeToken(value)
 }
 
+export function normalizeReasoningEffort(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  return value.trim().toLowerCase().slice(0, 64) || null
+}
+
 export function hasAnyToken(tokens: UsageTokens): boolean {
   return (
     normalizeToken(tokens.input_tokens) > 0
@@ -292,6 +301,7 @@ async function writeTokenUsageEvent(
         endpoint,
         provider_name,
         model,
+        reasoning_effort,
         input_tokens,
         output_tokens,
         cache_read_input_tokens,
@@ -301,7 +311,7 @@ async function writeTokenUsageEvent(
         cost_currency,
         total_cost_nanos,
         cost_source
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
   ).run(
     event.created_at_ms,
@@ -313,6 +323,7 @@ async function writeTokenUsageEvent(
     event.endpoint,
     event.provider_name,
     event.model,
+    event.reasoning_effort,
     event.input_tokens,
     event.output_tokens,
     event.cache_read_input_tokens,
@@ -667,6 +678,7 @@ function usageEventFromRow(
     model: stringFromRow(row, "model") || "unknown",
     output_tokens: numberFromRow(row, "output_tokens"),
     provider_name: nullableStringFromRow(row, "provider_name"),
+    reasoning_effort: nullableStringFromRow(row, "reasoning_effort"),
     session_id: stringFromRow(row, "session_id"),
     source: stringFromRow(row, "source") as TokenUsageSource,
     total_nano_aiu: nullableNumberFromRow(row, "total_nano_aiu"),
@@ -901,6 +913,7 @@ export async function getTokenUsageEventsPage(input: {
       endpoint,
       provider_name,
       model,
+      reasoning_effort,
       input_tokens,
       output_tokens,
       cache_read_input_tokens,

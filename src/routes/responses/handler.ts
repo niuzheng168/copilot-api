@@ -129,6 +129,7 @@ export const handleResponses = async (c: Context) => {
     endpoint: "responses",
     fallbackSessionId,
     model: payload.model,
+    reasoningEffort: payload.reasoning?.effort,
   })
 
   const sanitizedUnsupportedFieldCount = sanitizeUnsupportedInputFields(payload)

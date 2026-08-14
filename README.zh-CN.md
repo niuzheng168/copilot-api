@@ -596,7 +596,7 @@ cp plugin/opencode/subagent-marker.js ~/.config/opencode/plugins/
 - **Token Usage 指标卡片**：汇总当前周期的 Total、Input、Output、Cache Read、Cache Write、Requests 和预估费用。
 - **趋势图（Week / Month）**：提供按模型和指标筛选的折线趋势图，点击数据点可查看单日用量明细。
 - **Model Breakdown 表格**：按模型维度列出周期内的请求数、输入/输出/缓存 token 和预计费用。
-- **Request Events 分页列表**：按时间排序的请求事件记录，支持分页浏览，含时间戳、模型、请求 ID 和 token 用量。
+- **Request Events 分页列表**：按时间排序的请求事件记录，支持分页浏览，含时间戳、模型、推理强度、请求 ID 和 token 用量。
 - **Detailed Information**：展示 API 返回的完整 JSON 响应，便于深入分析所有可用统计数据。
 - **URL-based Configuration**：也可通过 `endpoint` 和 `period` 查询参数直接指定 API 端点与时间范围。例如：
   `http://localhost:4141/usage-viewer?endpoint=http://your-api-server/usage&period=week`
@@ -742,7 +742,7 @@ Copilot API 现在使用子命令结构，主要命令包括：
   - **转发字段：** 走 Copilot 原生 Messages API 时，最终值写入 `output_config.effort`；转换为 Responses API 时，最终值写入 `reasoning.effort`。
   - **配置可选值：** `none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。
 - **useMessagesApi：** 当为 `true` 时，支持 Copilot 原生 `/v1/messages` 的 Claude 系模型会走 Messages API；否则回退到 `/chat/completions`。设为 `false` 可禁用 Messages API 路由，始终使用 `/chat/completions`。默认值为 `true`。
-- **useResponsesApiWebSocket：** 当为 `true` 时，Responses API 请求会优先对声明了 `ws:/responses` 的模型使用 Copilot websocket transport；仅声明 `/responses` 的模型仍走 HTTP。设为 `false` 可禁用 websocket 路由，并在模型支持 `/responses` 时使用 HTTP `/responses`。默认值为 `true`。如果遇到 Responses API WebSocket closed，一般是自己的网络问题。如果使用了 VPN，建议切换节点。
+- **useResponsesApiWebSocket：** 当为 `true` 时，Responses API 请求会优先对声明了 `ws:/responses` 的模型使用 Copilot websocket transport；仅声明 `/responses` 的模型仍走 HTTP。重放加密 `reasoning` 或 `compaction` 历史的请求会自动改走 HTTP，以便网关在任何流事件发给客户端之前恢复失效的加密载荷。若 Copilot 返回可恢复的 `invalid_request_body`，网关会移除这些不透明载荷并重试一次；`invalid-encrypted-content.json` 只保存它们的 SHA-256 指纹，不会写入加密内容本身。设为 `false` 可禁用 websocket 路由，并在模型支持 `/responses` 时使用 HTTP `/responses`。默认值为 `true`。如果遇到 Responses API WebSocket closed，一般是自己的网络问题。如果使用了 VPN，建议切换节点。
 - **responsesTransport：** 所有上游 Responses transport 共用的生命周期与缓冲区正整数限制。无效值、零或负数会回退到上面列出的默认值。`headersTimeoutMs` 从连接建立开始计算，到收到 HTTP 响应头为止，并不是整个生成过程的总时限。每收到一个 HTTP body chunk 或 WebSocket message 都会重置 `streamInactivityTimeoutMs`，因此持续活跃的长推理任务不会被短总时限中断。`websocketOpenTimeoutMs` 限制 WebSocket 握手时间；`websocketPoolIdleTimeoutMs` 只控制已正常完成且可复用的空闲连接。WebSocket 队列同时受字节数和消息数上限约束；超过任一上限时会终止该 stream 并使 socket 失效，而不会丢弃或重排事件。
 - **useResponsesApiWebSearch：** 当为 `true` 时，服务端会保留 Responses API 中 `type: "web_search"` 的工具并透传到上游。设为 `false` 则会从 `/responses` payload 中移除这些工具。默认值为 `true`。
 - **alphaSearchCodexPriority：** 默认值为 `true`。顶层 alpha-search 请求优先使用 Codex alpha-search 端点，因为它不会消耗 provider 配额。若 Codex 不可用，或该配置设为 `false`，使用非 `codex/model` 的 `provider/model` 别名的请求会调用目标 provider 的 `/v1/responses` 端点，没有 provider 前缀的请求使用 GitHub Copilot Responses web search。该适配器会识别当前所有 Codex search command；不受支持的 `image_query` 和 `screenshot` 会返回成功且明确要求不要重试的 tool output。

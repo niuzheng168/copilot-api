@@ -66,11 +66,13 @@ export const webSearchFlowDependencies = {
     payload: AnthropicMessagesPayload,
     sessionId?: string,
     webSearchModel?: string,
+    reasoningEffort?: string | null,
   ): ((usage: UsageTokens) => void) =>
     createCopilotTokenUsageRecorder({
       endpoint: "responses",
       fallbackSessionId: sessionId,
       model: webSearchModel ?? payload.model,
+      reasoningEffort,
       sessionId: parseUserIdMetadata(payload.metadata?.user_id).sessionId,
     }),
 }
@@ -280,11 +282,13 @@ const createUsageRecorder = (
   payload: AnthropicMessagesPayload,
   sessionId?: string,
   webSearchModel?: string,
+  reasoningEffort?: string | null,
 ): ((usage: UsageTokens) => void) =>
   webSearchFlowDependencies.createUsageRecorder(
     payload,
     sessionId,
     webSearchModel,
+    reasoningEffort,
   )
 
 /**
@@ -415,6 +419,7 @@ export const handleWebSearchViaResponses = async (
     payload,
     options.sessionId,
     webSearchModel,
+    responsesPayload.reasoning?.effort,
   )
   recordUsage({
     ...normalizeResponsesUsage(result.usage),

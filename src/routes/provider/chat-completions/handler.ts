@@ -157,6 +157,7 @@ const createProviderChatCompletionsUsageRecorder = (
     pricing: modelConfig?.pricing,
     pricingCurrency,
     providerName: provider,
+    reasoningEffort: payload.reasoning_effort,
   })
 
 const streamProviderChatCompletions = (

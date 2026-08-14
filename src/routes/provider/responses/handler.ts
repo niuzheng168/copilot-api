@@ -227,6 +227,7 @@ const createProviderResponsesUsageRecorder = (
     pricing: modelConfig?.pricing,
     pricingCurrency,
     providerName: provider,
+    reasoningEffort: payload.reasoning?.effort,
     sessionId: sessionAffinity ?? "",
   })
 }

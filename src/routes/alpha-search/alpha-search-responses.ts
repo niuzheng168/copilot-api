@@ -136,11 +136,13 @@ export const alphaSearchResponsesDependencies = {
   createUsageRecorder: (
     model: string,
     sessionId: string,
+    reasoningEffort?: string | null,
   ): ((usage: UsageTokens) => void) =>
     createCopilotTokenUsageRecorder({
       endpoint: "responses",
       fallbackSessionId: sessionId,
       model,
+      reasoningEffort,
     }),
 }
 
@@ -718,6 +720,7 @@ async function requestProviderSearch(
     pricing: providerConfig.models?.[model]?.pricing,
     pricingCurrency: providerConfig.pricingCurrency,
     providerName: providerConfig.name,
+    reasoningEffort: payload.reasoning?.effort,
     sessionId,
   })(normalizeResponsesUsage(result.usage))
   return result
@@ -747,6 +750,7 @@ async function requestCopilotSearch(
   alphaSearchResponsesDependencies.createUsageRecorder(
     model,
     sessionId,
+    payload.reasoning?.effort,
   )({
     ...normalizeResponsesUsage(result.usage),
     total_nano_aiu: normalizeOptionalToken(

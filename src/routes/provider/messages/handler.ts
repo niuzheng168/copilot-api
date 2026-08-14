@@ -299,6 +299,7 @@ const handleOpenAIResponsesProviderWebSearchMessages = async (
         payload,
         pricingCurrency: providerConfig.pricingCurrency,
         provider,
+        reasoningEffort: responsesPayload.reasoning?.effort,
         usageEndpoint,
       })
     }
@@ -309,6 +310,7 @@ const handleOpenAIResponsesProviderWebSearchMessages = async (
       payload,
       pricingCurrency: providerConfig.pricingCurrency,
       provider,
+      reasoningEffort: responsesPayload.reasoning?.effort,
       usageEndpoint,
     })
   }
@@ -349,6 +351,7 @@ const handleOpenAIResponsesProviderWebSearchMessages = async (
       payload,
       pricingCurrency: providerConfig.pricingCurrency,
       provider,
+      reasoningEffort: responsesPayload.reasoning?.effort,
       usageEndpoint,
     })
   }
@@ -360,6 +363,7 @@ const handleOpenAIResponsesProviderWebSearchMessages = async (
     payload,
     pricingCurrency: providerConfig.pricingCurrency,
     provider,
+    reasoningEffort: responsesPayload.reasoning?.effort,
     usageEndpoint,
   })
 }
@@ -421,6 +425,7 @@ const handleOpenAIResponsesProviderMessages = async (
           pricingCurrency: providerConfig.pricingCurrency,
           provider,
           providerConfig,
+          reasoningEffort: responsesPayload.reasoning?.effort,
           upstreamResponse,
           usageEndpoint,
         })
@@ -440,6 +445,7 @@ const handleOpenAIResponsesProviderMessages = async (
         pricingCurrency: providerConfig.pricingCurrency,
         provider,
         providerConfig,
+        reasoningEffort: responsesPayload.reasoning?.effort,
         usageEndpoint,
       })
     }
@@ -451,6 +457,7 @@ const handleOpenAIResponsesProviderMessages = async (
       pricingCurrency: providerConfig.pricingCurrency,
       provider,
       providerConfig,
+      reasoningEffort: responsesPayload.reasoning?.effort,
       usageEndpoint,
     })
   }
@@ -475,6 +482,7 @@ const handleOpenAIResponsesProviderMessages = async (
       pricingCurrency: providerConfig.pricingCurrency,
       provider,
       providerConfig,
+      reasoningEffort: responsesPayload.reasoning?.effort,
       upstreamResponse: createResponsesSafeStream(
         createResponsesHttpEventStream(upstreamResponse, c.req.raw.signal),
         { signal: c.req.raw.signal },
@@ -491,6 +499,7 @@ const handleOpenAIResponsesProviderMessages = async (
     pricingCurrency: providerConfig.pricingCurrency,
     provider,
     providerConfig,
+    reasoningEffort: responsesPayload.reasoning?.effort,
     usageEndpoint,
   })
 }
@@ -583,6 +592,7 @@ const handleOpenAICompatibleProviderMessages = async (
       payload,
       pricingCurrency: providerConfig.pricingCurrency,
       provider,
+      reasoningEffort: openAIPayload.reasoning_effort,
       upstreamResponse,
       usageEndpoint,
     })
@@ -595,6 +605,7 @@ const handleOpenAICompatibleProviderMessages = async (
     payload,
     pricingCurrency: providerConfig.pricingCurrency,
     provider,
+    reasoningEffort: openAIPayload.reasoning_effort,
     usageEndpoint,
   })
 }
@@ -775,6 +786,7 @@ const streamOpenAICompatibleProviderMessages = ({
   payload,
   pricingCurrency,
   provider,
+  reasoningEffort,
   upstreamResponse,
   usageEndpoint,
 }: {
@@ -783,6 +795,7 @@ const streamOpenAICompatibleProviderMessages = ({
   payload: AnthropicMessagesPayload
   pricingCurrency: string | undefined
   provider: string
+  reasoningEffort?: string | null
   upstreamResponse: Response
   usageEndpoint?: TokenUsageEndpoint
 }): Response => {
@@ -793,6 +806,7 @@ const streamOpenAICompatibleProviderMessages = ({
     modelConfig,
     pricingCurrency,
     usageEndpoint,
+    reasoningEffort,
   )
   return streamSSE(c, async (stream) => {
     let usage: UsageTokens = {}
@@ -868,6 +882,7 @@ const streamResponsesProviderMessages = ({
   pricingCurrency,
   provider,
   providerConfig,
+  reasoningEffort,
   upstreamResponse,
   usageEndpoint,
 }: {
@@ -877,6 +892,7 @@ const streamResponsesProviderMessages = ({
   pricingCurrency: string | undefined
   provider: string
   providerConfig: ResolvedProviderConfig
+  reasoningEffort?: string | null
   upstreamResponse: ResponsesStream
   usageEndpoint?: TokenUsageEndpoint
 }): Response => {
@@ -889,6 +905,7 @@ const streamResponsesProviderMessages = ({
     modelConfig,
     pricingCurrency,
     usageEndpoint,
+    reasoningEffort,
   )
   return streamSSE(c, async (stream) => {
     let usage: UsageTokens = {}
@@ -1139,6 +1156,7 @@ const respondOpenAICompatibleProviderMessagesJson = (
     payload: AnthropicMessagesPayload
     pricingCurrency: string | undefined
     provider: string
+    reasoningEffort?: string | null
     usageEndpoint?: TokenUsageEndpoint
   },
 ): Response => {
@@ -1148,6 +1166,7 @@ const respondOpenAICompatibleProviderMessagesJson = (
     payload,
     pricingCurrency,
     provider,
+    reasoningEffort,
     usageEndpoint,
   } = options
   const recordUsage = createProviderMessagesUsageRecorder(
@@ -1156,6 +1175,7 @@ const respondOpenAICompatibleProviderMessagesJson = (
     modelConfig,
     pricingCurrency,
     usageEndpoint,
+    reasoningEffort,
   )
   recordUsage(normalizeOpenAIUsage(body.usage))
 
@@ -1177,6 +1197,7 @@ const respondResponsesProviderMessagesJson = (
     pricingCurrency: string | undefined
     provider: string
     providerConfig: ResolvedProviderConfig
+    reasoningEffort?: string | null
     usageEndpoint?: TokenUsageEndpoint
   },
 ): Response => {
@@ -1187,6 +1208,7 @@ const respondResponsesProviderMessagesJson = (
     pricingCurrency,
     provider,
     providerConfig,
+    reasoningEffort,
     usageEndpoint,
   } = options
   const recordUsage = createProviderMessagesUsageRecorder(
@@ -1195,6 +1217,7 @@ const respondResponsesProviderMessagesJson = (
     modelConfig,
     pricingCurrency,
     usageEndpoint,
+    reasoningEffort,
   )
   recordUsage(normalizeResponsesUsage(body.usage))
 
@@ -1221,6 +1244,7 @@ const respondWebSearchProviderMessagesJson = (
     payload: AnthropicMessagesPayload
     pricingCurrency: string | undefined
     provider: string
+    reasoningEffort?: string | null
     usageEndpoint?: TokenUsageEndpoint
   },
 ): Response => {
@@ -1230,6 +1254,7 @@ const respondWebSearchProviderMessagesJson = (
     payload,
     pricingCurrency,
     provider,
+    reasoningEffort,
     usageEndpoint,
   } = options
   const recordUsage = createProviderMessagesUsageRecorder(
@@ -1238,6 +1263,7 @@ const respondWebSearchProviderMessagesJson = (
     modelConfig,
     pricingCurrency,
     usageEndpoint,
+    reasoningEffort,
   )
   recordUsage(normalizeResponsesUsage(body.usage))
 
@@ -1273,6 +1299,7 @@ const createProviderMessagesUsageRecorder = (
   modelConfig: ModelConfig | undefined,
   pricingCurrency: string | undefined,
   endpoint: TokenUsageEndpoint = "provider_messages",
+  reasoningEffort?: string | null,
 ) =>
   createProviderTokenUsageRecorder({
     endpoint,
@@ -1280,5 +1307,6 @@ const createProviderMessagesUsageRecorder = (
     pricing: modelConfig?.pricing,
     pricingCurrency,
     providerName: provider,
+    reasoningEffort: reasoningEffort ?? payload.output_config?.effort,
     sessionId: parseUserIdMetadata(payload.metadata?.user_id).sessionId,
   })

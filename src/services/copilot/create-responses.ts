@@ -40,6 +40,13 @@ import {
   createResponsesHttpEventStream,
   fetchResponsesWithLifecycle,
 } from "~/services/responses-http"
+import {
+  fetchCopilotResponsesWithRecovery,
+  listEncryptedHistoryItems,
+  sanitizeEncryptedHistory,
+  staleEncryptedContentStore,
+  type EncryptedHistoryStore,
+} from "~/services/copilot/responses-resilience"
 
 interface ResponsesRequestOptions {
   vision: boolean
@@ -50,6 +57,12 @@ interface ResponsesRequestOptions {
   compactType?: CompactType
   transport?: ResponsesTransport
   signal?: AbortSignal
+}
+
+export const copilotResponsesDependencies: {
+  encryptedHistoryStore: EncryptedHistoryStore
+} = {
+  encryptedHistoryStore: staleEncryptedContentStore,
 }
 
 export const createResponses = async (
@@ -76,13 +89,24 @@ export const createResponses = async (
 
   prepareForCompact(headers, compactType)
 
+  const sanitized = sanitizeEncryptedHistory(payload, (item) =>
+    copilotResponsesDependencies.encryptedHistoryStore.has(item.hash),
+  )
+  if (sanitized.removed.length > 0) {
+    consola.info(
+      `Removed ${sanitized.removed.length} known stale encrypted history item(s)`,
+    )
+  }
+  payload = sanitized.payload
+
   // service_tier is not supported by github copilot
   payload.service_tier = undefined
 
   consola.log(`<-- model: ${payload.model}`)
 
+  const hasEncryptedHistory = listEncryptedHistoryItems(payload).length > 0
   const effectiveTransport =
-    compactType === COMPACT_REQUEST ? "http" : transport
+    compactType === COMPACT_REQUEST || hasEncryptedHistory ? "http" : transport
 
   if (payload.stream === true && effectiveTransport === "websocket") {
     const websocketRequest = prepareResponsesWebSocketRequest(
@@ -107,18 +131,23 @@ const createHttpResponses = async (
   signal?: AbortSignal,
 ): Promise<CreateResponsesReturn> => {
   const transportConfig = getResponsesTransportConfig()
-  const response = await fetchResponsesWithLifecycle(
-    `${copilotBaseUrl(state)}/responses`,
-    {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    },
-    {
-      headersTimeoutMs: transportConfig.headersTimeoutMs,
-      signal,
-      streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
-    },
+  const response = await fetchCopilotResponsesWithRecovery(
+    payload,
+    (nextPayload) =>
+      fetchResponsesWithLifecycle(
+        `${copilotBaseUrl(state)}/responses`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(nextPayload),
+        },
+        {
+          headersTimeoutMs: transportConfig.headersTimeoutMs,
+          signal,
+          streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
+        },
+      ),
+    copilotResponsesDependencies.encryptedHistoryStore,
   )
 
   logCopilotRateLimits(response.headers)
