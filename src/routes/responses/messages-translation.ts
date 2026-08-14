@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
 
 import { compactTextOnlyGuard } from "~/lib/compact"
+import { requestContext } from "~/lib/request-context"
 import type {
   AnthropicAssistantContentBlock,
   AnthropicAssistantMessage,
@@ -135,6 +136,7 @@ export function translateResponsesToMessages(
   applyEphemeralCacheControl(messages, system)
 
   const reasoningEffort = translateReasoningEffort(payload.reasoning?.effort)
+  const metadataUserId = resolveMetadataUserId(payload)
   const messagesPayload: AnthropicMessagesPayload = {
     model: options.model,
     messages,
@@ -155,9 +157,7 @@ export function translateResponsesToMessages(
     ) ?
       { service_tier: payload.service_tier }
     : {}),
-    ...(resolveMetadataUserId(payload) ?
-      { metadata: { user_id: resolveMetadataUserId(payload) } }
-    : {}),
+    ...(metadataUserId ? { metadata: { user_id: metadataUserId } } : {}),
   }
 
   return {
@@ -1009,6 +1009,8 @@ function translateReasoningEffort(
 }
 
 function resolveMetadataUserId(payload: ResponsesPayload): string | undefined {
+  const sessionAffinity = requestContext.getStore()?.sessionAffinity?.trim()
+  if (sessionAffinity) return sessionAffinity
   const metadataUserId = payload.metadata?.user_id
   if (metadataUserId?.trim()) return metadataUserId
   if (payload.safety_identifier?.trim()) return payload.safety_identifier

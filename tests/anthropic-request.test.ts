@@ -5,6 +5,7 @@ import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
 import type { Model } from "~/lib/types/models"
 
 import { COMPACT_REQUEST } from "~/lib/compact"
+import { requestContext } from "~/lib/request-context"
 import { state } from "~/lib/state"
 import {
   RICH_TOOL_RESULT_MOVED_TEXT,
@@ -109,6 +110,48 @@ function createThinkingModel(): Model {
 }
 
 describe("Anthropic to OpenAI translation logic", () => {
+  test("maps request session affinity to prompt_cache_key", () => {
+    const anthropicPayload: AnthropicMessagesPayload = {
+      model: "gpt-4o",
+      messages: [{ role: "user", content: "Hello!" }],
+      max_tokens: 0,
+    }
+
+    const openAIPayload = requestContext.run(
+      {
+        parentSessionId: undefined,
+        sessionAffinity: " opencode-session ",
+        startTime: Date.now(),
+        traceId: "trace-123",
+        userAgent: "test",
+      },
+      () => translateToOpenAI(anthropicPayload),
+    )
+
+    expect(openAIPayload.prompt_cache_key).toBe("opencode-session")
+  })
+
+  test("omits prompt_cache_key when request session affinity is blank", () => {
+    const anthropicPayload: AnthropicMessagesPayload = {
+      model: "gpt-4o",
+      messages: [{ role: "user", content: "Hello!" }],
+      max_tokens: 0,
+    }
+
+    const openAIPayload = requestContext.run(
+      {
+        parentSessionId: undefined,
+        sessionAffinity: "   ",
+        startTime: Date.now(),
+        traceId: "trace-123",
+        userAgent: "test",
+      },
+      () => translateToOpenAI(anthropicPayload),
+    )
+
+    expect(openAIPayload).not.toHaveProperty("prompt_cache_key")
+  })
+
   test("should translate minimal Anthropic payload to valid OpenAI payload", () => {
     const anthropicPayload: AnthropicMessagesPayload = {
       model: "gpt-4o",

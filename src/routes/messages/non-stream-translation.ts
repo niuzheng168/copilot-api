@@ -1,6 +1,7 @@
 import type { ToolContentSupportType } from "~/lib/config"
 import type { Model } from "~/lib/types/models"
 
+import { requestContext } from "~/lib/request-context"
 import { state } from "~/lib/state"
 import {
   type ChatCompletionResponse,
@@ -76,6 +77,7 @@ export function translateToOpenAI(
   const model = state.models?.data.find((m) => m.id === modelId)
   const thinkingBudget = getThinkingBudget(payload, model)
   const reasoningEffort = getReasoningEffort(payload, options)
+  const promptCacheKey = requestContext.getStore()?.sessionAffinity?.trim()
   const capabilities = {
     supportPdf: options.supportPdf ?? false,
     toolContentSupportType:
@@ -98,6 +100,7 @@ export function translateToOpenAI(
     tool_choice: translateAnthropicToolChoiceToOpenAI(payload.tool_choice),
     thinking_budget: thinkingBudget,
     ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+    ...(promptCacheKey ? { prompt_cache_key: promptCacheKey } : {}),
   }
 }
 

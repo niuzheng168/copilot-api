@@ -5,6 +5,7 @@ import type {
   ResponsesPayload,
   ResponseStreamEvent,
 } from "~/lib/types/responses"
+import { requestContext } from "~/lib/request-context"
 import {
   decodeMessagesCompaction,
   encodeMessagesCompaction,
@@ -31,6 +32,68 @@ const expectCanonicalBase64 = (value: string | undefined) => {
 }
 
 describe("Responses Lite to Messages translation", () => {
+  test("prefers request session affinity for metadata user id", () => {
+    const result = requestContext.run(
+      {
+        parentSessionId: undefined,
+        sessionAffinity: " request-session ",
+        startTime: Date.now(),
+        traceId: "trace-123",
+        userAgent: "test",
+      },
+      () =>
+        translate({
+          input: "Hello",
+          metadata: { user_id: "metadata-user" },
+          prompt_cache_key: "prompt-cache-user",
+          safety_identifier: "safety-user",
+        }),
+    )
+
+    expect(result.messagesPayload.metadata).toEqual({
+      user_id: "request-session",
+    })
+  })
+
+  test("ignores blank session affinity and preserves payload fallbacks", () => {
+    const results = requestContext.run(
+      {
+        parentSessionId: undefined,
+        sessionAffinity: "   ",
+        startTime: Date.now(),
+        traceId: "trace-123",
+        userAgent: "test",
+      },
+      () => [
+        translate({
+          input: "Hello",
+          metadata: { user_id: "metadata-user" },
+          prompt_cache_key: "prompt-cache-user",
+          safety_identifier: "safety-user",
+        }),
+        translate({
+          input: "Hello",
+          metadata: { user_id: "   " },
+          prompt_cache_key: "prompt-cache-user",
+          safety_identifier: "safety-user",
+        }),
+        translate({
+          input: "Hello",
+          prompt_cache_key: "prompt-cache-user",
+          safety_identifier: "   ",
+        }),
+        translate({ input: "Hello" }),
+      ],
+    )
+
+    expect(results.map((result) => result.messagesPayload.metadata)).toEqual([
+      { user_id: "metadata-user" },
+      { user_id: "safety-user" },
+      { user_id: "prompt-cache-user" },
+      undefined,
+    ])
+  })
+
   test("groups the first five developer prompts into two system blocks", () => {
     const result = translate({
       instructions: "Base instructions",
