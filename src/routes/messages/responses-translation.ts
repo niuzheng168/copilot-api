@@ -1021,7 +1021,7 @@ const createCompactionThinkingBlock = (
 
   return {
     type: "thinking",
-    thinking: THINKING_TEXT,
+    thinking: "",
     signature: encodeCompactionCarrierSignature({
       id: item.id,
       encrypted_content: item.encrypted_content,

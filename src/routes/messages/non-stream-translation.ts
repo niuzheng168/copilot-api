@@ -376,10 +376,14 @@ function handleAssistantMessage(
   )
 
   if (modelId.startsWith("claude")) {
+    // Keep signature-only blocks (empty thinking text): the signature, not the
+    // summary text, carries reasoning continuity and is forwarded upstream as
+    // reasoning_opaque. Dropping empty-text blocks would silently lose those
+    // signatures. The THINKING_TEXT placeholder is still excluded: it is a
+    // synthetic value emitted by older versions, never real model output.
     thinkingBlocks = thinkingBlocks.filter(
       (b) =>
-        b.thinking
-        && b.thinking !== THINKING_TEXT
+        b.thinking !== THINKING_TEXT
         && b.signature
         // gpt signature has @ in it, so filter those out for claude models
         && !b.signature.includes("@"),
@@ -658,7 +662,7 @@ function getAnthropicThinkBlocks(
     return [
       {
         type: "thinking",
-        thinking: THINKING_TEXT, // Compatible with opencode, it will filter out blocks where the thinking text is empty, so we add a default thinking text here
+        thinking: "",
         signature: reasoningOpaque,
       },
     ]
