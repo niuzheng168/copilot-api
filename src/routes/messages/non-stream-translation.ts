@@ -30,6 +30,7 @@ import {
   type AnthropicUserMessage,
 } from "~/lib/types/anthropic"
 import { mapOpenAIStopReasonToAnthropic } from "./utils"
+import { parseUserIdMetadata } from "~/lib/utils"
 
 // Compatible with opencode, it will filter out blocks where the thinking text is empty, so we need add a default thinking text
 export const THINKING_TEXT = "Thinking..."
@@ -77,7 +78,12 @@ export function translateToOpenAI(
   const model = state.models?.data.find((m) => m.id === modelId)
   const thinkingBudget = getThinkingBudget(payload, model)
   const reasoningEffort = getReasoningEffort(payload, options)
-  const promptCacheKey = requestContext.getStore()?.sessionAffinity?.trim()
+  const { sessionId: metadataPromptCacheKey } = parseUserIdMetadata(
+    payload.metadata?.user_id,
+  )
+  const requestStore = requestContext.getStore()
+  const sessionAffinity = requestStore?.sessionAffinity?.trim() || null
+  const promptCacheKey = metadataPromptCacheKey ?? sessionAffinity
   const capabilities = {
     supportPdf: options.supportPdf ?? false,
     toolContentSupportType:
