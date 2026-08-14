@@ -14,9 +14,11 @@ import {
   buildResponsesWebSocketPoolKey,
   buildResponsesWebSocketPayload,
   buildResponsesWebSocketUrl,
+  copilotResponsesDependencies,
   createResponses,
   prepareResponsesWebSocketRequest,
 } from "~/services/copilot/create-responses"
+import type { EncryptedHistoryItem } from "~/services/copilot/responses-resilience"
 
 const originalFetch = globalThis.fetch
 const originalOauthApp = process.env.COPILOT_API_OAUTH_APP
@@ -27,6 +29,13 @@ const originalState = {
   vsCodeDeviceId: state.vsCodeDeviceId,
   vsCodeSessionId: state.vsCodeSessionId,
   vsCodeVersion: state.vsCodeVersion,
+}
+const originalEncryptedHistoryStore =
+  copilotResponsesDependencies.encryptedHistoryStore
+const recordRecoveredItems = mock((_items: Array<EncryptedHistoryItem>) => {})
+const encryptedHistoryStore = {
+  has: mock((_hash: string) => false),
+  record: recordRecoveredItems,
 }
 
 const createResponsesResult = (model: string): ResponsesResult => ({
@@ -70,6 +79,9 @@ beforeEach(() => {
   state.vsCodeVersion = "1.120.0"
 
   fetchMock.mockClear()
+  encryptedHistoryStore.has.mockClear()
+  recordRecoveredItems.mockClear()
+  copilotResponsesDependencies.encryptedHistoryStore = encryptedHistoryStore
   ;(globalThis as unknown as { fetch: typeof fetch }).fetch =
     fetchMock as unknown as typeof fetch
 })
@@ -87,6 +99,8 @@ afterEach(() => {
   state.vsCodeDeviceId = originalState.vsCodeDeviceId
   state.vsCodeSessionId = originalState.vsCodeSessionId
   state.vsCodeVersion = originalState.vsCodeVersion
+  copilotResponsesDependencies.encryptedHistoryStore =
+    originalEncryptedHistoryStore
   ;(globalThis as unknown as { fetch: typeof fetch }).fetch = originalFetch
 })
 
@@ -168,6 +182,37 @@ describe("createResponses", () => {
     expect(response).toEqual(createResponsesResult("gpt-test"))
   })
 
+  test("uses recoverable HTTP transport for encrypted response history", async () => {
+    const response = await createResponses(
+      {
+        input: [
+          {
+            encrypted_content: "encrypted-reasoning",
+            id: "reasoning-1",
+            summary: [],
+            type: "reasoning",
+          },
+        ],
+        model: "gpt-test",
+        stream: true,
+      },
+      {
+        initiator: "user",
+        requestId: "request-1",
+        transport: "websocket",
+        vision: false,
+      },
+    )
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(Symbol.asyncIterator in response).toBe(true)
+    if (Symbol.asyncIterator in response) {
+      for await (const _chunk of response) {
+        // Drain the managed HTTP body so lifecycle resources are released.
+      }
+    }
+  })
+
   test("keeps cache-relevant HTTP payloads deterministic", async () => {
     const payload: ResponsesPayload = {
       input: [
@@ -205,6 +250,62 @@ describe("createResponses", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).toContain(
       '"encrypted_content":"encrypted-reasoning"',
     )
+  })
+
+  test("retries a rejected HTTP request without encrypted history", async () => {
+    fetchMock.mockImplementationOnce(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "invalid_request_body",
+              message: "Encrypted content could not be verified",
+            },
+          }),
+          { status: 400 },
+        ),
+      ),
+    )
+    const payload: ResponsesPayload = {
+      input: [
+        { content: "continue", role: "user" },
+        {
+          encrypted_content: "stale-reasoning",
+          id: "reasoning-1",
+          summary: [],
+          type: "reasoning",
+        },
+        {
+          encrypted_content: "stale-compaction",
+          id: "compaction-1",
+          type: "compaction",
+        },
+      ],
+      model: "gpt-test",
+    }
+
+    const response = await createResponses(payload, {
+      initiator: "user",
+      requestId: "request-1",
+      vision: false,
+    })
+
+    expect(response).toEqual(createResponsesResult("gpt-test"))
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const firstRequestBody = fetchMock.mock.calls[0]?.[1]?.body
+    const retryRequestBody = fetchMock.mock.calls[1]?.[1]?.body
+    if (
+      typeof firstRequestBody !== "string"
+      || typeof retryRequestBody !== "string"
+    ) {
+      throw new Error("Expected serialized Copilot request bodies")
+    }
+    const firstBody = JSON.parse(firstRequestBody) as ResponsesPayload
+    const retryBody = JSON.parse(retryRequestBody) as ResponsesPayload
+    expect(firstBody.input).toHaveLength(3)
+    expect(retryBody.input).toEqual([{ content: "continue", role: "user" }])
+    expect(recordRecoveredItems).toHaveBeenCalledTimes(1)
+    expect(recordRecoveredItems.mock.calls[0]?.[0]).toHaveLength(2)
   })
 
   test("builds the first websocket frame as response.create", () => {

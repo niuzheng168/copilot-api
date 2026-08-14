@@ -76,6 +76,7 @@ export async function handleCompletion(c: Context) {
     endpoint: "chat_completions",
     fallbackSessionId: sessionId,
     model: payload.model,
+    reasoningEffort: payload.reasoning_effort,
   })
 
   const response = await createChatCompletions(payload, {

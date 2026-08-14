@@ -7,6 +7,7 @@ import {
   enqueueTokenUsageWrite,
   hasAnyToken,
   normalizeOptionalToken,
+  normalizeReasoningEffort,
   normalizeToken,
   resolveTotalTokens,
   type PersistedTokenUsageEvent,
@@ -47,6 +48,7 @@ export interface TokenUsageEventInput extends UsageTokens {
   pricing?: TokenUsagePricingConfig | null
   pricingCurrency?: string | null
   providerName?: string | null
+  reasoningEffort?: string | null
   sessionId?: string | null
   source: TokenUsageSource
   traceId?: string | null
@@ -59,6 +61,7 @@ interface TokenUsageRecorderOptions {
   pricing?: TokenUsagePricingConfig | null
   pricingCurrency?: string | null
   providerName?: string | null
+  reasoningEffort?: string | null
   sessionId?: string | null
   source: TokenUsageSource
   traceId?: string | null
@@ -128,6 +131,7 @@ function toPersistedEvent(
     model: input.model.trim() || "unknown",
     output_tokens: normalizeToken(input.output_tokens),
     provider_name: input.providerName?.trim() || null,
+    reasoning_effort: normalizeReasoningEffort(input.reasoningEffort),
     session_id: resolveTokenUsageSessionId(
       input.sessionId,
       input.fallbackSessionId,

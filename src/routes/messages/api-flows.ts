@@ -123,6 +123,7 @@ export const handleWithChatCompletions = async (
     fallbackSessionId: sessionId,
     model: openAIPayload.model,
     payload: anthropicPayload,
+    reasoningEffort: openAIPayload.reasoning_effort,
   })
   debugJson(logger, "Translated OpenAI request payload:", openAIPayload)
 
@@ -220,6 +221,7 @@ export const handleWithResponsesApi = async (
     fallbackSessionId: requestOptions.sessionId,
     model: responsesPayload.model,
     payload: anthropicPayload,
+    reasoningEffort: responsesPayload.reasoning?.effort,
   })
 
   const shouldCompactInput = applyResponsesApiContextManagement(
@@ -360,6 +362,7 @@ export const handleWithMessagesApi = async (
     fallbackSessionId: sessionId,
     model: anthropicPayload.model,
     payload: anthropicPayload,
+    reasoningEffort: anthropicPayload.output_config?.effort,
   })
 
   debugJson(logger, "Translated Messages payload:", anthropicPayload)
@@ -484,11 +487,13 @@ const createCopilotUsageRecorder = (options: {
   fallbackSessionId?: string
   model: string
   payload: AnthropicMessagesPayload
+  reasoningEffort?: string | null
 }): ((usage: UsageTokens) => void) =>
   createCopilotTokenUsageRecorder({
     endpoint: options.endpoint,
     fallbackSessionId: options.fallbackSessionId,
     model: options.model,
+    reasoningEffort: options.reasoningEffort,
     sessionId: getMetadataSessionId(options.payload),
   })
 
