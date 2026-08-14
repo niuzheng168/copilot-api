@@ -238,6 +238,85 @@ describe("provider Responses context management", () => {
     ])
   })
 
+  test("does not add context management for non-GPT Responses models", async () => {
+    responsesUtilsDependencies.isContextManagementEnabledForResponses = () =>
+      true
+
+    const app = createApp()
+    const response = await app.request("/v1/responses", {
+      body: JSON.stringify({
+        input: [
+          {
+            content: "older",
+            role: "user",
+          },
+          {
+            encrypted_content: "cipher",
+            id: "compaction-1",
+            type: "compaction",
+          },
+          {
+            content: "latest",
+            role: "user",
+          },
+        ],
+        model: "openai/grok-4.5",
+      }),
+      headers: {
+        "content-type": "application/json",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = parseJsonRequestBody((init as RequestInit).body) as {
+      context_management?: unknown
+      input: Array<unknown>
+    }
+
+    expect(body.context_management).toBeUndefined()
+    expect(body.input).toHaveLength(3)
+  })
+
+  test("normalizes Grok effort across the Codex Messages fallback", async () => {
+    providerConfig = {
+      apiKey: "provider-key",
+      authType: "authorization",
+      baseUrl: "https://openai-responses.example",
+      models: {
+        "grok-4.5": {},
+      },
+      name: "opencode-go",
+      type: "openai-responses",
+    }
+
+    const app = createApp()
+    const response = await app.request("/opencode-go/v1/responses", {
+      body: JSON.stringify({
+        input: "hello",
+        model: "grok-4.5",
+        reasoning: { effort: "max" },
+      }),
+      headers: {
+        "content-type": "application/json",
+        "user-agent": "codex-cli/1.0.0",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const [, init] = fetchMock.mock.calls[0]
+    const body = parseJsonRequestBody((init as RequestInit).body) as {
+      reasoning?: { effort?: string }
+    }
+    expect(body.reasoning?.effort).toBe("high")
+  })
+
   test("disables context management for gpt-5.6 models even when responses is enabled", async () => {
     responsesUtilsDependencies.isContextManagementEnabledForResponses = () =>
       true

@@ -39,6 +39,15 @@ describe("builtin provider model registry", () => {
     }
   })
 
+  test("defines the supported Grok reasoning levels", () => {
+    expect(
+      builtinProviderModelRegistry.getModelConfig("opencode-go", "grok-4.5"),
+    ).toMatchObject({
+      defaultReasoningEffort: "high",
+      reasoningEfforts: ["low", "medium", "high"],
+    })
+  })
+
   test("keeps GPT entries pricing-only", () => {
     expect(
       builtinProviderModelRegistry.getModelConfig("codex", "gpt-5.6-sol"),

@@ -383,6 +383,12 @@ function isMessagesFallbackProviderType(type: ProviderType): boolean {
   return type === "anthropic" || type === "openai-compatible"
 }
 
+function describeProviderAdapter(type: ProviderType): string {
+  if (type === "anthropic") return "Messages"
+  if (type === "openai-responses") return "Messages-to-Responses"
+  return "Messages-to-Chat"
+}
+
 function createProviderCodexCandidate(
   providerConfig: ResolvedProviderConfig,
   modelId: string,
@@ -397,10 +403,14 @@ function createProviderCodexCandidate(
   const configuredReasoningEfforts = normalizeReasoningEfforts(
     modelConfig?.reasoningEfforts,
   )
+  const remoteReasoningEfforts = normalizeRemoteReasoningEfforts(remoteModel)
+  const builtinReasoningEfforts = normalizeReasoningEfforts(
+    builtinModelConfig?.reasoningEfforts,
+  )
   const reasoningEfforts =
-    configuredReasoningEfforts.length > 0 ?
-      configuredReasoningEfforts
-    : normalizeRemoteReasoningEfforts(remoteModel)
+    configuredReasoningEfforts.length > 0 ? configuredReasoningEfforts
+    : remoteReasoningEfforts.length > 0 ? remoteReasoningEfforts
+    : builtinReasoningEfforts
   const configuredModalities = normalizeInputModalities(
     modelConfig?.inputModalities,
   )
@@ -414,13 +424,18 @@ function createProviderCodexCandidate(
     getStringField(remoteModel ?? {}, "display_name")
     ?? getStringField(remoteModel ?? {}, "name")
     ?? modelId
-  const adapterName =
-    effectiveType === "anthropic" ? "Messages" : "Messages-to-Chat"
+  const adapterName = describeProviderAdapter(effectiveType)
+  // Codex clients only drive gpt-* models through the native Responses API;
+  // other Responses-capable models fall back to the Messages adapter (see
+  // shouldFallbackToMessages), so only gpt-* models require upstream catalog
+  // metadata and the rest can be synthesized like Messages-fallback models.
+  const requiresCatalogMatch =
+    effectiveType === "openai-responses" && modelId.startsWith("gpt")
 
   return {
     slug: `${providerConfig.name}/${modelId}`,
     catalogSlug: modelId,
-    catalogMatchRequired: effectiveType === "openai-responses",
+    catalogMatchRequired: requiresCatalogMatch,
     providerName: providerConfig.name,
     displayName: `${displayName} (${providerConfig.name})`,
     description: `${displayName} through the ${providerConfig.name} ${adapterName} adapter.`,
@@ -450,7 +465,8 @@ function createProviderCodexCandidate(
     reasoningEfforts,
     defaultReasoningEffort: selectDefaultReasoningEffort(
       reasoningEfforts,
-      modelConfig?.defaultReasoningEffort,
+      modelConfig?.defaultReasoningEffort
+        ?? builtinModelConfig?.defaultReasoningEffort,
     ),
   }
 }

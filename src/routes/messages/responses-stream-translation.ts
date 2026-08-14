@@ -792,7 +792,8 @@ const openFunctionCallBlock = (
   const { blockIndex } = functionCallState
 
   if (!state.openBlocks.has(blockIndex)) {
-    closeOpenBlocks(state, events)
+    // Responses providers may interleave parallel function-call events. Keep
+    // their blocks open until completion or a different content type starts.
     events.push({
       type: "content_block_start",
       index: blockIndex,

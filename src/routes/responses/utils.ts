@@ -340,6 +340,10 @@ export const applyResponsesApiContextManagement = (
     source: ResponsesApiContextManagementSource
   },
 ): boolean => {
+  if (!payload.model.startsWith("gpt")) {
+    return false
+  }
+
   if (responsesUtilsDependencies.isGpt56OrAbove(payload.model)) {
     return false
   }

@@ -18,15 +18,21 @@ import {
 } from "~/routes/messages/responses-stream-translation"
 import { REASONING_SUMMARY_SEPARATOR } from "~/routes/messages/responses-translation"
 
-const createFunctionCallAddedEvent = (): ResponseOutputItemAddedEvent => ({
+const createFunctionCallAddedEvent = (options?: {
+  callId?: string
+  itemId?: string
+  name?: string
+  outputIndex?: number
+  sequenceNumber?: number
+}): ResponseOutputItemAddedEvent => ({
   type: "response.output_item.added",
-  sequence_number: 1,
-  output_index: 1,
+  sequence_number: options?.sequenceNumber ?? 1,
+  output_index: options?.outputIndex ?? 1,
   item: {
-    id: "item-1",
+    id: options?.itemId ?? "item-1",
     type: "function_call",
-    call_id: "call-1",
-    name: "TodoWrite",
+    call_id: options?.callId ?? "call-1",
+    name: options?.name ?? "TodoWrite",
     arguments: "",
     status: "in_progress",
   },
@@ -103,6 +109,154 @@ describe("translateResponsesStreamEvent tool calls", () => {
     })
 
     expect(state.openBlocks.size).toBe(1)
+    expect(state.functionCallStateByOutputIndex.size).toBe(0)
+  })
+
+  test("keeps parallel function call blocks open across interleaved deltas", () => {
+    const state = createResponsesStreamState()
+
+    const events = [
+      translateResponsesStreamEvent(
+        createFunctionCallAddedEvent({
+          callId: "call-1",
+          itemId: "item-1",
+          name: "FirstTool",
+          outputIndex: 0,
+          sequenceNumber: 1,
+        }),
+        state,
+      ),
+      translateResponsesStreamEvent(
+        createFunctionCallAddedEvent({
+          callId: "call-2",
+          itemId: "item-2",
+          name: "SecondTool",
+          outputIndex: 1,
+          sequenceNumber: 2,
+        }),
+        state,
+      ),
+      translateResponsesStreamEvent(
+        {
+          type: "response.function_call_arguments.delta",
+          item_id: "item-1",
+          output_index: 0,
+          sequence_number: 3,
+          delta: '{"value":1}',
+        } satisfies ResponseFunctionCallArgumentsDeltaEvent,
+        state,
+      ),
+      translateResponsesStreamEvent(
+        {
+          type: "response.function_call_arguments.delta",
+          item_id: "item-2",
+          output_index: 1,
+          sequence_number: 4,
+          delta: '{"value":2}',
+        } satisfies ResponseFunctionCallArgumentsDeltaEvent,
+        state,
+      ),
+      translateResponsesStreamEvent(
+        {
+          type: "response.function_call_arguments.done",
+          item_id: "item-2",
+          name: "SecondTool",
+          output_index: 1,
+          sequence_number: 5,
+          arguments: '{"value":2}',
+        } satisfies ResponseFunctionCallArgumentsDoneEvent,
+        state,
+      ),
+      translateResponsesStreamEvent(
+        {
+          type: "response.function_call_arguments.done",
+          item_id: "item-1",
+          name: "FirstTool",
+          output_index: 0,
+          sequence_number: 6,
+          arguments: '{"value":1}',
+        } satisfies ResponseFunctionCallArgumentsDoneEvent,
+        state,
+      ),
+      translateResponsesStreamEvent(
+        {
+          type: "response.completed",
+          sequence_number: 7,
+          response: {
+            id: "resp-parallel",
+            object: "response",
+            created_at: 0,
+            model: "grok-4.5",
+            output: [],
+            output_text: "",
+            status: "completed",
+            usage: null,
+            error: null,
+            incomplete_details: null,
+            instructions: null,
+            metadata: null,
+            parallel_tool_calls: true,
+            temperature: null,
+            tool_choice: null,
+            tools: [],
+            top_p: null,
+          },
+        } as ResponseCompletedEvent,
+        state,
+      ),
+    ].flat()
+
+    expect(
+      events.filter((event) => event.type === "content_block_start"),
+    ).toEqual([
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: {
+          type: "tool_use",
+          id: "call-1",
+          name: "FirstTool",
+          input: {},
+        },
+      },
+      {
+        type: "content_block_start",
+        index: 1,
+        content_block: {
+          type: "tool_use",
+          id: "call-2",
+          name: "SecondTool",
+          input: {},
+        },
+      },
+    ])
+    expect(
+      events.filter((event) => event.type === "content_block_delta"),
+    ).toEqual([
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: {
+          type: "input_json_delta",
+          partial_json: '{"value":1}',
+        },
+      },
+      {
+        type: "content_block_delta",
+        index: 1,
+        delta: {
+          type: "input_json_delta",
+          partial_json: '{"value":2}',
+        },
+      },
+    ])
+    expect(
+      events.filter((event) => event.type === "content_block_stop"),
+    ).toEqual([
+      { type: "content_block_stop", index: 0 },
+      { type: "content_block_stop", index: 1 },
+    ])
+    expect(state.openBlocks.size).toBe(0)
     expect(state.functionCallStateByOutputIndex.size).toBe(0)
   })
 

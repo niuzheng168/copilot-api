@@ -1,12 +1,15 @@
 import type { TokenUsagePricingConfig } from "./token-usage/pricing"
+import type { CodexReasoningEffort } from "./config-store"
 
 export type BuiltinProviderInputModality = "text" | "image"
 
 export interface BuiltinProviderModelConfig {
   contextWindow?: number
+  defaultReasoningEffort?: CodexReasoningEffort
   inputModalities?: Array<BuiltinProviderInputModality>
   maxOutputTokens?: number
   pricing: TokenUsagePricingConfig
+  reasoningEfforts?: Array<CodexReasoningEffort>
 }
 
 type BuiltinProviderModelCatalog = Record<
@@ -303,8 +306,19 @@ export class BuiltinProviderModelRegistry {
           output: 4.4,
         },
       },
+      "glm-5.3": {
+        contextWindow: 1_000_000,
+        inputModalities: ["text"],
+        maxOutputTokens: 64_000,
+        pricing: {
+          cachedInput: 0.26,
+          input: 1.4,
+          output: 4.4,
+        },
+      },
       "grok-4.5": {
         contextWindow: 500_000,
+        defaultReasoningEffort: "high",
         inputModalities: ["text", "image"],
         maxOutputTokens: 64_000,
         pricing: {
@@ -322,6 +336,7 @@ export class BuiltinProviderModelRegistry {
             },
           ],
         },
+        reasoningEfforts: ["low", "medium", "high"],
       },
       "deepseek-v4-flash": {
         contextWindow: 1_000_000,

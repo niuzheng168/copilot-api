@@ -3,7 +3,11 @@ import type { Context } from "hono"
 import { streamSSE } from "hono/streaming"
 
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
-import { type ModelConfig, resolveEffectiveProviderType } from "~/lib/config"
+import {
+  type ModelConfig,
+  type ProviderType,
+  resolveEffectiveProviderType,
+} from "~/lib/config"
 import { HTTPError } from "~/lib/error"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
@@ -14,11 +18,13 @@ import {
   type UsageTokens,
 } from "~/lib/token-usage"
 import { isResponsesStream } from "~/lib/utils"
+import { isCodexUserAgent } from "~/routes/models/codex-models"
 import {
   applyResponsesApiContextManagement,
   compactInputByLatestCompaction,
 } from "~/routes/responses/utils"
 import { handleResponsesViaMessages } from "~/routes/responses/messages-handler"
+import { normalizeProviderResponsesReasoningEffort } from "~/routes/provider/utils"
 
 import type {
   ResponsesPayload,
@@ -75,7 +81,9 @@ export async function handleProviderResponsesForProvider(
     providerConfig,
     payload.model,
   )
-  if (effectiveType === "anthropic" || effectiveType === "openai-compatible") {
+  normalizeProviderResponsesReasoningEffort(payload, providerConfig)
+
+  if (shouldFallbackToMessages(c, payload.model, effectiveType)) {
     return await handleResponsesViaMessages(c, {
       payload,
       publicModel: options.publicModel ?? payload.model,
@@ -186,6 +194,22 @@ export async function handleProviderResponsesForProvider(
   recordUsage(normalizeResponsesUsage(responseBody.usage))
 
   return createProviderProxyResponse(upstreamResponse)
+}
+
+const shouldFallbackToMessages = (
+  c: Context,
+  modelId: string,
+  effectiveType: ProviderType,
+): boolean => {
+  if (effectiveType === "anthropic" || effectiveType === "openai-compatible") {
+    return true
+  }
+
+  if (isCodexUserAgent(c.req.header("user-agent"))) {
+    return !modelId.startsWith("gpt")
+  }
+
+  return false
 }
 
 const createProviderResponsesUsageRecorder = (

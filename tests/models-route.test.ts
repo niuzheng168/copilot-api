@@ -137,6 +137,7 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
         data: [
           { id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
           { id: "gpt-provider-only", name: "GPT Provider Only" },
+          { id: "grok-4.5", name: "Grok 4.5" },
           { id: "qwen3-coder", name: "Qwen3 Coder" },
         ],
       }),
@@ -734,6 +735,20 @@ describe("model routes", () => {
     expect(
       body.models.find((model) => model.slug === "opencode-go/qwen3-coder"),
     ).toMatchObject({ display_name: "Qwen3 Coder (opencode-go)" })
+    expect(
+      body.models.find((model) => model.slug === "opencode-go/grok-4.5"),
+    ).toMatchObject({
+      context_window: 500_000,
+      default_reasoning_level: "high",
+      display_name: "Grok 4.5 (opencode-go)",
+      input_modalities: ["text", "image"],
+      max_output_tokens: 64_000,
+      supported_reasoning_levels: [
+        { effort: "low", description: "low reasoning effort" },
+        { effort: "medium", description: "medium reasoning effort" },
+        { effort: "high", description: "high reasoning effort" },
+      ],
+    })
     expect(body.models.map((model) => model.slug)).not.toContain(
       "opencode-go/gpt-provider-only",
     )
@@ -774,6 +789,7 @@ describe("model routes", () => {
       "gpt-native",
       "codex/gpt-native",
       "claude-sonnet-4-6",
+      "opencode-go/grok-4.5",
       "opencode-go/qwen3-coder",
       "kimi/kimi-k2.5",
     ])
