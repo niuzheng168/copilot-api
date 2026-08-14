@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { Client } from "@modelcontextprotocol/sdk/client/index.js"
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 
 import {
   createMcpToolSearchSentinel,
@@ -8,7 +10,7 @@ import {
   selectDeferredToolsByNames,
   shouldEnableResponsesToolSearch,
 } from "~/lib/tool-search"
-import { runMcpServer } from "~/mcp"
+import { createMcpToolSearchServer, runMcpServer } from "~/mcp"
 
 describe("tool search helpers", () => {
   test("detects eligible Responses tool search requests", () => {
@@ -188,5 +190,26 @@ describe("tool search helpers", () => {
 
   test("exports an mcp CLI command", () => {
     expect(typeof runMcpServer).toBe("function")
+  })
+
+  test("registers the search bridge tool as read-only", async () => {
+    const server = createMcpToolSearchServer()
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair()
+    const client = new Client({ name: "tool-search-test", version: "0.0.1" })
+
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport),
+    ])
+
+    try {
+      const { tools } = await client.listTools()
+      const search = tools.find((tool) => tool.name === "search")
+      expect(search?.annotations?.readOnlyHint).toBe(true)
+    } finally {
+      await client.close()
+      await server.close()
+    }
   })
 })

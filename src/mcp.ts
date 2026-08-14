@@ -10,7 +10,7 @@ import { createMcpToolSearchSentinel } from "./lib/tool-search"
 const SERVER_NAME = "tool_search"
 const SERVER_VERSION = "1.0.0"
 
-export const runMcpServer = async (): Promise<void> => {
+export const createMcpToolSearchServer = (): McpServer => {
   const server = new McpServer({
     name: SERVER_NAME,
     version: SERVER_VERSION,
@@ -29,6 +29,9 @@ export const runMcpServer = async (): Promise<void> => {
             'Comma-separated exact deferred tool names to load, for example "TaskList,TaskGet,mcp__fetch__fetch".',
           ),
       },
+      annotations: {
+        readOnlyHint: true,
+      },
       _meta: {
         "anthropic/alwaysLoad": true,
       },
@@ -43,7 +46,11 @@ export const runMcpServer = async (): Promise<void> => {
     }),
   )
 
-  await server.connect(new StdioServerTransport())
+  return server
+}
+
+export const runMcpServer = async (): Promise<void> => {
+  await createMcpToolSearchServer().connect(new StdioServerTransport())
 }
 
 export const mcp = defineCommand({
