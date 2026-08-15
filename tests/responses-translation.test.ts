@@ -453,6 +453,7 @@ describe("translateAnthropicMessagesToResponsesPayload", () => {
         {
           name: "Read",
           description: "Read a file",
+          strict: true,
           input_schema: {
             type: "object",
             properties: {
@@ -541,7 +542,7 @@ describe("translateAnthropicMessagesToResponsesPayload", () => {
           },
           required: ["file_path"],
         },
-        strict: false,
+        strict: true,
       },
     ])
   })

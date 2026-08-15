@@ -461,6 +461,7 @@ function registerMessagesTool(
       registration.kind === "custom" ?
         CUSTOM_TOOL_INPUT_SCHEMA
       : (registration.parameters ?? { type: "object", properties: {} }),
+    ...(registration.kind === "custom" ? { strict: true } : {}),
   })
   return descriptor
 }

@@ -184,11 +184,13 @@ describe("Anthropic to OpenAI translation logic", () => {
           name: "getWeather",
           description: "Gets weather info",
           input_schema: { location: { type: "string" } },
+          strict: true,
         },
       ],
       tool_choice: { type: "auto" },
     }
     const openAIPayload = translateToOpenAI(anthropicPayload)
+    expect(openAIPayload.tools?.[0]?.function.strict).toBe(true)
     expect(isValidChatCompletionRequest(openAIPayload)).toBe(true)
   })
 

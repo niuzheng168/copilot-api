@@ -510,6 +510,7 @@ function translateAnthropicToolsToOpenAI(
       name: tool.name,
       description: tool.description,
       parameters: normalizeToolSchema(tool.input_schema),
+      ...(tool.strict === undefined ? {} : { strict: tool.strict }),
     },
   }))
 }

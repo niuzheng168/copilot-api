@@ -757,7 +757,7 @@ const convertToolToFunction = (tool: AnthropicTool): Tool => ({
   type: "function",
   name: tool.name,
   parameters: normalizeToolSchema(tool.input_schema),
-  strict: false,
+  strict: tool.strict ?? false,
   ...(tool.description ? { description: tool.description } : {}),
 })
 
@@ -770,7 +770,7 @@ const convertDeferredToolToNamespace = (tool: AnthropicTool): Tool => ({
       type: "function",
       name: tool.name,
       parameters: normalizeToolSchema(tool.input_schema),
-      strict: false,
+      strict: tool.strict ?? false,
       defer_loading: true,
       ...(tool.description ? { description: tool.description } : {}),
     },
