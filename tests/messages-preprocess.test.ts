@@ -212,6 +212,56 @@ describe("normalizeSystemMessages", () => {
       },
     ])
   })
+
+  test("splits SubagentStart hook additional array block and preserves its cache boundary", () => {
+    const payload: AnthropicMessagesPayload = {
+      model: "claude-opus-4.6",
+      max_tokens: 128,
+      messages: [
+        {
+          role: "user",
+          content: "hello",
+        },
+        {
+          role: "system",
+          content: [
+            {
+              type: "text",
+              text: 'SubagentStart hook additional context: __SUBAGENT_MARKER__{"session_id":"sub-session","agent_id":"agent-1","agent_type":"Explore"}\n\nThe following skills are available',
+              cache_control: {
+                type: "ephemeral",
+              },
+            },
+          ],
+        },
+      ],
+    }
+
+    normalizeSystemMessages(payload)
+
+    expect(payload.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: '<system-reminder>\nSubagentStart hook additional context: __SUBAGENT_MARKER__{"session_id":"sub-session","agent_id":"agent-1","agent_type":"Explore"}\n</system-reminder>',
+          },
+          {
+            type: "text",
+            text: "<system-reminder>\nThe following skills are available\n</system-reminder>",
+            cache_control: {
+              type: "ephemeral",
+            },
+          },
+          {
+            type: "text",
+            text: "hello",
+          },
+        ],
+      },
+    ])
+  })
 })
 
 describe("mergeToolResultForClaude", () => {
