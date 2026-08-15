@@ -65,9 +65,9 @@
 > [!IMPORTANT]
 > **使用前请先注意以下几点：**
 >
-> 1. **Claude Code 配置：** 与 Claude Code 搭配使用时，请将模型 ID 配置为 `claude-opus-4-8[1m]`。示例 claude `settings.json` 见 [通过 `settings.json` 手动配置](#manual-configuration-with-settingsjson)。
+> 1. **Codex 配置：** 与 Codex 搭配使用时，请在 `~/.codex/config.toml` 中添加 gateway provider，详见 [Codex `config.toml` 参考配置](#codex-configtoml-参考配置)。
 >
-> 2. **Codex 配置：** 与 Codex 搭配使用时，请在 `~/.codex/config.toml` 中添加 gateway provider，详见 [Codex `config.toml` 参考配置](#codex-configtoml-参考配置)。
+> 2. **Claude Code 配置：** 与 Claude Code 搭配使用时，请将模型 ID 配置为 `claude-opus-4-8[1m]`。示例 claude `settings.json` 见 [通过 `settings.json` 手动配置](#manual-configuration-with-settingsjson)。
 >
 > 3. **OpenCode 配置：** 与 OpenCode 搭配使用时，请使用 `@ai-sdk/anthropic` 配置 `~/.config/opencode/opencode.json`，详见 [与 OpenCode 一起使用](#与-opencode-一起使用)。
 >
@@ -301,7 +301,8 @@ npx @jeffreycao/copilot-api@latest start --claude-code
     "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
     "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false",
     "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "true",
-    "CLAUDE_CODE_ENABLE_AWAY_SUMMARY": "0"
+    "CLAUDE_CODE_ENABLE_AWAY_SUMMARY": "0",
+    "CLAUDE_CODE_TOTAL_TOKENS_REMINDER": "off"
   },
   "alwaysThinkingEnabled": true,
   "effortLevel": "xhigh",
@@ -310,6 +311,7 @@ npx @jeffreycao/copilot-api@latest start --claude-code
 ```
 
 - 请根据需要替换 `ANTHROPIC_MODEL`、`ANTHROPIC_DEFAULT_OPUS_MODEL`、`ANTHROPIC_DEFAULT_SONNET_MODEL` 和 `ANTHROPIC_DEFAULT_HAIKU_MODEL`。配置完成后，请安装 claude code 插件，见 [插件集成](#plugin-integrations)。
+- `CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off"` 用于关闭 Claude Code 的 total tokens 提醒功能。该功能开启时会在对话中注入 `<total_tokens>N tokens left</total_tokens>` 块，提示模型剩余的 token 预算；默认预算为 1500w（15,000,000）tokens，意义不大，因此这里配置为关闭。
 - 如果你使用的是 codex provider，建议**不要**将模型名配置成 `codex/xxx` 格式（如 `codex/gpt-5.6-sol`）。Claude Code 会针对 `codex/` 前缀做降智行为——例如每次请求时移除所有之前返回的思考块（thinking blocks）。请使用纯模型名（如 `gpt-5.6-sol`），并在 `config.json` 中配置 `modelMappings` 将其映射回 codex provider：
   ```json
   "modelMappings": {

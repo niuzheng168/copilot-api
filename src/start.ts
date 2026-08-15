@@ -102,6 +102,7 @@ function runClaudeCode(serverUrl: string): void {
       CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION: "false",
       CLAUDE_CODE_DISABLE_TERMINAL_TITLE: "true",
       CLAUDE_CODE_ENABLE_AWAY_SUMMARY: "0",
+      CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off",
     },
     "claude",
   )
