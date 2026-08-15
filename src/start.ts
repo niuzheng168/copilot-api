@@ -105,6 +105,7 @@ function runClaudeCode(serverUrl: string): void {
       CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off",
       CLAUDE_CODE_EFFORT_LEVEL: "max",
       CLAUDE_CODE_ALWAYS_ENABLE_EFFORT: "1",
+      MCP_CONNECT_TIMEOUT_MS: "20000",
     },
     "claude",
   )
