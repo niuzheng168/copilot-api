@@ -794,6 +794,19 @@ New endpoints for monitoring your Copilot usage and quotas.
 | `GET /usage` | `GET`  | Get detailed Copilot usage statistics and quota information. |
 | `GET /token` | `GET`  | Get the current Copilot token being used by the API.         |
 
+### Local Codex Session History Endpoints
+
+These endpoints read the current user's Codex `state_5.sqlite` and bounded
+rollout transcripts from `CODEX_HOME` (default: `~/.codex`). They require the
+dedicated `auth.sessionHistoryApiKey`; they remain unavailable when that key is
+not configured, even if the regular proxy endpoints allow unauthenticated
+requests.
+
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `GET /session-history?state=all&q=&start_at_ms=0&limit=50&offset=0` | `GET` | List active/archived Codex sessions, with optional search and cutoff filtering. |
+| `GET /session-history/{active\|archived}/{session_id}` | `GET` | Read metadata and a bounded transcript for one local Codex session. |
+
 ### Admin / Configuration Endpoints
 
 These endpoints are reserved for local administrative actions and only accept `auth.adminApiKey`.
