@@ -81,6 +81,7 @@ export interface MessagesToolDescriptor {
 export interface MessagesToolRegistry {
   byAlias: Map<string, MessagesToolDescriptor>
   byOriginal: Map<string, MessagesToolDescriptor>
+  provider: string | undefined
   tools: Array<AnthropicTool>
 }
 
@@ -112,9 +113,9 @@ interface ResponsesInputNormalization {
 
 export function translateResponsesToMessages(
   payload: ResponsesPayload,
-  options: { model: string; publicModel?: string },
+  options: { model: string; provider?: string; publicModel?: string },
 ): ResponsesToMessagesTranslation {
-  const registry = createToolRegistry(payload)
+  const registry = createToolRegistry(payload, options.provider)
   const normalized = normalizeResponsesInput(payload.input)
   const { messages, system } = translateInputToAnthropic(
     normalized.input,
@@ -352,10 +353,14 @@ function normalizeResponsesInput(
   }
 }
 
-function createToolRegistry(payload: ResponsesPayload): MessagesToolRegistry {
+function createToolRegistry(
+  payload: ResponsesPayload,
+  provider: string | undefined,
+): MessagesToolRegistry {
   const registry: MessagesToolRegistry = {
     byAlias: new Map(),
     byOriginal: new Map(),
+    provider,
     tools: [],
   }
 
@@ -461,7 +466,9 @@ function registerMessagesTool(
       registration.kind === "custom" ?
         CUSTOM_TOOL_INPUT_SCHEMA
       : (registration.parameters ?? { type: "object", properties: {} }),
-    ...(registration.kind === "custom" ? { strict: true } : {}),
+    ...(registration.kind === "custom" && registry.provider !== "kimi" ?
+      { strict: true }
+    : {}),
   })
   return descriptor
 }

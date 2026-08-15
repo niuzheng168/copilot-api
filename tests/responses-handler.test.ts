@@ -359,6 +359,56 @@ describe("responses handler token usage", () => {
     )
   })
 
+  test("routes codex-prefixed models through the native Responses API for Codex clients", async () => {
+    state.models = {
+      object: "list",
+      data: [
+        {
+          capabilities: {
+            family: "codex",
+            limits: { max_prompt_tokens: 128000 },
+            object: "model_capabilities",
+            supports: { tool_calls: true },
+            tokenizer: "o200k_base",
+            type: "chat",
+          },
+          id: "codex-mini-latest",
+          model_picker_enabled: true,
+          name: "Codex Mini Latest",
+          object: "model",
+          preview: false,
+          supported_endpoints: ["/responses"],
+          vendor: "openai",
+          version: "test",
+        },
+      ],
+    }
+    const handleMessages = mock(
+      (_context: Context, _payload: AnthropicMessagesPayload) =>
+        Promise.resolve(Response.json({})),
+    )
+    responsesMessagesDependencies.handleCompletionPayload = handleMessages
+    createResponses.mockImplementation((payload) =>
+      Promise.resolve(createResponsesResult(payload.model)),
+    )
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        model: "codex-mini-latest",
+        input: "hello",
+      }),
+      headers: {
+        "content-type": "application/json",
+        "user-agent": "codex-cli/1.0.0",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponses).toHaveBeenCalledTimes(1)
+    expect(handleMessages).not.toHaveBeenCalled()
+  })
+
   test("routes non-gpt models without fallback endpoints through the Messages adapter for Codex clients", async () => {
     state.models = {
       object: "list",
