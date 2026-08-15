@@ -54,6 +54,14 @@ export function getConfiguredAdminApiKeys(): Array<string> {
   return adminApiKey ? [adminApiKey] : []
 }
 
+export function getConfiguredSessionHistoryApiKeys(): Array<string> {
+  const config = getConfig()
+  const sessionHistoryApiKey = normalizeApiKey(
+    config.auth?.sessionHistoryApiKey,
+  )
+  return sessionHistoryApiKey ? [sessionHistoryApiKey] : []
+}
+
 export function extractRequestApiKey(c: Context): string | null {
   const xApiKey = c.req.header("x-api-key")?.trim()
   if (xApiKey) {

@@ -22,6 +22,7 @@ import { providerMessageRoutes } from "./routes/provider/messages/route"
 import { providerModelRoutes } from "./routes/provider/models/route"
 import { providerResponsesRoutes } from "./routes/provider/responses/route"
 import { responsesRoutes } from "./routes/responses/route"
+import { sessionHistoryRoutes } from "./routes/session-history/route"
 import { tokenUsageRoute } from "./routes/token-usage/route"
 import { tokenRoute } from "./routes/token/route"
 import { usageRoute } from "./routes/usage/route"
@@ -35,7 +36,10 @@ server.use(
   "*",
   createAuthMiddleware({
     allowUnauthenticatedPaths: ["/", "/usage-viewer", "/usage-viewer/"],
-    shouldSkipPath: (path) => path.startsWith("/admin/"),
+    shouldSkipPath: (path) =>
+      path.startsWith("/admin/")
+      || path === "/session-history"
+      || path.startsWith("/session-history/"),
   }),
 )
 server.use(
@@ -60,6 +64,7 @@ server.route("/admin/config", configRoutes)
 server.route("/models", modelRoutes)
 server.route("/embeddings", embeddingRoutes)
 server.route("/usage", usageRoute)
+server.route("/session-history", sessionHistoryRoutes)
 server.route("/token-usage", tokenUsageRoute)
 server.route("/token", tokenRoute)
 server.route("/responses", responsesRoutes)

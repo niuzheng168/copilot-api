@@ -10,6 +10,7 @@ export interface AppConfig {
   auth?: {
     apiKeys?: Array<string>
     adminApiKey?: string
+    sessionHistoryApiKey?: string
   }
   providers?: Record<string, ProviderConfig>
   modelMappings?: Record<string, string>
