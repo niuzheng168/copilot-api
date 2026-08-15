@@ -204,6 +204,10 @@ export const normalizeSystemMessages = (
 ): void => {
   normalizeClaudeCodeBillingHeaderInSystem(payload)
 
+  if (payload.model.startsWith("gpt") || payload.model.startsWith("codex")) {
+    return
+  }
+
   if (!payload.messages.some((msg) => msg.role === "system")) {
     return
   }

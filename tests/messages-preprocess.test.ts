@@ -36,6 +36,44 @@ afterEach(() => {
 })
 
 describe("normalizeSystemMessages", () => {
+  test.each(["gpt-5.4", "codex-mini-latest"])(
+    "preserves inline system messages for %s models",
+    (model) => {
+      const payload: AnthropicMessagesPayload = {
+        model,
+        max_tokens: 128,
+        system:
+          "x-anthropic-billing-header: cc_version=2.1.158.c0c; cc_entrypoint=cli; cch=6fb32;",
+        messages: [
+          {
+            role: "user",
+            content: "hello",
+          },
+          {
+            role: "system",
+            content: "follow the repo style",
+          },
+        ],
+      }
+
+      normalizeSystemMessages(payload)
+
+      expect(payload.messages).toEqual([
+        {
+          role: "user",
+          content: "hello",
+        },
+        {
+          role: "system",
+          content: "follow the repo style",
+        },
+      ])
+      expect(payload.system).toBe(
+        "x-anthropic-billing-header: cc_version=2.1.158.c0c; cc_entrypoint=cli; cch=<stable>;",
+      )
+    },
+  )
+
   test("merges system string content into the previous message", () => {
     const payload: AnthropicMessagesPayload = {
       model: "claude-opus-4.6",

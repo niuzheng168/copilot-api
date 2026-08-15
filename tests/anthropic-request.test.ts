@@ -194,6 +194,32 @@ describe("Anthropic to OpenAI translation logic", () => {
     expect(isValidChatCompletionRequest(openAIPayload)).toBe(true)
   })
 
+  test("maps inline Anthropic system messages to OpenAI user messages", () => {
+    const anthropicPayload: AnthropicMessagesPayload = {
+      model: "gpt-4o",
+      messages: [
+        { role: "user", content: "Hello!" },
+        { role: "system", content: "Follow the repo style." },
+        {
+          role: "system",
+          content: [{ type: "text", text: "Keep the change focused." }],
+        },
+      ],
+      max_tokens: 128,
+    }
+
+    const openAIPayload = translateToOpenAI(anthropicPayload)
+
+    expect(openAIPayload.messages).toEqual([
+      { role: "user", content: "Hello!" },
+      { role: "user", content: "Follow the repo style." },
+      {
+        role: "user",
+        content: [{ type: "text", text: "Keep the change focused." }],
+      },
+    ])
+  })
+
   test("maps non-empty output_config effort to reasoning_effort", () => {
     const anthropicPayload: AnthropicMessagesPayload = {
       model: "gpt-4o",
