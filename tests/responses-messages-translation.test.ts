@@ -421,6 +421,7 @@ describe("Responses Lite to Messages translation", () => {
           required: ["input"],
           additionalProperties: false,
         },
+        strict: true,
       },
     ])
     expect(result.messagesPayload.tool_choice).toEqual({
@@ -582,6 +583,7 @@ describe("Responses Lite to Messages translation", () => {
           required: ["input"],
           additionalProperties: false,
         },
+        strict: true,
       },
     ])
     expect(result.messagesPayload.tool_choice).toEqual({ type: "auto" })

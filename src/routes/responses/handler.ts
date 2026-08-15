@@ -255,7 +255,7 @@ const shouldFallbackToMessages = (
   responsesTransport: ResponsesTransport | null,
 ): boolean => {
   if (isCodexUserAgent(c.req.header("user-agent"))) {
-    return !modelId.startsWith("gpt")
+    return !(modelId.startsWith("gpt") || modelId.startsWith("codex"))
   }
 
   if (responsesTransport) {

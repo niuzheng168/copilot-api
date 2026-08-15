@@ -17,9 +17,9 @@ import {
   type AnthropicAssistantContentBlock,
   type AnthropicAssistantMessage,
   type AnthropicDocumentBlock,
-  type AnthropicMessage,
   type AnthropicMessagesPayload,
   type AnthropicResponse,
+  type AnthropicSystemMessage,
   type AnthropicTextBlock,
   type AnthropicThinkingBlock,
   type AnthropicTool,
@@ -96,7 +96,7 @@ export function translateToOpenAI(
       modelId,
       capabilities,
     ),
-    max_tokens: payload.max_tokens,
+    max_completion_tokens: payload.max_tokens,
     stop: payload.stop_sequences,
     stream: payload.stream,
     temperature: payload.temperature,
@@ -163,12 +163,15 @@ function translateAnthropicMessagesToOpenAI(
   capabilities: TranslationCapabilities,
 ): Array<Message> {
   const systemMessages = handleSystemPrompt(payload.system)
-  const otherMessages = (payload.messages as Array<AnthropicMessage>).flatMap(
-    (message) =>
-      message.role === "user" ?
-        handleUserMessage(message, capabilities)
-      : handleAssistantMessage(message, modelId, capabilities),
-  )
+  const otherMessages = payload.messages.flatMap((message) => {
+    if (message.role === "user") {
+      return handleUserMessage(message, capabilities)
+    }
+    if (message.role === "system") {
+      return [handleInlineSystemMessage(message)]
+    }
+    return handleAssistantMessage(message, modelId, capabilities)
+  })
   return [...systemMessages, ...otherMessages]
 }
 
@@ -188,6 +191,13 @@ function handleSystemPrompt(
       })
       .join("\n\n")
     return [{ role: "system", content: systemText }]
+  }
+}
+
+function handleInlineSystemMessage(message: AnthropicSystemMessage): Message {
+  return {
+    role: "user",
+    content: mapContent(message.content),
   }
 }
 
@@ -510,6 +520,7 @@ function translateAnthropicToolsToOpenAI(
       name: tool.name,
       description: tool.description,
       parameters: normalizeToolSchema(tool.input_schema),
+      ...(tool.strict === undefined ? {} : { strict: tool.strict }),
     },
   }))
 }

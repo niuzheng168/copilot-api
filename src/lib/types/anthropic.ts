@@ -138,6 +138,7 @@ export interface AnthropicTool {
   name: string
   description?: string
   input_schema: Record<string, unknown>
+  strict?: boolean
   defer_loading?: boolean
   cache_control?: AnthropicCacheControl | null
   // Server-side tool fields (e.g. web_search_20250305). Server tools carry a

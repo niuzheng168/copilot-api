@@ -188,7 +188,7 @@ describe("openai-compatible provider messages", () => {
     >
     expect(body).toMatchObject({
       enable_thinking: false,
-      max_tokens: 128,
+      max_completion_tokens: 128,
       model: "qwen-plus",
       preserve_thinking: true,
       temperature: 0.4,

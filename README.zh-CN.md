@@ -302,10 +302,11 @@ npx @jeffreycao/copilot-api@latest start --claude-code
     "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false",
     "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "true",
     "CLAUDE_CODE_ENABLE_AWAY_SUMMARY": "0",
-    "CLAUDE_CODE_TOTAL_TOKENS_REMINDER": "off"
+    "CLAUDE_CODE_TOTAL_TOKENS_REMINDER": "off",
+    "CLAUDE_CODE_EFFORT_LEVEL": "max",
+    "MCP_CONNECT_TIMEOUT_MS": "20000"
   },
   "alwaysThinkingEnabled": true,
-  "effortLevel": "xhigh",
   "showThinkingSummaries": true
 }
 ```
