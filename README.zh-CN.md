@@ -546,6 +546,8 @@ Claude Code 集成现在拆分为两个插件：
 
 `tool-search` 插件内置了 [GPT Tool Search](#gpt-tool-search) 一节描述的同一个 MCP bridge，因此安装该插件后，Claude Code 用户无需再手动配置 `tool_search` server。
 
+该插件还通过精确匹配 `mcp__plugin_tool-search_tool_search__search` 的 `PermissionRequest` hook 自动批准 bridge 调用。这个 hook 不会批准其他 MCP 工具，并且不会覆盖显式的 `ask` 或 `deny` 权限规则。
+
 ### Opencode 插件
 
 subagent 标记生成器被打包为一个 opencode 插件，位于 `plugin/opencode/subagent-marker.js`。

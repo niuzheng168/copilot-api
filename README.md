@@ -514,6 +514,8 @@ The `agent-inject` plugin also registers a `UserPromptSubmit` hook that returns 
 
 The `tool-search` plugin bundles the same MCP bridge described in [GPT Tool Search](#gpt-tool-search), so Claude Code users do not need to add the `tool_search` server manually when they install that plugin.
 
+The plugin also auto-approves bridge calls through a `PermissionRequest` hook scoped exactly to `mcp__plugin_tool-search_tool_search__search`. The hook does not approve other MCP tools and does not override explicit `ask` or `deny` permission rules.
+
 ### Opencode plugin
 
 The subagent marker producer is packaged as an opencode plugin located at `plugin/opencode/subagent-marker.js`.
