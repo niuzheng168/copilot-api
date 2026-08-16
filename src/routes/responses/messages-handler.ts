@@ -30,7 +30,6 @@ export async function handleResponsesViaMessages(
   c: Context,
   options: {
     payload: ResponsesPayload
-    provider?: string
     publicModel: string
     targetModel: string
     subagentMarker?: SubagentMarker | null
@@ -43,7 +42,6 @@ export async function handleResponsesViaMessages(
       { ...options.payload, model: options.publicModel },
       {
         model: options.targetModel,
-        provider: options.provider,
         publicModel: options.publicModel,
       },
     )
