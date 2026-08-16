@@ -701,7 +701,7 @@ describe("provider Responses context management", () => {
     ])
   })
 
-  test("omits strict from custom tools for the Kimi provider", async () => {
+  test("applies strict to custom tools for the Kimi provider", async () => {
     providerConfig = {
       apiKey: "provider-key",
       authType: "authorization",
@@ -719,7 +719,7 @@ describe("provider Responses context management", () => {
       }
       expect(body.tools).toHaveLength(1)
       expect(body.tools[0]?.function).toMatchObject({ name: "apply_patch" })
-      expect(body.tools[0]?.function).not.toHaveProperty("strict")
+      expect(body.tools[0]?.function.strict).toBe(true)
       return Promise.resolve(
         Response.json({
           id: "chatcmpl-kimi",
