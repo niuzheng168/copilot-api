@@ -53,7 +53,7 @@ export interface ContextManagementConfig {
 }
 
 export interface ResponsesTransportConfig {
-  headersTimeoutMs?: number
+  headersTimeoutMsV2?: number
   streamInactivityTimeoutMs?: number
   websocketMaxBufferedBytes?: number
   websocketMaxBufferedMessages?: number
@@ -62,7 +62,7 @@ export interface ResponsesTransportConfig {
 }
 
 export const defaultResponsesTransportConfig = {
-  headersTimeoutMs: 30_000,
+  headersTimeoutMsV2: 5 * 60 * 1000,
   streamInactivityTimeoutMs: 5 * 60 * 1000,
   websocketMaxBufferedBytes: 8 * 1024 * 1024,
   websocketMaxBufferedMessages: 1024,
@@ -422,16 +422,19 @@ export function isResponsesApiWebSocketEnabled(): boolean {
   return config.useResponsesApiWebSocket ?? true
 }
 
-export function getResponsesTransportConfig(): Required<ResponsesTransportConfig> {
-  return normalizeResponsesTransportConfig(getConfig().responsesTransport)
+export function getResponsesTransportConfig() {
+  const { headersTimeoutMsV2, ...config } = normalizeResponsesTransportConfig(
+    getConfig().responsesTransport,
+  )
+  return { headersTimeoutMs: headersTimeoutMsV2, ...config }
 }
 
 export const normalizeResponsesTransportConfig = (
   configured: ResponsesTransportConfig | undefined,
 ): Required<ResponsesTransportConfig> => ({
-  headersTimeoutMs: positiveIntegerOrDefault(
-    configured?.headersTimeoutMs,
-    defaultResponsesTransportConfig.headersTimeoutMs,
+  headersTimeoutMsV2: positiveIntegerOrDefault(
+    configured?.headersTimeoutMsV2,
+    defaultResponsesTransportConfig.headersTimeoutMsV2,
   ),
   streamInactivityTimeoutMs: positiveIntegerOrDefault(
     configured?.streamInactivityTimeoutMs,
