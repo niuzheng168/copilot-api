@@ -86,7 +86,6 @@ export async function handleProviderResponsesForProvider(
   if (shouldFallbackToMessages(c, payload.model, effectiveType)) {
     return await handleResponsesViaMessages(c, {
       payload,
-      provider: providerConfig.name,
       publicModel: options.publicModel ?? payload.model,
       targetModel: `${provider}/${payload.model}`,
     })
