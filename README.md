@@ -723,7 +723,7 @@ curl http://localhost:4141/admin/config/model-mappings \
 
 ## API Endpoints
 
-The server exposes several OpenAI- and Anthropic-compatible endpoints. Requests can target GitHub Copilot, the built-in `codex` provider, or configured providers depending on the selected model and `provider/model` alias.
+The server exposes several OpenAI- and Anthropic-compatible endpoints. Requests can target GitHub Copilot, the built-in `codex` provider, or configured providers depending on the selected model and `provider/model` alias. Every `/v1/...` endpoint below also supports a provider-scoped path in the form `/:provider/v1/...`; those variants are omitted from the tables.
 
 ### OpenAI Compatible Endpoints
 
@@ -756,13 +756,6 @@ These endpoints are designed to be compatible with the Anthropic Messages API.
 | -------------------------------- | ------ | ------------------------------------------------------------ |
 | `POST /v1/messages`              | `POST` | Creates a model response for a given conversation. Supports `provider/model` aliases for configured providers, including translation through `openai-compatible` providers. |
 | `POST /v1/messages/count_tokens` | `POST` | Calculates the number of tokens for a given set of messages. Supports `provider/model` aliases for configured providers. |
-| `POST /:provider/v1/messages`       | `POST` | Proxies Anthropic Messages requests to the configured Anthropic provider, translates them through an OpenAI-compatible provider, or translates them through an OpenAI Responses provider. |
-| `GET /:provider/v1/models` | `GET` | Proxies model listing requests to the configured provider. For `codex`, returns the built-in catalog by default; Codex clients (`User-Agent` starting with `codex`) are forwarded to the Codex Models upstream. |
-| `POST /:provider/v1/messages/count_tokens` | `POST` | Calculates tokens locally for provider route requests. |
-| `POST /:provider/v1/responses` | `POST` | Proxies OpenAI Responses requests to a configured `openai-responses` provider (including `codex`). |
-| `POST /:provider/v1/alpha/search` | `POST` | Proxies alpha-search requests. For `codex`, forwards to the Codex Alpha Search upstream; for other providers, forwards to `{baseUrl}/v1/alpha/search`. |
-| `POST /:provider/v1/images/generations` | `POST` | Proxies image generation. For `codex`, uses the Codex Images upstream; for other providers, forwards to `{baseUrl}/v1/images/generations` (15-minute timeout). |
-| `POST /:provider/v1/images/edits` | `POST` | Proxies image edits. For `codex`, uses the Codex Images upstream; for other providers, forwards multipart/streamed bodies to `{baseUrl}/v1/images/edits` (15-minute timeout). |
 
 ### Usage Monitoring Endpoints
 
