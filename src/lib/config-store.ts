@@ -4,6 +4,7 @@ import fs from "node:fs"
 
 import type { TokenUsagePricingConfig } from "~/lib/token-usage/pricing"
 
+import { writeFileAtomically } from "./atomic-file"
 import { PATHS } from "./paths"
 
 export interface AppConfig {
@@ -191,11 +192,9 @@ function ensureConfigFile(): void {
   try {
     fs.accessSync(PATHS.CONFIG_PATH, fs.constants.R_OK | fs.constants.W_OK)
   } catch {
-    fs.mkdirSync(PATHS.APP_DIR, { recursive: true })
-    fs.writeFileSync(
+    writeFileAtomically(
       PATHS.CONFIG_PATH,
       `${JSON.stringify(defaultConfig, null, 2)}\n`,
-      "utf8",
     )
     try {
       fs.chmodSync(PATHS.CONFIG_PATH, 0o600)
@@ -210,10 +209,9 @@ function readConfigFromDisk(): AppConfig {
   try {
     const raw = fs.readFileSync(PATHS.CONFIG_PATH, "utf8")
     if (!raw.trim()) {
-      fs.writeFileSync(
+      writeFileAtomically(
         PATHS.CONFIG_PATH,
         `${JSON.stringify(defaultConfig, null, 2)}\n`,
-        "utf8",
       )
       return defaultConfig
     }
@@ -243,12 +241,7 @@ export function readEditableConfigFromDisk(): AppConfig {
 }
 
 export function writeConfigToDisk(config: AppConfig): void {
-  fs.mkdirSync(PATHS.APP_DIR, { recursive: true })
-  fs.writeFileSync(
-    PATHS.CONFIG_PATH,
-    `${JSON.stringify(config, null, 2)}\n`,
-    "utf8",
-  )
+  writeFileAtomically(PATHS.CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`)
 }
 
 function mergeDefaultConfig(config: AppConfig): {
