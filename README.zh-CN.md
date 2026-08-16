@@ -69,17 +69,13 @@ curl http://localhost:4141/v1/models
 
 | 客户端 | Chat Completions | Responses | Anthropic Messages | 推荐 |
 |---|:---:|:---:|:---:|---|
-| Claude Code | — | — | ✅ 原生 | Anthropic Messages |
-| OpenCode | ✅ | ✅ | ✅ 原生（通过 `@ai-sdk/anthropic`） | Anthropic Messages |
-| Codex | — | ✅ 支持 Responses 的 `gpt-*` Copilot 模型原生，其他兼容模型走适配 | — | Responses |
+| Claude Code | — | — | ✅ 原生 / 适配 | Anthropic Messages |
+| OpenCode | ✅ 原生 | ✅ 原生 / 适配 | ✅ 原生 / 适配（通过 `@ai-sdk/anthropic`） | Anthropic Messages |
+| Codex | — | ✅ 原生 / 适配 | — | Responses |
 | OpenAI 兼容客户端 | ✅ 原生 | ✅ 原生 / 适配 | — | Chat Completions |
 | Anthropic 兼容客户端 | — | — | ✅ 原生 / 适配 | Anthropic Messages |
 
-**Provider 支持。** GitHub Copilot 的各个模型并不共享同一组上游协议：一个模型可能只声明 Chat Completions、Responses、Messages 中的一种，也可能同时声明多种，例如同时支持 Chat Completions 和 Responses。网关会根据客户端请求的协议和所选模型声明的端点进行路由；存在受支持的适配路径时，才会通过该模型支持的其他协议进行转换。Claude 系列模型优先使用原生 Messages，支持 Responses 的模型则使用 WebSocket 或 HTTP。内置 `codex` provider（`openai-responses`，OAuth）原生支持 Responses，Messages 走适配。第三方快捷 provider 及默认类型：Kimi（`openai-compatible`）、DeepSeek（`anthropic`）、DashScope（`openai-compatible`）、OpenRouter（`anthropic`）、OpenCode Go（`openai-compatible`），也可以配置任意类型的自定义 provider。
-
-**适配（Adapter）** 指网关在不同协议之间做翻译：`anthropic` provider 走 Responses Lite → Messages，`openai-compatible` provider 走 Responses Lite → Messages → Chat Completions，`openai-responses` provider 走 Messages → Responses。OpenCode Go 还会把 `qwen*`/`minimax*` 模型路由到 Anthropic Messages、`gpt*`/`grok*` 模型路由到 OpenAI Responses，这些模型在对应协议上为原生支持。
-
-第三方 provider 的类型都可以选择：DeepSeek 和 DashScope 在 `auth login` 时会提示选择类型；任意 provider 的 `type` 都可以在 `config.json` 中切换为 `anthropic`、`openai-compatible` 或 `openai-responses`（也可以通过 `providers.<name>.models.<model>.type` 按模型覆盖）。协议能力跟随所选类型：`anthropic` 原生提供 Messages，`openai-compatible` 原生提供 Chat Completions，其余协议由适配层翻译。
+**Provider 与协议。** 协议能力按模型决定。Chat Completions 必须使用原生端点，Responses 和 Messages 则可在存在受支持路径时进行适配。内置 `codex` provider 原生使用 Responses；第三方 provider 可选择 `anthropic`、`openai-compatible` 或 `openai-responses`，也可按模型覆盖。
 
 <a id="desktop-app"></a>
 

@@ -63,17 +63,13 @@ Every client talks to the same local endpoint. The gateway routes each request t
 
 | Client | Chat Completions | Responses | Anthropic Messages | Recommended |
 |---|:---:|:---:|:---:|---|
-| Claude Code | — | — | ✅ Native | Anthropic Messages |
-| OpenCode | ✅ | ✅ | ✅ Native via `@ai-sdk/anthropic` | Anthropic Messages |
-| Codex | — | ✅ Native for Responses-capable `gpt-*` Copilot models, adapter for other compatible models | — | Responses |
+| Claude Code | — | — | ✅ Native / Adapter | Anthropic Messages |
+| OpenCode | ✅ Native | ✅ Native / Adapter | ✅ Native / Adapter via `@ai-sdk/anthropic` | Anthropic Messages |
+| Codex | — | ✅ Native / Adapter | — | Responses |
 | OpenAI-compatible clients | ✅ Native | ✅ Native / Adapter | — | Chat Completions |
 | Anthropic-compatible clients | — | — | ✅ Native / Adapter | Anthropic Messages |
 
-**Providers.** GitHub Copilot models do not share one uniform upstream protocol set: a model may advertise only one of Chat Completions, Responses, and Messages, or it may advertise multiple protocols — for example, both Chat Completions and Responses. The gateway routes according to the requested protocol and the selected model's advertised endpoints; where a supported adapter exists, it can translate through another protocol that model supports. Claude-family models prefer native Messages, while Responses-capable models use WebSocket or HTTP. The built-in `codex` provider (`openai-responses` with OAuth) serves Responses natively and Messages through the adapter. Quick-config third-party providers and their default types: Kimi (`openai-compatible`), DeepSeek (`anthropic`), DashScope (`openai-compatible`), OpenRouter (`anthropic`), and OpenCode Go (`openai-compatible`) — or configure a fully custom provider of any type.
-
-**Adapter** means the gateway translates between protocols: Responses Lite → Messages for `anthropic` providers, Responses Lite → Messages → Chat Completions for `openai-compatible` providers, and Messages → Responses for `openai-responses` providers. OpenCode Go additionally routes its `qwen*`/`minimax*` models through Anthropic Messages and `gpt*`/`grok*` models through OpenAI Responses, so those models are native on the corresponding protocol.
-
-Third-party provider types are selectable: DeepSeek and DashScope prompt for the type during `auth login`, and any provider's `type` can be switched between `anthropic`, `openai-compatible`, and `openai-responses` in `config.json` (with per-model overrides via `providers.<name>.models.<model>.type`). Protocol capabilities follow the selected type: `anthropic` serves Messages natively, `openai-compatible` serves Chat Completions natively, and the adapter covers the rest.
+**Providers and protocols.** Protocol support is model-specific. Chat Completions requires a native endpoint, while Responses and Messages can use supported adapters. The built-in `codex` provider uses Responses natively; third-party providers can use `anthropic`, `openai-compatible`, or `openai-responses`, with per-model overrides.
 
 ## Desktop App
 
