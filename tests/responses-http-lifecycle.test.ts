@@ -20,7 +20,7 @@ afterEach(() => {
 test("Responses transport configuration validates positive integer limits", () => {
   expect(
     normalizeResponsesTransportConfig({
-      headersTimeoutMs: 12.8,
+      headersTimeoutMsV2: 12.8,
       streamInactivityTimeoutMs: 0,
       websocketMaxBufferedBytes: -1,
       websocketMaxBufferedMessages: Number.NaN,
@@ -29,7 +29,7 @@ test("Responses transport configuration validates positive integer limits", () =
     }),
   ).toEqual({
     ...defaultResponsesTransportConfig,
-    headersTimeoutMs: 12,
+    headersTimeoutMsV2: 12,
     websocketOpenTimeoutMs: 45,
   })
 })
