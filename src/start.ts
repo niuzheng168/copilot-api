@@ -13,6 +13,7 @@ import { getLatestModelForFamily } from "./lib/models"
 import { initOpencodeVersion } from "./lib/opencode"
 import { ensurePaths } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
+import { getMissingApiKeysMessage } from "./lib/request-auth"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
 import { logUser, setupCopilotToken } from "./lib/token"
@@ -155,6 +156,11 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   consola.options.throttle = 0
 
   mergeConfigWithDefaults()
+
+  const missingApiKeysMessage = getMissingApiKeysMessage()
+  if (missingApiKeysMessage) {
+    consola.info(missingApiKeysMessage)
+  }
 
   await initOpencodeVersion()
 

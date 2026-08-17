@@ -244,6 +244,24 @@ export function writeConfigToDisk(config: AppConfig): void {
   writeFileAtomically(PATHS.CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`)
 }
 
+export function setConfiguredApiKeys(apiKeys: Array<string>): Array<string> {
+  const normalizedKeys = apiKeys
+    .map((key) => key.trim())
+    .filter((key) => key.length > 0)
+  const uniqueKeys = [...new Set(normalizedKeys)]
+
+  const editableConfig = readEditableConfigFromDisk()
+  writeConfigToDisk({
+    ...editableConfig,
+    auth: {
+      ...editableConfig.auth,
+      apiKeys: uniqueKeys,
+    },
+  })
+  reloadConfig()
+  return [...uniqueKeys]
+}
+
 function mergeDefaultConfig(config: AppConfig): {
   mergedConfig: AppConfig
   changed: boolean
