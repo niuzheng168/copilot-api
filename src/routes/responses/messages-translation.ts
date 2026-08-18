@@ -785,8 +785,22 @@ function translateToolResultContent(
       `${path} must be text or an array`,
     )
   }
-  return value.map((part, index) =>
-    translateUserContentPart(part, `${path}[${index}]`),
+  // Codex Desktop can emit empty input_text parts in tool outputs; Anthropic
+  // rejects empty text blocks, so drop them instead of failing translation.
+  const blocks = value.flatMap((part, index) =>
+    isEmptyTextContentPart(part) ?
+      []
+    : [translateUserContentPart(part, `${path}[${index}]`)],
+  )
+  return blocks.length > 0 ? blocks : ""
+}
+
+function isEmptyTextContentPart(part: unknown): boolean {
+  if (!isRecord(part)) return false
+  const type = part.type
+  return (
+    (type === "input_text" || type === "output_text" || type === "text")
+    && part.text === ""
   )
 }
 

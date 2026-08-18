@@ -547,6 +547,71 @@ describe("Responses Lite to Messages translation", () => {
     })
   })
 
+  test("drops empty text parts from custom tool call outputs", () => {
+    const result = translate({
+      input: [
+        {
+          type: "custom_tool_call_output",
+          call_id: "call_50129f9955894d1790d490b0",
+          output: [
+            {
+              type: "input_text",
+              text: "Script completed\nWall time 1.3 seconds\nOutput:\n",
+            },
+            { type: "input_text", text: "" },
+          ],
+        },
+      ],
+    })
+
+    expect(result.messagesPayload.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_50129f9955894d1790d490b0",
+            content: [
+              {
+                type: "text",
+                text: "Script completed\nWall time 1.3 seconds\nOutput:\n",
+              },
+            ],
+            is_error: false,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
+    ])
+  })
+
+  test("falls back to empty text when tool call output parts are all empty", () => {
+    const result = translate({
+      input: [
+        {
+          type: "function_call_output",
+          call_id: "call-empty",
+          output: [{ type: "input_text", text: "" }],
+        },
+      ],
+    })
+
+    expect(result.messagesPayload.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call-empty",
+            content: "",
+            is_error: false,
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
+    ])
+  })
+
   test("keeps input tools when a compaction request trims older input", () => {
     const result = translate({
       input: [
