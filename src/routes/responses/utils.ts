@@ -1,5 +1,6 @@
 import type {
   ResponseContextManagementCompactionItem,
+  ResponseCustomToolCallOutputItem,
   ResponseFunctionCallOutputItem,
   ResponseInputContent,
   ResponseInputImage,
@@ -224,6 +225,10 @@ const collectContentImageDataUrls = (
   }
 
   for (const block of content) {
+    if (isResponseInputImage(block)) {
+      block.detail = normalizeInputImageDetail(block.detail)
+    }
+
     const image = getInputImageDataUrl(block)
     if (image) {
       images.push(image)
@@ -262,6 +267,15 @@ const replaceInputImageWithPlaceholder = (image: InputImageDataUrl): void => {
   delete image.record.file_id
 }
 
+const VALID_INPUT_IMAGE_DETAILS: ReadonlySet<ResponseInputImage["detail"]> =
+  new Set(["auto", "high", "low"])
+
+const normalizeInputImageDetail = (
+  detail: ResponseInputImage["detail"],
+): ResponseInputImage["detail"] => {
+  return VALID_INPUT_IMAGE_DETAILS.has(detail) ? detail : "auto"
+}
+
 const isResponseInputMessage = (
   item: ResponseInputItem,
 ): item is ResponseInputMessage => {
@@ -275,12 +289,15 @@ const isResponseInputMessage = (
 
 const isResponseFunctionCallOutputItem = (
   item: ResponseInputItem,
-): item is ResponseFunctionCallOutputItem => {
+): item is
+  | ResponseCustomToolCallOutputItem
+  | ResponseFunctionCallOutputItem => {
   return (
     typeof item === "object"
     && item !== null
     && "type" in item
-    && item.type === "function_call_output"
+    && (item.type === "custom_tool_call_output"
+      || item.type === "function_call_output")
   )
 }
 

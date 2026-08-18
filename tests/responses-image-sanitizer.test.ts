@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 
 import type {
+  ResponseCustomToolCallOutputItem,
   ResponseFunctionCallOutputItem,
   ResponseInputImage,
   ResponsesPayload,
@@ -140,5 +141,54 @@ describe("sanitizeOversizedInputImages", () => {
       toolOutputImage.image_url?.startsWith("data:image/png;base64,"),
     ).toBe(true)
     expect(toolOutputImage.image_url).not.toBe(toolImageUrl)
+  })
+
+  test("sanitizes images inside custom tool call outputs", () => {
+    const toolImageUrl = imageDataUrl(128)
+    const toolOutputImage: ResponseInputImage = {
+      detail: "high",
+      image_url: toolImageUrl,
+      type: "input_image",
+    }
+    const payload = {
+      input: [
+        {
+          call_id: "call_123",
+          output: [toolOutputImage],
+          status: "completed",
+          type: "custom_tool_call_output",
+        } satisfies ResponseCustomToolCallOutputItem,
+      ],
+      model: "gpt-test",
+    } satisfies ResponsesPayload
+
+    const sanitized = sanitizeOversizedInputImages(payload, 64)
+
+    expect(sanitized).toBe(1)
+    expect(toolOutputImage.type).toBe("input_image")
+    expect(toolOutputImage.detail).toBe("low")
+    expect(
+      toolOutputImage.image_url?.startsWith("data:image/png;base64,"),
+    ).toBe(true)
+    expect(toolOutputImage.image_url).not.toBe(toolImageUrl)
+  })
+
+  test("normalizes unsupported detail values to auto", () => {
+    const imageUrl = imageDataUrl(8)
+    const image: ResponseInputImage = {
+      detail: "ultra" as ResponseInputImage["detail"],
+      image_url: imageUrl,
+      type: "input_image",
+    }
+    const payload = {
+      input: [{ content: [image], role: "user" }],
+      model: "gpt-test",
+    } as unknown as ResponsesPayload
+
+    const sanitized = sanitizeOversizedInputImages(payload, 64)
+
+    expect(sanitized).toBe(0)
+    expect(image.detail).toBe("auto")
+    expect(image.image_url).toBe(imageUrl)
   })
 })
