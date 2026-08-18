@@ -603,6 +603,8 @@ Use `copilot-api auth login --provider deepseek`, `--provider dashscope`, `--pro
 
 Use `copilot-api auth login --provider custom` to add or update another third-party provider from the CLI. The command prompts for the provider name, supported type (`anthropic`, `openai-compatible`, or `openai-responses`), `baseUrl`, masked `apiKey`, and `authType`; `authType` may be left as the type default or set to `x-api-key` / `authorization`.
 
+Gateway API keys live under `auth.apiKeys` in `config.json`. Manage them with `copilot-api auth keys` (one operation per invocation): add a key with `--add <key>`, remove one with `--remove <key>`, list all with `--list`, or clear them all with `--clear`. Clients authenticate with any configured key via `x-api-key` or `Authorization: Bearer`. When no keys are configured, `copilot-api start` starts with authentication bypassed and prints a startup info message.
+
 ### Debug Command Options
 
 | Option | Description               | Default | Alias |
