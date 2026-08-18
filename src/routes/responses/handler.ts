@@ -38,6 +38,7 @@ import {
   compactInputByLatestCompaction,
   getResponsesTransportForModel,
   getResponsesRequestOptions,
+  normalizeInputImageDetails,
   sanitizeOversizedInputImages,
   sanitizeUnsupportedInputFields,
 } from "./utils"
@@ -135,6 +136,13 @@ export const handleResponses = async (c: Context) => {
   if (sanitizedUnsupportedFieldCount > 0) {
     logger.debug(
       `Removed ${sanitizedUnsupportedFieldCount} unsupported input field(s) before forwarding to Copilot Responses`,
+    )
+  }
+
+  const normalizedImageDetailCount = normalizeInputImageDetails(payload)
+  if (normalizedImageDetailCount > 0) {
+    logger.debug(
+      `Normalized ${normalizedImageDetailCount} unsupported input image detail value(s) before forwarding to Copilot Responses`,
     )
   }
 
