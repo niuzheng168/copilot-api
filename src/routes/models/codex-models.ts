@@ -250,7 +250,7 @@ After deleting anything material, briefly tell the user what was removed and whe
   supports_parallel_tool_calls: true,
   supports_image_detail_original: true,
   context_window: 272_000,
-  max_context_window: 272_000,
+  max_context_window: 872_000,
   comp_hash: "3000",
   effective_context_window_percent: 95,
   experimental_supported_tools: [],
