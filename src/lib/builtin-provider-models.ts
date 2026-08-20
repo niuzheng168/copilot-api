@@ -250,9 +250,9 @@ export class BuiltinProviderModelRegistry {
         inputModalities: ["text"],
         maxOutputTokens: 64_000,
         pricing: {
-          cachedInput: 0.02,
-          input: 1,
-          output: 2,
+          cachedInput: 0.1,
+          input: 3,
+          output: 9,
         },
       },
       "deepseek-v4-pro": {
@@ -260,9 +260,9 @@ export class BuiltinProviderModelRegistry {
         inputModalities: ["text"],
         maxOutputTokens: 64_000,
         pricing: {
-          cachedInput: 0.025,
-          input: 3,
-          output: 6,
+          cachedInput: 0.3,
+          input: 9,
+          output: 27,
         },
       },
     },
@@ -343,9 +343,9 @@ export class BuiltinProviderModelRegistry {
         inputModalities: ["text"],
         maxOutputTokens: 64_000,
         pricing: {
-          cachedInput: 0.0028,
-          input: 0.14,
-          output: 0.28,
+          cachedInput: 0.007,
+          input: 0.22,
+          output: 0.66,
         },
       },
       "deepseek-v4-pro": {
@@ -353,9 +353,9 @@ export class BuiltinProviderModelRegistry {
         inputModalities: ["text"],
         maxOutputTokens: 64_000,
         pricing: {
-          cachedInput: 0.0145,
-          input: 1.74,
-          output: 3.48,
+          cachedInput: 0.022,
+          input: 0.66,
+          output: 1.98,
         },
       },
       "kimi-k2.7-code": {

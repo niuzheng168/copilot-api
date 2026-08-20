@@ -20,9 +20,9 @@ describe("builtin provider model registry", () => {
       inputModalities: ["text"],
       maxOutputTokens: 64_000,
       pricing: {
-        cachedInput: 0.025,
-        input: 3,
-        output: 6,
+        cachedInput: 0.3,
+        input: 9,
+        output: 27,
       },
     })
   })
