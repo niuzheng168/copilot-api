@@ -264,6 +264,42 @@ enabled = false
 >
 > For third-party models that do not support `tool_search`, we recommend disabling features.apps. Otherwise, each prompt may consume an additional 20,000 or more tokens.
 
+### If Codex Is Not Signed In to a GPT Account
+
+```toml
+[model_providers.copilot_api]
+name = "OpenAI"
+base_url = "http://localhost:4141"
+requires_openai_auth = false
+supports_websockets = false
+wire_api = "responses"
+request_max_retries = 3
+stream_max_retries = 3
+stream_idle_timeout_ms = 300000
+
+[model_providers.copilot_api.auth]
+command = "powershell.exe"
+args = [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    "[Console]::Out.Write($env:GITHUB_COPILOT_API_KEY)"
+]
+```
+
+macOS, replace the `auth` block with:
+
+```toml
+[model_providers.copilot_api.auth]
+command = "/bin/zsh"
+args = [
+    "-c",
+    "printf '%s' \"$GITHUB_COPILOT_API_KEY\""
+]
+```
+
+Without this configuration, Codex cannot fetch `/v1/models` while not signed in to a GPT account, so custom models are unavailable in the model picker.
+
 When a Codex client (`User-Agent` starts with `codex`) requests the top-level `GET /v1/models`, the gateway merges native Codex models with models available through the Messages adapter. The latter advertise `use_responses_lite: true`: `/v1/responses` uses **Responses → Messages** for Anthropic providers, while OpenAI-compatible providers and Chat-only Copilot models reuse the existing Messages route for **Responses → Messages → Chat Completions**, then translate streaming or JSON results back to Responses.
 
 The merged catalog is what Codex shows in its model picker, including the models exposed by your configured providers:
