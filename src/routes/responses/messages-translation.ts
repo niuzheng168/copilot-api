@@ -52,7 +52,7 @@ export const MESSAGES_COMPACTION_PROMPT = [
 
 export const MESSAGES_TOOL_CALL_TIPS = [
   "# Tool Call Tips",
-  "- MUST NOT call non-existent tools; always follow the exact tool definition and parameter schema.",
+  "- Do NOT call `exec_command` directly; that tool does not exist. Use `functions__exec` to run commands instead.",
   '- The functions__exec tool accepts parameters only as {"input":"..."}; put the complete executable code inside input, including properly constructed tools.exec_command(...) calls and text(...) output handling.',
   "- Construct all tools.exec_command(...) arguments strictly according to its tool definition, and use OS/shell-compatible commands for Windows, Linux, and macOS.",
   "- Always assign the awaited tools.exec_command(...) call to a variable, then forward its output with text(result.output) and inspect result.exit_code; unforwarded output is silently dropped and makes results look empty.",
