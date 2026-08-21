@@ -34,9 +34,28 @@ describe("builtin provider model registry", () => {
       "gpt-5.6-luna",
       "qwen3.8-max",
       "minimax-m3",
+      "ox-alpha-free",
     ]) {
       expect(modelIds).toContain(modelId)
     }
+  })
+
+  test("defines the free Ox Alpha model with free pricing", () => {
+    const config = builtinProviderModelRegistry.getModelConfig(
+      "opencode-go",
+      "ox-alpha-free",
+    )
+    expect(config).toMatchObject({
+      contextWindow: 1_000_000,
+      inputModalities: ["text", "image"],
+      maxOutputTokens: 131_072,
+      pricing: {
+        cachedInput: 0,
+        input: 0,
+        output: 0,
+      },
+      reasoningEfforts: ["low", "high", "max"],
+    })
   })
 
   test("defines the DeepSeek V4 Flash vision experimental model", () => {

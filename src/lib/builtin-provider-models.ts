@@ -484,6 +484,17 @@ export class BuiltinProviderModelRegistry {
           ],
         },
       },
+      "ox-alpha-free": {
+        contextWindow: 1_000_000,
+        inputModalities: ["text", "image"],
+        maxOutputTokens: 131_072,
+        pricing: {
+          cachedInput: 0,
+          input: 0,
+          output: 0,
+        },
+        reasoningEfforts: ["low", "high", "max"],
+      },
     },
     kimi: {
       k3: {
