@@ -50,6 +50,13 @@ export const MESSAGES_COMPACTION_PROMPT = [
   compactTextOnlyGuard,
 ].join("\n")
 
+export const MESSAGES_TOOL_CALL_TIPS = [
+  "# Tool Call Tips",
+  "- MUST NOT call non-existent tools; always follow the exact tool definition and parameter schema.",
+  '- The functions__exec tool accepts parameters only as {"input":"..."}; put the complete executable code inside input, including properly constructed tools.exec_command(...) calls and text(...) output handling.',
+  "- Construct all tools.exec_command(...) arguments strictly according to its tool definition, and use OS/shell-compatible commands for Windows, Linux, and macOS.",
+].join("\n")
+
 const COMPACTION_REPLAY_PROMPT =
   "The previous conversation was compacted. Continue from this handoff summary:\n\n"
 const MAX_DEVELOPER_PROMPTS = 5
@@ -112,7 +119,7 @@ interface ResponsesInputNormalization {
 
 export function translateResponsesToMessages(
   payload: ResponsesPayload,
-  options: { model: string; publicModel?: string },
+  options: { model: string; publicModel?: string; toolCallTips?: boolean },
 ): ResponsesToMessagesTranslation {
   const registry = createToolRegistry(payload)
   const normalized = normalizeResponsesInput(payload.input)
@@ -121,6 +128,7 @@ export function translateResponsesToMessages(
     registry,
     payload.instructions,
     payload.input,
+    options.toolCallTips ?? false,
   )
 
   if (normalized.compaction) {
@@ -471,6 +479,7 @@ function translateInputToAnthropic(
   registry: MessagesToolRegistry,
   instructions: string | null | undefined,
   originalInput: ResponsesPayload["input"],
+  toolCallTips: boolean,
 ): {
   messages: Array<AnthropicInputMessage>
   system: Array<AnthropicTextBlock>
@@ -484,10 +493,30 @@ function translateInputToAnthropic(
 
   if (typeof input === "string") {
     messages.push({ role: "user", content: input })
-    return { messages, system }
+  } else if (Array.isArray(input)) {
+    translateInputItems(input, messages, system, registry)
   }
-  if (!Array.isArray(input)) return { messages, system }
+  if (toolCallTips) {
+    appendToolCallTips(system)
+  }
+  return { messages, system }
+}
 
+function appendToolCallTips(system: Array<AnthropicTextBlock>): void {
+  const lastSystemBlock = system.at(-1)
+  if (!lastSystemBlock) {
+    system.push({ type: "text", text: MESSAGES_TOOL_CALL_TIPS })
+    return
+  }
+  lastSystemBlock.text = `${lastSystemBlock.text}\n\n${MESSAGES_TOOL_CALL_TIPS}`
+}
+
+function translateInputItems(
+  input: Array<ResponseInputItem>,
+  messages: Array<AnthropicInputMessage>,
+  system: Array<AnthropicTextBlock>,
+  registry: MessagesToolRegistry,
+): void {
   let userMessageSeen = false
   for (const item of input) {
     const type = getItemType(item)
@@ -540,7 +569,6 @@ function translateInputToAnthropic(
       }
     }
   }
-  return { messages, system }
 }
 
 function translateInputMessage(

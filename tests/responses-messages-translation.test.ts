@@ -10,6 +10,7 @@ import {
   decodeMessagesCompaction,
   encodeMessagesCompaction,
   MESSAGES_COMPACTION_PREFIX,
+  MESSAGES_TOOL_CALL_TIPS,
   ResponsesMessagesTranslationError,
   translateAnthropicToResponses,
   translateResponsesToMessages,
@@ -19,11 +20,17 @@ import {
   translateMessagesStream,
 } from "~/routes/responses/messages-stream-translation"
 
-const translate = (payload: Omit<ResponsesPayload, "model">) =>
+const translate = (
+  payload: Omit<ResponsesPayload, "model">,
+  options?: { toolCallTips?: boolean },
+) =>
   translateResponsesToMessages(
     { model: "claude-sonnet-4.6", ...payload },
-    { model: "claude-sonnet-4.6" },
+    { model: "claude-sonnet-4.6", ...options },
   )
+
+const translateWithTips = (payload: Omit<ResponsesPayload, "model">) =>
+  translate(payload, { toolCallTips: true })
 
 const expectCanonicalBase64 = (value: string | undefined) => {
   expect(value).toBeTruthy()
@@ -95,7 +102,7 @@ describe("Responses Lite to Messages translation", () => {
   })
 
   test("groups the first five developer prompts into two system blocks", () => {
-    const result = translate({
+    const result = translateWithTips({
       instructions: "Base instructions",
       input: [
         { role: "developer", content: "Developer one", type: "message" },
@@ -121,13 +128,16 @@ describe("Responses Lite to Messages translation", () => {
       { type: "text", text: "Developer one" },
       {
         type: "text",
-        text: [
-          "Developer two, part one",
-          "Developer two, part two",
-          "Developer three",
-          "Developer four",
-          "Developer five",
-        ].join("\n\n"),
+        text:
+          [
+            "Developer two, part one",
+            "Developer two, part two",
+            "Developer three",
+            "Developer four",
+            "Developer five",
+          ].join("\n\n")
+          + "\n\n"
+          + MESSAGES_TOOL_CALL_TIPS,
         cache_control: { type: "ephemeral" },
       },
     ])
@@ -147,7 +157,7 @@ describe("Responses Lite to Messages translation", () => {
   })
 
   test("adds ephemeral cache_control to the last system block and the last message tail", () => {
-    const result = translate({
+    const result = translateWithTips({
       instructions: "Base instructions",
       input: [
         { role: "user", content: "First user message", type: "message" },
@@ -165,7 +175,7 @@ describe("Responses Lite to Messages translation", () => {
     expect(result.messagesPayload.system).toEqual([
       {
         type: "text",
-        text: "Base instructions",
+        text: `Base instructions\n\n${MESSAGES_TOOL_CALL_TIPS}`,
         cache_control: { type: "ephemeral" },
       },
     ])
@@ -181,6 +191,51 @@ describe("Responses Lite to Messages translation", () => {
             cache_control: { type: "ephemeral" },
           },
         ],
+      },
+    ])
+  })
+
+  test("appends tool call tips to string input when enabled", () => {
+    const result = translate(
+      { instructions: "Base instructions", input: "Hello" },
+      { toolCallTips: true },
+    )
+
+    expect(result.messagesPayload.system).toEqual([
+      {
+        type: "text",
+        text: `Base instructions\n\n${MESSAGES_TOOL_CALL_TIPS}`,
+        cache_control: { type: "ephemeral" },
+      },
+    ])
+  })
+
+  test("omits tool call tips unless enabled", () => {
+    const result = translate({
+      instructions: "Base instructions",
+      input: [{ role: "user", content: "Hello", type: "message" }],
+    })
+
+    expect(result.messagesPayload.system).toEqual([
+      {
+        type: "text",
+        text: "Base instructions",
+        cache_control: { type: "ephemeral" },
+      },
+    ])
+  })
+
+  test("adds a dedicated system block for tool call tips when no prompt exists", () => {
+    const result = translate(
+      { input: [{ role: "user", content: "Hello", type: "message" }] },
+      { toolCallTips: true },
+    )
+
+    expect(result.messagesPayload.system).toEqual([
+      {
+        type: "text",
+        text: MESSAGES_TOOL_CALL_TIPS,
+        cache_control: { type: "ephemeral" },
       },
     ])
   })
@@ -229,7 +284,7 @@ describe("Responses Lite to Messages translation", () => {
   })
 
   test("converts developer messages after the first user to user messages", () => {
-    const result = translate({
+    const result = translateWithTips({
       input: [
         { role: "developer", content: "Initial developer", type: "message" },
         { role: "user", content: "First user message", type: "message" },
@@ -254,7 +309,7 @@ describe("Responses Lite to Messages translation", () => {
     expect(result.messagesPayload.system).toEqual([
       {
         type: "text",
-        text: "Initial developer",
+        text: `Initial developer\n\n${MESSAGES_TOOL_CALL_TIPS}`,
         cache_control: { type: "ephemeral" },
       },
     ])
@@ -290,7 +345,7 @@ describe("Responses Lite to Messages translation", () => {
   })
 
   test("translates agent messages and later developer messages to user", () => {
-    const result = translate({
+    const result = translateWithTips({
       input: [
         { role: "developer", content: "Initial developer", type: "message" },
         {
@@ -313,7 +368,7 @@ describe("Responses Lite to Messages translation", () => {
     expect(result.messagesPayload.system).toEqual([
       {
         type: "text",
-        text: "Initial developer",
+        text: `Initial developer\n\n${MESSAGES_TOOL_CALL_TIPS}`,
         cache_control: { type: "ephemeral" },
       },
     ])
@@ -339,7 +394,7 @@ describe("Responses Lite to Messages translation", () => {
   })
 
   test("keeps initial developer prompts when replaying a compaction", () => {
-    const result = translate({
+    const result = translateWithTips({
       input: [
         { role: "developer", content: "Developer one", type: "message" },
         { role: "developer", content: "Developer two", type: "message" },
@@ -356,7 +411,7 @@ describe("Responses Lite to Messages translation", () => {
       { type: "text", text: "Developer one" },
       {
         type: "text",
-        text: "Developer two",
+        text: `Developer two\n\n${MESSAGES_TOOL_CALL_TIPS}`,
         cache_control: { type: "ephemeral" },
       },
     ])

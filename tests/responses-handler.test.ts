@@ -3,6 +3,7 @@ import { Hono, type Context } from "hono"
 
 import type { AnthropicMessagesPayload } from "~/lib/types/anthropic"
 import type { CompletionPayloadOptions } from "~/routes/messages/handler"
+import { MESSAGES_TOOL_CALL_TIPS } from "~/routes/responses/messages-translation"
 import type { createResponses as createCopilotResponses } from "~/services/copilot/create-responses"
 
 let responsesApiWebSocketEnabled = true
@@ -523,6 +524,89 @@ describe("responses handler token usage", () => {
     expect(response.status).toBe(200)
     expect(createResponses).not.toHaveBeenCalled()
     expect(handleMessages).toHaveBeenCalledTimes(1)
+  })
+
+  test("injects tool call tips into the Messages adapter only for Codex clients", async () => {
+    state.models = {
+      object: "list",
+      data: [
+        {
+          capabilities: {
+            family: "claude",
+            limits: { max_prompt_tokens: 128000 },
+            object: "model_capabilities",
+            supports: { tool_calls: true },
+            tokenizer: "o200k_base",
+            type: "chat",
+          },
+          id: "claude-tips",
+          model_picker_enabled: true,
+          name: "Claude Tips",
+          object: "model",
+          preview: false,
+          supported_endpoints: ["/v1/messages"],
+          vendor: "anthropic",
+          version: "test",
+        },
+      ],
+    }
+    const handleMessages = mock(
+      (_context: Context, _payload: AnthropicMessagesPayload) =>
+        Promise.resolve(
+          Response.json({
+            content: [{ type: "text", text: "hi" }],
+            id: "msg-tips",
+            model: "claude-tips",
+            role: "assistant",
+            stop_reason: "end_turn",
+            stop_sequence: null,
+            type: "message",
+            usage: { input_tokens: 4, output_tokens: 2 },
+          }),
+        ),
+    )
+    responsesMessagesDependencies.handleCompletionPayload = handleMessages
+
+    const app = createApp()
+    const codexResponse = await app.request("/v1/responses", {
+      body: JSON.stringify({
+        model: "claude-tips",
+        instructions: "Base instructions",
+        input: "hello",
+      }),
+      headers: {
+        "content-type": "application/json",
+        "user-agent": "codex-cli/1.0.0",
+      },
+      method: "POST",
+    })
+    const otherResponse = await app.request("/v1/responses", {
+      body: JSON.stringify({
+        model: "claude-tips",
+        instructions: "Base instructions",
+        input: "hello",
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(codexResponse.status).toBe(200)
+    expect(otherResponse.status).toBe(200)
+    expect(handleMessages).toHaveBeenCalledTimes(2)
+    expect(handleMessages.mock.calls[0]?.[1].system).toEqual([
+      {
+        type: "text",
+        text: `Base instructions\n\n${MESSAGES_TOOL_CALL_TIPS}`,
+        cache_control: { type: "ephemeral" },
+      },
+    ])
+    expect(handleMessages.mock.calls[1]?.[1].system).toEqual([
+      {
+        type: "text",
+        text: "Base instructions",
+        cache_control: { type: "ephemeral" },
+      },
+    ])
   })
 
   test("rejects models without fallback endpoints for non-Codex clients", async () => {
