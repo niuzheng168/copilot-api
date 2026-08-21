@@ -497,6 +497,41 @@ describe("Responses Lite to Messages translation", () => {
     ])
   })
 
+  test("does not synthesize tools from undeclared tool call history", () => {
+    const result = translate({
+      input: [
+        {
+          type: "function_call",
+          call_id: "call_00_ET_DM1gjjhO7owedlK9BQF94440",
+          name: "functions__view_image",
+          arguments: JSON.stringify({
+            path: "D:\\bud\\copilot-api\\docs\\screenshots\\desktop-dashboard.png",
+          }),
+          status: "completed",
+        },
+      ],
+    })
+
+    expect(result.registry.tools).toEqual([])
+    expect(result.messagesPayload.tools).toBeUndefined()
+    expect(result.messagesPayload.messages).toEqual([
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_use",
+            id: "call_00_ET_DM1gjjhO7owedlK9BQF94440",
+            name: "functions__view_image",
+            input: {
+              path: "D:\\bud\\copilot-api\\docs\\screenshots\\desktop-dashboard.png",
+            },
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
+    ])
+  })
+
   test("merges input reasoning with the following assistant message", () => {
     const result = translate({
       input: [
