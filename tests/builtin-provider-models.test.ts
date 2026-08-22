@@ -20,9 +20,9 @@ describe("builtin provider model registry", () => {
       inputModalities: ["text"],
       maxOutputTokens: 64_000,
       pricing: {
-        cachedInput: 0.025,
-        input: 3,
-        output: 6,
+        cachedInput: 0.3,
+        input: 9,
+        output: 27,
       },
     })
   })
@@ -34,9 +34,46 @@ describe("builtin provider model registry", () => {
       "gpt-5.6-luna",
       "qwen3.8-max",
       "minimax-m3",
+      "ox-alpha-free",
     ]) {
       expect(modelIds).toContain(modelId)
     }
+  })
+
+  test("defines the free Ox Alpha model with free pricing", () => {
+    const config = builtinProviderModelRegistry.getModelConfig(
+      "opencode-go",
+      "ox-alpha-free",
+    )
+    expect(config).toMatchObject({
+      contextWindow: 1_000_000,
+      inputModalities: ["text", "image"],
+      maxOutputTokens: 131_072,
+      pricing: {
+        cachedInput: 0,
+        input: 0,
+        output: 0,
+      },
+      reasoningEfforts: ["low", "high", "max"],
+    })
+  })
+
+  test("defines the DeepSeek V4 Flash vision experimental model", () => {
+    expect(
+      builtinProviderModelRegistry.getModelConfig(
+        "deepseek",
+        "deepseek-v4-flash-vision-exp",
+      ),
+    ).toEqual({
+      contextWindow: 1_000_000,
+      inputModalities: ["text", "image"],
+      maxOutputTokens: 64_000,
+      pricing: {
+        cachedInput: 0.1,
+        input: 3,
+        output: 9,
+      },
+    })
   })
 
   test("defines the supported Grok reasoning levels", () => {

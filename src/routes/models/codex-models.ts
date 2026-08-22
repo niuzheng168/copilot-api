@@ -45,6 +45,13 @@ const DEFAULT_REASONING_EFFORTS: Array<CodexReasoningEffort> = [
   "ultra",
 ]
 
+const addUltraReasoningEffort = (
+  efforts: Array<CodexReasoningEffort>,
+): Array<CodexReasoningEffort> => {
+  if (efforts.includes("ultra")) return efforts
+  return [...efforts, "ultra"]
+}
+
 // Codex clients sort models by the `priority` field. The group bases keep the
 // merged list ordered as: upstream catalog, codex provider aliases, copilot
 // models, opencode-go models, then models from other providers.
@@ -433,7 +440,7 @@ export function createSyntheticCodexModel(
 ): CodexModel {
   const reasoningEfforts =
     candidate.reasoningEfforts.length > 0 ?
-      candidate.reasoningEfforts
+      addUltraReasoningEffort(candidate.reasoningEfforts)
     : DEFAULT_REASONING_EFFORTS
   const defaultReasoningEffort =
     reasoningEfforts.includes(candidate.defaultReasoningEffort) ?
