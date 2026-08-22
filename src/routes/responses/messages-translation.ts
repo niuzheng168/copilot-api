@@ -1137,17 +1137,15 @@ function appendUserBlock(
 
 function parseFunctionArguments(
   value: string,
-  path: string,
+  _path: string,
 ): Record<string, unknown> {
   try {
     const parsed = JSON.parse(value) as unknown
     if (isRecord(parsed)) return parsed
   } catch {
-    // The request error below contains the stable public message.
+    return {}
   }
-  throw new ResponsesMessagesTranslationError(
-    `${path} must be a JSON object string`,
-  )
+  return {}
 }
 
 function parseDataUrl(
