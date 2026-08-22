@@ -7,6 +7,7 @@ import { resolveMappedModel } from "~/lib/config"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
 import { findEndpointModel } from "~/lib/models"
 import { parseProviderModelAlias } from "~/lib/provider-model"
+import { resolveProviderConfig } from "~/lib/provider-resolver"
 import {
   createCopilotTokenUsageRecorder,
   normalizeOpenAIUsage,
@@ -36,11 +37,27 @@ export async function handleCompletion(c: Context) {
 
   const providerModelAlias = parseProviderModelAlias(payload.model)
   if (providerModelAlias) {
-    payload.model = providerModelAlias.model
-    return await handleProviderChatCompletionsForProvider(c, {
-      payload,
-      provider: providerModelAlias.provider,
-    })
+    // Only treat the "/" prefix as a custom provider alias when that provider
+    // is actually configured. GitHub Copilot enterprise models can ship with
+    // namespaced ids such as "org/family/model" that must fall through to the
+    // default model lookup instead of being misrouted to a non-existent
+    // provider and surfaced as a 400.
+    //
+    // Unlike the messages/responses routes, chat-completions has no route-level
+    // DI seam for resolveProviderConfig: the existing tests mock
+    // getProviderConfig (which resolveProviderConfig falls through to for
+    // non-codex providers), so a direct import is sufficient and consistent
+    // with resolveMappedModel/findEndpointModel above.
+    const providerConfig = await resolveProviderConfig(
+      providerModelAlias.provider,
+    )
+    if (providerConfig) {
+      payload.model = providerModelAlias.model
+      return await handleProviderChatCompletionsForProvider(c, {
+        payload,
+        provider: providerModelAlias.provider,
+      })
+    }
   }
 
   debugJson(logger, "Request payload:", payload)
