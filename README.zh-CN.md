@@ -280,6 +280,42 @@ enabled = false
 >
 > 对于不支持 `tool_search` 的第三方模型，我们建议禁用 features.apps。否则，每个提示可能会额外消耗 20,000 多个 token。
 
+### Codex 未登录 GPT 账号时
+
+```toml
+[model_providers.copilot_api]
+name = "OpenAI"
+base_url = "http://localhost:4141"
+requires_openai_auth = false
+supports_websockets = false
+wire_api = "responses"
+request_max_retries = 3
+stream_max_retries = 3
+stream_idle_timeout_ms = 300000
+
+[model_providers.copilot_api.auth]
+command = "powershell.exe"
+args = [
+    "-NoProfile",
+    "-NonInteractive",
+    "-Command",
+    "[Console]::Out.Write($env:GITHUB_COPILOT_API_KEY)"
+]
+```
+
+macOS 将 `auth` 段替换为：
+
+```toml
+[model_providers.copilot_api.auth]
+command = "/bin/zsh"
+args = [
+    "-c",
+    "printf '%s' \"$GITHUB_COPILOT_API_KEY\""
+]
+```
+
+未按上述方式配置时，Codex 未登录 GPT 账号拉不到 `/v1/models`，无法选择自定义模型。
+
 Codex 客户端（`User-Agent` 以 `codex` 开头）请求顶层 `GET /v1/models` 时，网关会把原生 Codex 模型与可通过 Messages 适配的模型合并返回。后者会声明 `use_responses_lite: true`：调用 `/v1/responses` 后，Anthropic provider 走 **Responses → Messages**，OpenAI 兼容 provider 以及只支持 Chat 的 Copilot 模型则复用现有 Messages 路由继续走 **Responses → Messages → Chat Completions**，最终统一翻译回 Responses（包括流式事件）。
 
 合并后的模型列表会直接展示在 Codex 的模型选择界面中，包含各 provider 暴露的模型：
