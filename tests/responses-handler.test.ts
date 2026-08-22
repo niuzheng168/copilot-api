@@ -757,6 +757,198 @@ describe("responses handler token usage", () => {
     expect(createResponses.mock.calls[0][1]?.transport).toBe("http")
   })
 
+  test("normalizes unsupported max reasoning effort to the highest supported level", async () => {
+    state.models = {
+      object: "list",
+      data: [
+        {
+          capabilities: {
+            limits: { max_prompt_tokens: 128000 },
+            supports: {
+              reasoning_effort: ["low", "medium", "high", "xhigh"],
+            },
+          },
+          id: "gpt-capability-test",
+          supported_endpoints: ["/responses"],
+        },
+      ],
+    } as typeof state.models
+    createResponses.mockImplementation((payload) =>
+      Promise.resolve(createResponsesResult(payload.model)),
+    )
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        input: "hello",
+        model: "gpt-capability-test",
+        reasoning: { effort: "max" },
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponses).toHaveBeenCalledTimes(1)
+    expect(createResponses.mock.calls[0][0].reasoning).toEqual({
+      effort: "xhigh",
+    })
+  })
+
+  test("maps ultra reasoning effort to max when max is supported", async () => {
+    state.models = {
+      object: "list",
+      data: [
+        {
+          capabilities: {
+            limits: { max_prompt_tokens: 128000 },
+            supports: {
+              reasoning_effort: [
+                "none",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+              ],
+            },
+          },
+          id: "gpt-ultra-capability",
+          supported_endpoints: ["/responses"],
+        },
+      ],
+    } as typeof state.models
+    createResponses.mockImplementation((payload) =>
+      Promise.resolve(createResponsesResult(payload.model)),
+    )
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        input: "hello",
+        model: "gpt-ultra-capability",
+        reasoning: { effort: "ultra" },
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponses).toHaveBeenCalledTimes(1)
+    expect(createResponses.mock.calls[0][0].reasoning).toEqual({
+      effort: "max",
+    })
+  })
+
+  test("preserves max reasoning effort when capabilities are unknown", async () => {
+    createResponses.mockImplementation((payload) =>
+      Promise.resolve(createResponsesResult(payload.model)),
+    )
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        input: "hello",
+        model: "gpt-test",
+        reasoning: { effort: "max" },
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponses).toHaveBeenCalledTimes(1)
+    expect(createResponses.mock.calls[0][0].reasoning).toEqual({
+      effort: "max",
+    })
+  })
+
+  test("maps ultra reasoning effort to max when capabilities are unknown", async () => {
+    createResponses.mockImplementation((payload) =>
+      Promise.resolve(createResponsesResult(payload.model)),
+    )
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        input: "hello",
+        model: "gpt-test",
+        reasoning: { effort: "ultra" },
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponses).toHaveBeenCalledTimes(1)
+    expect(createResponses.mock.calls[0][0].reasoning).toEqual({
+      effort: "max",
+    })
+  })
+
+  test("preserves unknown reasoning effort for upstream validation", async () => {
+    createResponses.mockImplementation((payload) =>
+      Promise.resolve(createResponsesResult(payload.model)),
+    )
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        input: "hello",
+        model: "gpt-test",
+        reasoning: { effort: "turbo" },
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponses).toHaveBeenCalledTimes(1)
+    expect(
+      (createResponses.mock.calls[0][0].reasoning as { effort?: string })
+        ?.effort,
+    ).toBe("turbo")
+  })
+
+  test("preserves supported max reasoning effort for native Responses", async () => {
+    state.models = {
+      object: "list",
+      data: [
+        {
+          capabilities: {
+            limits: { max_prompt_tokens: 128000 },
+            supports: {
+              reasoning_effort: [
+                "none",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max",
+              ],
+            },
+          },
+          id: "gpt-max-capability",
+          supported_endpoints: ["/responses"],
+        },
+      ],
+    } as typeof state.models
+    createResponses.mockImplementation((payload) =>
+      Promise.resolve(createResponsesResult(payload.model)),
+    )
+
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        input: "hello",
+        model: "gpt-max-capability",
+        reasoning: { effort: "max" },
+      }),
+      headers: { "content-type": "application/json" },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(createResponses).toHaveBeenCalledTimes(1)
+    expect(createResponses.mock.calls[0][0].reasoning).toEqual({
+      effort: "max",
+    })
+  })
+
   for (const [transport, supportedEndpoints] of [
     ["http", ["/responses"]],
     ["websocket", ["/responses", "ws:/responses"]],

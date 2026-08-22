@@ -39,6 +39,7 @@ import {
   getResponsesTransportForModel,
   getResponsesRequestOptions,
   normalizeInputImageDetails,
+  normalizeResponsesReasoningEffort,
   sanitizeOversizedInputImages,
   sanitizeUnsupportedInputFields,
 } from "./utils"
@@ -94,6 +95,15 @@ export const handleResponses = async (c: Context) => {
     payload.model,
   )
   payload.model = selectedModel?.id ?? payload.model
+  const normalizedReasoningEffort = normalizeResponsesReasoningEffort(
+    payload,
+    selectedModel?.capabilities?.supports?.reasoning_effort,
+  )
+  if (normalizedReasoningEffort) {
+    logger.debug(
+      `Normalized reasoning effort from ${normalizedReasoningEffort.from} to ${normalizedReasoningEffort.to} based on the selected model capabilities`,
+    )
+  }
   const responsesTransport = getResponsesTransportForModel(selectedModel)
 
   const useMessagesFallback = shouldFallbackToMessages(

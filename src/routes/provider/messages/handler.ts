@@ -270,7 +270,15 @@ const handleOpenAIResponsesProviderWebSearchMessages = async (
   const { modelConfig, payload, provider, providerConfig, usageEndpoint } =
     options
   const responsesPayload = prepareWebSearchResponsesPayload(payload)
-  normalizeProviderResponsesReasoningEffort(responsesPayload, providerConfig)
+  const normalizedReasoningEffort = normalizeProviderResponsesReasoningEffort(
+    responsesPayload,
+    providerConfig,
+  )
+  if (normalizedReasoningEffort) {
+    logger.debug(
+      `Normalized reasoning effort from ${normalizedReasoningEffort.from} to ${normalizedReasoningEffort.to} based on the provider model configuration`,
+    )
+  }
 
   debugJson(logger, "provider.messages.responses.web_search.request", {
     payload: responsesPayload,
@@ -382,7 +390,13 @@ const handleOpenAIResponsesProviderMessages = async (
     : undefined
   const wantsStream = payload.stream === true
   const responsesPayload = translateAnthropicMessagesToResponsesPayload(payload)
-  normalizeProviderResponsesReasoningEffort(responsesPayload, providerConfig)
+  const normalizedMessagesReasoningEffort =
+    normalizeProviderResponsesReasoningEffort(responsesPayload, providerConfig)
+  if (normalizedMessagesReasoningEffort) {
+    logger.debug(
+      `Normalized reasoning effort from ${normalizedMessagesReasoningEffort.from} to ${normalizedMessagesReasoningEffort.to} based on the provider model configuration`,
+    )
+  }
 
   if (providerConfig.name === "codex" && !wantsStream) {
     responsesPayload.stream = true
