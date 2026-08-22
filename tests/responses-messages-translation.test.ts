@@ -1345,4 +1345,85 @@ describe("Responses Lite to Messages translation", () => {
       expect(completed.response.output).toEqual([])
     }
   })
+
+  test("fails the response when the stream breaks during thinking output", async () => {
+    const translation = translate({ input: "hello", stream: true })
+    const source = [
+      {
+        type: "message_start",
+        message: {
+          content: [],
+          id: "msg_thinking_cut",
+          model: "claude-sonnet-4.6",
+          role: "assistant",
+          stop_reason: null,
+          stop_sequence: null,
+          type: "message",
+          usage: { input_tokens: 2, output_tokens: 0 },
+        },
+      },
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "thinking", thinking: "" },
+      },
+      {
+        type: "content_block_delta",
+        index: 0,
+        delta: { type: "thinking_delta", thinking: "partial thought" },
+      },
+      // The stream is interrupted here: no content_block_stop, no
+      // message_delta and no message_stop ever arrive.
+    ]
+    async function* chunks() {
+      await Promise.resolve()
+      for (const event of source) yield { data: JSON.stringify(event) }
+    }
+
+    const events: Array<ResponseStreamEvent> = []
+    for await (const event of translateMessagesStream(chunks(), translation)) {
+      events.push(event)
+    }
+
+    expect(events.some((event) => event.type === "response.completed")).toBe(
+      false,
+    )
+    const error = events.find((event) => event.type === "error")
+    expect(error?.type).toBe("error")
+    if (error?.type === "error") {
+      expect(error.message).toBe(
+        "Messages stream ended without a message_stop event",
+      )
+    }
+    const failed = events.at(-1)
+    expect(failed?.type).toBe("response.failed")
+    if (failed?.type === "response.failed") {
+      expect(failed.response.status).toBe("failed")
+    }
+  })
+
+  test("throws on an empty stream before initialization", async () => {
+    const translation = translate({ input: "hello", stream: true })
+    async function* chunks() {
+      await Promise.resolve()
+      yield { data: "[DONE]" }
+    }
+
+    let thrown: unknown
+    try {
+      for await (const event of translateMessagesStream(
+        chunks(),
+        translation,
+      )) {
+        void event
+      }
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(ResponsesMessagesTranslationError)
+    expect((thrown as Error).message).toBe(
+      "Messages API returned an empty stream",
+    )
+  })
 })

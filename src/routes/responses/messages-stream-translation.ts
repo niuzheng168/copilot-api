@@ -121,10 +121,13 @@ export async function* translateMessagesStream(
     }
 
     if (!state.messageStopped) {
-      for (const translated of closeAllBlocks(state)) yield translated
-      for (const translated of finishCompaction(state)) yield translated
-      state.messageStopped = true
-      yield createTerminalEvent(state)
+      // The upstream messages stream ended without a message_stop event,
+      // which means it was interrupted. Surface a failure instead of
+      // synthesizing a completed response.
+      throw new ResponsesMessagesTranslationError(
+        "Messages stream ended without a message_stop event",
+        502,
+      )
     }
   } catch (error) {
     if (!state.initialized) throw error
