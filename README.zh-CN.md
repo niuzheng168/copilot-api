@@ -850,7 +850,6 @@ curl http://localhost:4141/admin/config/model-mappings \
 | 端点           | 方法 | 说明                                              |
 | -------------- | ---- | ------------------------------------------------- |
 | `GET /usage`   | `GET` | 获取详细的 Copilot 使用统计与额度信息。          |
-| `GET /token`   | `GET` | 获取当前 API 正在使用的 Copilot token。          |
 
 ### Admin / 配置端点
 
