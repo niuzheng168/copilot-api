@@ -5,6 +5,9 @@
   "author": "jeffreycao",
   "desktopName": "copilot-api.desktop",
   "main": "out/main/index.js",
+  "trustedDependencies": [
+    "electron"
+  ],
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
