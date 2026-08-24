@@ -612,7 +612,7 @@ cp plugin/opencode/subagent-marker.js ~/.config/opencode/plugins/
 > token usage 历史记录需要 Bun 或 Node.js >= 22.13.0。Node.js < 22.13.0 时服务会正常运行，但 token usage 存储会被禁用。
 
 - **API Endpoint URL**：通过 URL 查询参数指定 API endpoints，默认指向本地服务。支持手动切换为其他兼容 endpoints。
-- **x-api-key 认证**：如果启用了 API Key 认证，可填入 `x-api-key` 请求头。密钥会持久化保存在浏览器本地存储中。
+- **API Key 认证**：如果启用了 API Key 认证，可填入原始 API key（默认通过 `x-api-key` 请求头发送）或 `Authorization: Bearer <key>`。凭据会按 endpoint origin 保存在浏览器本地存储中；切换到不同 endpoint origin 时，不会自动携带其他 origin 的凭据。
 - **Period 选择器**：支持 Day / Week / Month 三种时间范围，切换时 URL 参数会自动同步，方便收藏和分享。
 - **Fetch Data**：点击 "Refresh" 按钮加载或刷新使用数据。页面加载时也会自动拉取数据。
 - **Copilot Quotas 额度**：通过进度条展示 Chat、Completions 等不同服务的额度使用情况，悬停可查看已用/剩余详情。
