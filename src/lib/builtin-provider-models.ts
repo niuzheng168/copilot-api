@@ -82,17 +82,17 @@ export class BuiltinProviderModelRegistry {
         pricing: {
           tiers: [
             {
-              cacheCreationInput: 6.25,
-              cachedInput: 0.5,
-              input: 5,
+              cacheCreationInput: 5,
+              cachedInput: 0.4,
+              input: 4,
               maxInputTokens: 272_000,
-              output: 30,
+              output: 20,
             },
             {
-              cacheCreationInput: 12.5,
-              cachedInput: 1,
-              input: 10,
-              output: 45,
+              cacheCreationInput: 10,
+              cachedInput: 0.8,
+              input: 8,
+              output: 30,
             },
           ],
         },
