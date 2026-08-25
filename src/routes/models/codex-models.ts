@@ -288,6 +288,17 @@ export function isCodexUserAgent(userAgent: string | undefined): boolean {
   return CODEX_USER_AGENT_PATTERN.test(userAgent?.trim() ?? "")
 }
 
+export function isDeepSeekModelId(modelId: string): boolean {
+  return modelId.toLowerCase().includes("deepseek")
+}
+
+export function shouldInjectMessagesToolCallTips(
+  userAgent: string | undefined,
+  publicModel: string,
+): boolean {
+  return isCodexUserAgent(userAgent) && !isDeepSeekModelId(publicModel)
+}
+
 async function logCodexModelsResponse(response: Response): Promise<void> {
   try {
     const models = (await response.clone().json()) as CodexModelsResponse
@@ -448,7 +459,7 @@ export function createSyntheticCodexModel(
     : reasoningEfforts[0]
   const supportsReasoning = reasoningEfforts.some((effort) => effort !== "none")
   const inputModalities = [...new Set(candidate.inputModalities)]
-  const isDeepSeekModel = candidate.slug.toLowerCase().includes("deepseek")
+  const isDeepSeekModel = isDeepSeekModelId(candidate.slug)
 
   return {
     ...template,
