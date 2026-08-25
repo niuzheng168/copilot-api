@@ -46,7 +46,7 @@ export async function handleResponsesViaMessages(
         publicModel: options.publicModel,
         toolCallTips: shouldInjectMessagesToolCallTips(
           c.req.header("user-agent"),
-          options.publicModel,
+          options.targetModel,
         ),
       },
     )

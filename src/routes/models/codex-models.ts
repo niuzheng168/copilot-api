@@ -294,9 +294,9 @@ export function isDeepSeekModelId(modelId: string): boolean {
 
 export function shouldInjectMessagesToolCallTips(
   userAgent: string | undefined,
-  publicModel: string,
+  targetModel: string,
 ): boolean {
-  return isCodexUserAgent(userAgent) && !isDeepSeekModelId(publicModel)
+  return isCodexUserAgent(userAgent) && !isDeepSeekModelId(targetModel)
 }
 
 async function logCodexModelsResponse(response: Response): Promise<void> {
