@@ -52,8 +52,8 @@ const QUICK_PROVIDER_DEFAULTS: Record<
   },
   kimi: {
     baseUrl: 'https://api.kimi.com/coding',
-    editableType: false,
-    type: 'openai-compatible',
+    editableType: true,
+    type: 'anthropic',
   },
   deepseek: {
     baseUrl: 'https://api.deepseek.com/anthropic',

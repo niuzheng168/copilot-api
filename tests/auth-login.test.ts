@@ -357,7 +357,7 @@ describe("auth login validation", () => {
     })
   })
 
-  test("configures kimi as a fixed openai-compatible quick provider", () => {
+  test("configures kimi with anthropic defaults and an editable type", () => {
     const tempDir = createTempDir()
     writeConfigFile(tempDir, {})
 
@@ -366,7 +366,7 @@ describe("auth login validation", () => {
       `
       const consolaModule = await import("consola");
       const consola = consolaModule.default ?? consolaModule;
-      const answers = ["kimi-key", ""];
+      const answers = ["kimi-key", "__default__", ""];
       consola.prompt = async () => answers.shift();
       consola.info = () => {};
       consola.success = () => {};
@@ -380,7 +380,7 @@ describe("auth login validation", () => {
       baseUrl: "https://api.kimi.com/coding",
       enabled: true,
       pricingCurrency: "USD",
-      type: "openai-compatible",
+      type: "anthropic",
     })
   })
 

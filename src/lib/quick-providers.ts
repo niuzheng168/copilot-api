@@ -15,10 +15,10 @@ export const QUICK_PROVIDER_CONFIGS = {
     editableType: false,
   },
   kimi: {
-    type: "openai-compatible",
+    type: "anthropic",
     baseUrl: "https://api.kimi.com/coding",
     pricingCurrency: "USD",
-    editableType: false,
+    editableType: true,
   },
   deepseek: {
     type: "anthropic",
