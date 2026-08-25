@@ -448,6 +448,7 @@ export function createSyntheticCodexModel(
     : reasoningEfforts[0]
   const supportsReasoning = reasoningEfforts.some((effort) => effort !== "none")
   const inputModalities = [...new Set(candidate.inputModalities)]
+  const isDeepSeekModel = candidate.slug.toLowerCase().includes("deepseek")
 
   return {
     ...template,
@@ -464,8 +465,8 @@ export function createSyntheticCodexModel(
     apply_patch_tool_type: "freeform",
     web_search_tool_type: "text_and_image",
     supports_search_tool: false,
-    use_responses_lite: true,
-    tool_mode: "code_mode_only",
+    use_responses_lite: isDeepSeekModel ? false : true,
+    tool_mode: isDeepSeekModel ? null : "code_mode_only",
     multi_agent_version: "v2",
     shell_type: "shell_command",
     experimental_supported_tools: [],
