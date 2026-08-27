@@ -404,13 +404,20 @@ function handleAssistantMessage(
 
   const signature = thinkingBlocks.find((b) => b.signature)?.signature
 
+  const content = mapContent(message.content, {
+    supportPdf: capabilities.supportPdf,
+  })
+
+  // glm-5.3-flash may break its prompt cache when assistant content is sent
+  // as an array, so flatten single text part arrays to a plain string.
+  const normalizedContent =
+    modelId.startsWith("glm") ? flattenSingleTextPartContent(content) : content
+
   return toolUseBlocks.length > 0 ?
       [
         {
           role: "assistant",
-          content: mapContent(message.content, {
-            supportPdf: capabilities.supportPdf,
-          }),
+          content: normalizedContent,
           reasoning_text: allThinkingContent,
           reasoning_opaque: signature,
           tool_calls: toolUseBlocks.map((toolUse) => ({
@@ -426,13 +433,24 @@ function handleAssistantMessage(
     : [
         {
           role: "assistant",
-          content: mapContent(message.content, {
-            supportPdf: capabilities.supportPdf,
-          }),
+          content: normalizedContent,
           reasoning_text: allThinkingContent,
           reasoning_opaque: signature,
         },
       ]
+}
+
+function flattenSingleTextPartContent(
+  content: string | Array<ContentPart> | null,
+): string | Array<ContentPart> | null {
+  if (
+    Array.isArray(content)
+    && content.length === 1
+    && content[0].type === "text"
+  ) {
+    return content[0].text
+  }
+  return content
 }
 
 function mapContent(
