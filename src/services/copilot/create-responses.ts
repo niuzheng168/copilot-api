@@ -218,7 +218,7 @@ const createPooledResponsesWebSocketStream = (
       streamErrorMessage:
         "Upstream connection lost, Responses websocket stream error",
       terminalChunkMissingMessage:
-        "Responses websocket ended without a terminal response",
+        "Responses websocket ended without a terminal response, retry your request.",
     }),
     { signal: request.signal },
   )

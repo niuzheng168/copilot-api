@@ -489,7 +489,7 @@ const createCodexResponsesWebSocketStream = (
       streamErrorMessage:
         "Upstream connection lost, Codex responses websocket stream error",
       terminalChunkMissingMessage:
-        "Codex responses websocket ended without a terminal response",
+        "Codex responses websocket ended without a terminal response, retry your request.",
     }),
     { signal: request.signal },
   )
