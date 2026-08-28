@@ -8,10 +8,12 @@ import {
 } from "~/lib/config"
 import { createHandlerLogger, debugJson, debugJsonTail } from "~/lib/logger"
 import { findEndpointModel } from "~/lib/models"
-import { parseProviderModelAlias } from "~/lib/provider-model"
-import { resolveProviderConfig } from "~/lib/provider-resolver"
+import { resolveConfiguredProviderModelAlias } from "~/lib/provider-resolver"
 import { isCodexUserAgent } from "~/routes/models/codex-models"
-import { handleProviderResponsesForProvider } from "~/routes/provider/responses/handler"
+import {
+  handleProviderResponsesForProvider,
+  providerResponsesHandlerDependencies,
+} from "~/routes/provider/responses/handler"
 import {
   createCopilotTokenUsageRecorder,
   normalizeOptionalToken,
@@ -53,7 +55,6 @@ export const responsesHandlerDependencies = {
   findEndpointModel,
   isResponsesApiWebSearchEnabled: isConfiguredResponsesApiWebSearchEnabled,
   resolveMappedModel,
-  resolveProviderConfig,
 }
 
 export const handleResponses = async (c: Context) => {
@@ -66,25 +67,17 @@ export const handleResponses = async (c: Context) => {
     )
   }
 
-  const providerModelAlias = parseProviderModelAlias(payload.model)
+  const providerModelAlias = await resolveConfiguredProviderModelAlias(
+    payload.model,
+    providerResponsesHandlerDependencies.resolveProviderConfig,
+  )
   if (providerModelAlias) {
-    // Only treat the "/" prefix as a custom provider alias when that provider
-    // is actually configured. GitHub Copilot enterprise models can ship with
-    // namespaced ids such as "org/family/model" that must fall through to the
-    // default model lookup instead of being misrouted to a non-existent
-    // provider and surfaced as a 400.
-    const providerConfig =
-      await responsesHandlerDependencies.resolveProviderConfig(
-        providerModelAlias.provider,
-      )
-    if (providerConfig) {
-      payload.model = providerModelAlias.model
-      return await handleProviderResponsesForProvider(c, {
-        payload,
-        provider: providerModelAlias.provider,
-        publicModel: requestedModel,
-      })
-    }
+    payload.model = providerModelAlias.model
+    return await handleProviderResponsesForProvider(c, {
+      payload,
+      provider: providerModelAlias.provider,
+      publicModel: requestedModel,
+    })
   }
 
   debugJson(logger, "Responses request payload:", payload)
