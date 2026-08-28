@@ -486,7 +486,8 @@ const createCodexResponsesWebSocketStream = (
       openTimeoutMs: transportConfig.websocketOpenTimeoutMs,
       poolIdleTimeoutMs: transportConfig.websocketPoolIdleTimeoutMs,
       streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
-      streamErrorMessage: "Codex responses websocket stream error",
+      streamErrorMessage:
+        "Upstream connection lost, Codex responses websocket stream error",
       terminalChunkMissingMessage:
         "Codex responses websocket ended without a terminal response",
     }),

@@ -215,7 +215,8 @@ const createPooledResponsesWebSocketStream = (
       openTimeoutMs: transportConfig.websocketOpenTimeoutMs,
       poolIdleTimeoutMs: transportConfig.websocketPoolIdleTimeoutMs,
       streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
-      streamErrorMessage: "Responses websocket stream error",
+      streamErrorMessage:
+        "Upstream connection lost, Responses websocket stream error",
       terminalChunkMissingMessage:
         "Responses websocket ended without a terminal response",
     }),

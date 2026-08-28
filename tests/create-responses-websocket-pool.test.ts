@@ -601,7 +601,7 @@ test("Responses websocket stream failure includes the underlying reason", async 
   expect(chunks).toHaveLength(1)
   expect(chunks[0]?.event).toBe("error")
   expect(chunks[0]?.data).toContain(
-    '"message":"Responses websocket stream error: socket hang up"',
+    '"message":"Upstream connection lost, Responses websocket stream error: socket hang up"',
   )
 })
 
