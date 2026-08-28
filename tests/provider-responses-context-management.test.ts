@@ -106,7 +106,6 @@ beforeEach(async () => {
     resolveProviderConfig
   providerResponsesHandlerDependencies.resolveProviderConfig =
     resolveProviderConfig
-  responsesHandlerDependencies.resolveProviderConfig = resolveProviderConfig
   responsesHandlerDependencies.resolveMappedModel = (model) => model
   responsesUtilsDependencies.getModelResponsesApiCompactThreshold = () =>
     undefined
