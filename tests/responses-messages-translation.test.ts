@@ -873,6 +873,35 @@ describe("Responses Lite to Messages translation", () => {
     ).toEqual({ effort: "max" })
   })
 
+  test("marks reasoning translated from a Messages response", () => {
+    const translation = translate({ input: "Explain the result" })
+    const result = translateAnthropicToResponses(
+      {
+        content: [
+          {
+            type: "thinking",
+            thinking: "Check the result.",
+            signature: "claude-signature",
+          },
+        ],
+        id: "msg_reasoning",
+        model: "claude-sonnet-4.6",
+        role: "assistant",
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        type: "message",
+        usage: { input_tokens: 8, output_tokens: 3 },
+      },
+      translation,
+    )
+
+    expect(result.output[0]).toMatchObject({
+      type: "reasoning",
+      encrypted_content: "claude-signature",
+    })
+    expect(result.output[0]?.id?.endsWith("__a1")).toBe(true)
+  })
+
   test("translates an apply_patch tool use back to a custom tool call", () => {
     const translation = translate({
       input: [
@@ -903,6 +932,7 @@ describe("Responses Lite to Messages translation", () => {
     }
 
     const result = translateAnthropicToResponses(response, translation)
+    expect(result.output[0]?.id).toMatch(/^ctc_/)
     expect(result.output).toMatchObject([
       {
         type: "custom_tool_call",
@@ -1013,6 +1043,7 @@ describe("Responses Lite to Messages translation", () => {
       outputDone?.type === "response.output_item.done"
       && outputDone.item.type === "custom_tool_call"
     ) {
+      expect(outputDone.item.id).toMatch(/^ctc_/)
       expect(outputDone.item).toMatchObject({
         type: "custom_tool_call",
         name: "apply_patch",
@@ -1091,6 +1122,8 @@ describe("Responses Lite to Messages translation", () => {
     })
 
     expect(reasoningItems).toHaveLength(4)
+    expect(new Set(reasoningItems.map((item) => item.id)).size).toBe(2)
+    expect(reasoningItems.every((item) => item.id.endsWith("__a1"))).toBe(true)
     expect(reasoningItems[0]?.encrypted_content).toBe("")
     expect(reasoningItems[1]?.encrypted_content).toBe("")
     expect(reasoningItems[2]?.encrypted_content).toBe("")
