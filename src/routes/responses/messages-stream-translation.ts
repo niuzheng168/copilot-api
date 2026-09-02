@@ -479,7 +479,6 @@ function* startContentBlock(
   if (block.type === "tool_use") {
     const descriptor = resolveToolDescriptor(state.context.registry, block.name)
     const common = {
-      id: `fc_${state.responseId.slice(-18)}_${event.index}`,
       call_id: block.id,
       name: descriptor.name,
       status: "in_progress" as const,
@@ -488,6 +487,7 @@ function* startContentBlock(
     if (descriptor.kind === "custom") {
       const item: ResponseOutputCustomToolCall = {
         ...common,
+        id: `ctc_${state.responseId.slice(-18)}_${event.index}`,
         type: "custom_tool_call",
         input: "",
       }
@@ -520,6 +520,7 @@ function* startContentBlock(
 
     const item: ResponseOutputFunctionCall = {
       ...common,
+      id: `fc_${state.responseId.slice(-18)}_${event.index}`,
       type: "function_call",
       arguments: "",
     }

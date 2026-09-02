@@ -1042,6 +1042,7 @@ describe("Responses Lite to Messages translation", () => {
       outputDone?.type === "response.output_item.done"
       && outputDone.item.type === "custom_tool_call"
     ) {
+      expect(outputDone.item.id).toMatch(/^ctc_/)
       expect(outputDone.item).toMatchObject({
         type: "custom_tool_call",
         name: "apply_patch",
