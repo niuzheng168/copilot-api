@@ -991,7 +991,6 @@ function translateToolUseOutput(
 ): ResponseOutputFunctionCall | ResponseOutputCustomToolCall {
   const descriptor = resolveToolDescriptor(registry, block.name)
   const common = {
-    id: `fc_${createStableHash(idSeed)}`,
     call_id: block.id,
     name: descriptor.name,
     status: "completed" as const,
@@ -1000,12 +999,14 @@ function translateToolUseOutput(
   if (descriptor.kind === "custom") {
     return {
       ...common,
+      id: `ctc_${createStableHash(idSeed)}`,
       type: "custom_tool_call",
       input: decodeCustomToolInput(block.input),
     }
   }
   return {
     ...common,
+    id: `fc_${createStableHash(idSeed)}`,
     type: "function_call",
     arguments: JSON.stringify(block.input),
   }

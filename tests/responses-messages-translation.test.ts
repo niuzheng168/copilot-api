@@ -932,6 +932,7 @@ describe("Responses Lite to Messages translation", () => {
     }
 
     const result = translateAnthropicToResponses(response, translation)
+    expect(result.output[0]?.id).toMatch(/^ctc_/)
     expect(result.output).toMatchObject([
       {
         type: "custom_tool_call",
