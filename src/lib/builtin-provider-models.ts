@@ -366,6 +366,17 @@ export class BuiltinProviderModelRegistry {
         },
         reasoningEfforts: ["minimal", "low", "medium", "high", "xhigh"],
       },
+      "muse-spark-1.3-contributor": {
+        contextWindow: 1_048_576,
+        inputModalities: ["text", "image"],
+        maxOutputTokens: 131_072,
+        pricing: {
+          cachedInput: 0.002,
+          input: 0.1,
+          output: 0.2,
+        },
+        reasoningEfforts: ["minimal", "low", "medium", "high", "xhigh"],
+      },
       "grok-4.5": {
         contextWindow: 500_000,
         defaultReasoningEffort: "high",
