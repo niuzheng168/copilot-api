@@ -39,6 +39,12 @@ const expectCanonicalBase64 = (value: string | undefined) => {
 }
 
 describe("Responses Lite to Messages translation", () => {
+  test("includes yielded execution resume guidance in tool call tips", () => {
+    expect(MESSAGES_TOOL_CALL_TIPS).toContain(
+      "- Yielded execution is not truncated output. Resume a running `cell_id` with `functions.wait`, and a live `session_id` with `tools.write_stdin`, until the command reaches a terminal result.",
+    )
+  })
+
   test("prefers request session affinity for metadata user id", () => {
     const result = requestContext.run(
       {
