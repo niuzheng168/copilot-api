@@ -630,6 +630,43 @@ describe("Responses Lite to Messages translation", () => {
     ])
   })
 
+  test("keeps an empty thinking text for reasoning items without a summary", () => {
+    const result = translate({
+      input: [
+        { role: "user", content: "What is 2 + 2?", type: "message" },
+        {
+          id: "reasoning-1",
+          type: "reasoning",
+          summary: [],
+          encrypted_content: "reasoning-signature",
+        },
+      ],
+    })
+
+    expect(result.messagesPayload.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "What is 2 + 2?",
+            cache_control: { type: "ephemeral" },
+          },
+        ],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "thinking",
+            thinking: "",
+            signature: "reasoning-signature",
+          },
+        ],
+      },
+    ])
+  })
+
   test("restores namespace on Responses function calls", () => {
     const translation = translate({
       input: [

@@ -684,7 +684,7 @@ function translateInputReasoning(
     : ""
   appendAssistantBlock(messages, {
     type: "thinking",
-    thinking: thinking || "Thinking...",
+    thinking: thinking || "",
     signature: item.encrypted_content ?? "",
   })
 }
