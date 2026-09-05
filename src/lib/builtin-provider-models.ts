@@ -140,6 +140,25 @@ export class BuiltinProviderModelRegistry {
           ],
         },
       },
+      "gpt-6-astra": {
+        pricing: {
+          tiers: [
+            {
+              cacheCreationInput: 12.5,
+              cachedInput: 1,
+              input: 10,
+              maxInputTokens: 272_000,
+              output: 50,
+            },
+            {
+              cacheCreationInput: 25,
+              cachedInput: 2,
+              input: 20,
+              output: 75,
+            },
+          ],
+        },
+      },
     },
     dashscope: {
       "glm-5.1": {
@@ -356,6 +375,17 @@ export class BuiltinProviderModelRegistry {
         reasoningEfforts: ["low", "high", "max"],
       },
       "muse-spark-1.2-contributor": {
+        contextWindow: 1_048_576,
+        inputModalities: ["text", "image"],
+        maxOutputTokens: 131_072,
+        pricing: {
+          cachedInput: 0.002,
+          input: 0.1,
+          output: 0.2,
+        },
+        reasoningEfforts: ["minimal", "low", "medium", "high", "xhigh"],
+      },
+      "muse-spark-1.3-contributor": {
         contextWindow: 1_048_576,
         inputModalities: ["text", "image"],
         maxOutputTokens: 131_072,
