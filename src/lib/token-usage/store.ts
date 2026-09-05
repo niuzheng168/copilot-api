@@ -19,11 +19,11 @@ export type TokenUsageEndpoint =
   | "responses"
 
 export type TokenUsagePeriod =
-  | "day"
-  | "weekToDate"
-  | "week"
-  | "monthToDate"
-  | "month"
+  | "today"
+  | "this_week"
+  | "last_7_days"
+  | "this_month"
+  | "last_30_days"
   | "lifetime"
 
 export interface UsageTokens {
@@ -355,8 +355,8 @@ async function flushTokenUsageEvents(): Promise<void> {
 }
 
 function getPeriodRange(period: TokenUsagePeriod, now = new Date()) {
+  const nowMs = now.getTime()
   if (period === "lifetime") {
-    const nowMs = now.getTime()
     return {
       endMs: nowMs + 1,
       startMs: nowMs + 1,
@@ -367,23 +367,23 @@ function getPeriodRange(period: TokenUsagePeriod, now = new Date()) {
   start.setHours(0, 0, 0, 0)
 
   switch (period) {
-    case "day": {
+    case "today": {
       break
     }
-    case "weekToDate": {
+    case "this_week": {
       const daysSinceMonday = (start.getDay() + 6) % 7
       start.setDate(start.getDate() - daysSinceMonday)
       break
     }
-    case "week": {
+    case "last_7_days": {
       start.setDate(start.getDate() - 6)
       break
     }
-    case "monthToDate": {
+    case "this_month": {
       start.setDate(1)
       break
     }
-    case "month": {
+    case "last_30_days": {
       start.setDate(start.getDate() - 29)
       break
     }
@@ -392,32 +392,8 @@ function getPeriodRange(period: TokenUsagePeriod, now = new Date()) {
     }
   }
 
-  const end = new Date(start)
-  switch (period) {
-    case "day": {
-      end.setDate(end.getDate() + 1)
-      break
-    }
-    case "weekToDate":
-    case "monthToDate": {
-      end.setTime(now.getTime() + 1)
-      break
-    }
-    case "week": {
-      end.setDate(end.getDate() + 7)
-      break
-    }
-    case "month": {
-      end.setDate(end.getDate() + 30)
-      break
-    }
-    default: {
-      break
-    }
-  }
-
   return {
-    endMs: end.getTime(),
+    endMs: nowMs + 1,
     startMs: start.getTime(),
   }
 }

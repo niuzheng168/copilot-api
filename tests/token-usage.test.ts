@@ -17,6 +17,7 @@ import {
   recordTokenUsageEvent,
   type TokenUsageDailySummary,
   type TokenUsageEventsPage,
+  type TokenUsagePeriod,
   type TokenUsageSummary,
 } from "~/lib/token-usage"
 import { resolveTokenUsageCost } from "~/lib/token-usage/pricing"
@@ -47,7 +48,7 @@ function createTokenUsageApp(): Hono {
 
 async function fetchEventsPage(pageSize = 20): Promise<TokenUsageEventsPage> {
   const response = await createTokenUsageApp().request(
-    `/token-usage/events?period=day&page=1&page_size=${pageSize}`,
+    `/token-usage/events?period=today&page=1&page_size=${pageSize}`,
   )
   expect(response.status).toBe(200)
   return (await response.json()) as TokenUsageEventsPage
@@ -150,7 +151,7 @@ describe("token usage storage", () => {
     })
 
     const response = await createTokenUsageApp().request(
-      "/token-usage?period=day",
+      "/token-usage?period=today",
     )
     expect(response.status).toBe(200)
     const summary = (await response.json()) as TokenUsageSummary
@@ -179,7 +180,7 @@ describe("token usage storage", () => {
     })
 
     const response = await createTokenUsageApp().request(
-      "/token-usage?period=day",
+      "/token-usage?period=today",
     )
     expect(response.status).toBe(200)
 
@@ -230,7 +231,7 @@ describe("token usage storage", () => {
     })
 
     const response = await createTokenUsageApp().request(
-      "/token-usage/events?period=day&page=1&page_size=1",
+      "/token-usage/events?period=today&page=1&page_size=1",
     )
     expect(response.status).toBe(200)
 
@@ -279,7 +280,7 @@ describe("token usage storage", () => {
     }
 
     const response = await createTokenUsageApp().request(
-      "/token-usage?period=day",
+      "/token-usage?period=today",
     )
     expect(response.status).toBe(200)
     const summary = (await response.json()) as TokenUsageSummary
@@ -604,11 +605,11 @@ describe("token usage storage", () => {
       expect(response.status).toBe(200)
       return (await response.json()) as TokenUsageSummary
     }
-    const week = await summary("weekToDate")
+    const week = await summary("this_week")
     expect(week.range.start_ms).toBe(localDate(2026, 4, 11, 0).getTime())
     expect(week.range.end_ms).toBe(now.getTime() + 1)
     expect(week.totals.input_tokens).toBe(12)
-    const month = await summary("monthToDate")
+    const month = await summary("this_month")
     expect(month.range.start_ms).toBe(monthStart.getTime())
     expect(month.range.end_ms).toBe(now.getTime() + 1)
     expect(month.totals.input_tokens).toBe(14)
@@ -618,7 +619,7 @@ describe("token usage storage", () => {
     expect(lifetime.totals.input_tokens).toBe(15)
 
     const dailyResponse = await app.request(
-      "/token-usage/daily?period=weekToDate",
+      "/token-usage/daily?period=this_week",
     )
     const daily = (await dailyResponse.json()) as TokenUsageDailySummary
     expect(daily.days).toHaveLength(5)
@@ -626,7 +627,7 @@ describe("token usage storage", () => {
     expect(daily.days[4]?.totals.input_tokens).toBe(8)
 
     const monthDailyResponse = await app.request(
-      "/token-usage/daily?period=monthToDate",
+      "/token-usage/daily?period=this_month",
     )
     const monthDaily =
       (await monthDailyResponse.json()) as TokenUsageDailySummary
@@ -654,6 +655,29 @@ describe("token usage storage", () => {
     expect(summary.totals.request_count).toBe(0)
     expect(daily.range.start_ms).toBe(daily.range.end_ms)
     expect(daily.days).toEqual([])
+  })
+
+  test("maps legacy period names to the renamed periods", async () => {
+    const now = localDate(2026, 4, 15, 15, 30)
+    setSystemTime(now)
+    const app = createTokenUsageApp()
+    const legacyPeriods: Array<[string, TokenUsagePeriod]> = [
+      ["day", "today"],
+      ["week", "last_7_days"],
+      ["month", "last_30_days"],
+    ]
+
+    for (const [legacy, expected] of legacyPeriods) {
+      const response = await app.request(`/token-usage?period=${legacy}`)
+      expect(response.status).toBe(200)
+      const summary = (await response.json()) as TokenUsageSummary
+      expect(summary.period).toBe(expected)
+      expect(summary.range.end_ms).toBe(now.getTime() + 1)
+    }
+
+    const weekResponse = await app.request("/token-usage?period=week")
+    const weekSummary = (await weekResponse.json()) as TokenUsageSummary
+    expect(weekSummary.range.start_ms).toBe(localDate(2026, 4, 9, 0).getTime())
   })
 
   test("returns daily token usage buckets by model with total tokens", async () => {
@@ -700,12 +724,12 @@ describe("token usage storage", () => {
 
     setSystemTime(localDate(2026, 4, 15))
     const response = await createTokenUsageApp().request(
-      "/token-usage/daily?period=week",
+      "/token-usage/daily?period=last_7_days",
     )
     expect(response.status).toBe(200)
 
     const daily = (await response.json()) as TokenUsageDailySummary
-    expect(daily.period).toBe("week")
+    expect(daily.period).toBe("last_7_days")
     expect(daily.days).toHaveLength(7)
     expect(daily.totals).toEqual({
       cache_creation_input_tokens: 1,
@@ -766,7 +790,7 @@ describe("token usage storage", () => {
     expect(may14?.byModel[0]?.total_tokens).toBe(100)
   })
 
-  test("returns empty daily buckets and falls back invalid period to day", async () => {
+  test("returns empty daily buckets and falls back invalid period to today", async () => {
     setSystemTime(localDate(2026, 4, 15))
     const response = await createTokenUsageApp().request(
       "/token-usage/daily?period=invalid",
@@ -774,7 +798,7 @@ describe("token usage storage", () => {
     expect(response.status).toBe(200)
 
     const daily = (await response.json()) as TokenUsageDailySummary
-    expect(daily.period).toBe("day")
+    expect(daily.period).toBe("today")
     expect(daily.days).toHaveLength(1)
     expect(daily.days[0]?.date).toBe(localDateLabel(localDate(2026, 4, 15)))
     expect(daily.days[0]?.totals.total_tokens).toBe(0)

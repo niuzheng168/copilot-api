@@ -423,11 +423,11 @@
                 id="token-usage-period"
                 class="select-control input-focus"
               >
-                <option value="day">Day</option>
-                <option value="weekToDate">Week to date</option>
-                <option value="week">Week</option>
-                <option value="monthToDate">Month to date</option>
-                <option value="month">Month</option>
+                <option value="today">Today</option>
+                <option value="this_week">This week</option>
+                <option value="last_7_days">Last 7 days</option>
+                <option value="this_month">This month</option>
+                <option value="last_30_days">Last 30 days</option>
                 <option value="lifetime">Lifetime</option>
               </select>
             </div>
@@ -466,7 +466,7 @@
         });
 
         const DEFAULT_ENDPOINT = "http://localhost:4141/usage";
-        const DEFAULT_TOKEN_USAGE_PERIOD = "day";
+        const DEFAULT_TOKEN_USAGE_PERIOD = "today";
         const DEFAULT_TOKEN_USAGE_EVENTS_PAGE_SIZE = 20;
         const MAX_LIFETIME_TREND_POINTS = 180;
         const ALL_METRICS_VALUE = "__all__";
@@ -474,11 +474,11 @@
         const LEGACY_API_KEY_STORAGE_KEY = "copilot-api.usage-viewer.x-api-key";
         const CREDENTIAL_STORAGE_PREFIX = "copilot-api.usage-viewer.credential.";
         const VALID_PERIODS = new Set([
-          "day",
-          "weekToDate",
-          "week",
-          "monthToDate",
-          "month",
+          "today",
+          "this_week",
+          "last_7_days",
+          "this_month",
+          "last_30_days",
           "lifetime",
         ]);
         const EMPTY_TOKEN_USAGE_TOTALS = {
@@ -547,10 +547,17 @@
           );
         }
 
+        const LEGACY_PERIODS = {
+          day: "today",
+          week: "last_7_days",
+          month: "last_30_days",
+        };
+
         function normalizePeriod(value) {
-          return VALID_PERIODS.has(value)
-            ? value
-            : DEFAULT_TOKEN_USAGE_PERIOD;
+          if (VALID_PERIODS.has(value)) {
+            return value;
+          }
+          return LEGACY_PERIODS[value] || DEFAULT_TOKEN_USAGE_PERIOD;
         }
 
         function getSelectedPeriod() {
@@ -906,23 +913,40 @@
           return trimmed || "—";
         }
 
+        function formatRangeDate(value) {
+          const date = new Date(value);
+          if (!Number.isFinite(date.getTime())) {
+            return "N/A";
+          }
+          const options = { day: "numeric", month: "short" };
+          if (date.getFullYear() !== new Date().getFullYear()) {
+            options.year = "numeric";
+          }
+          return date.toLocaleDateString("en-US", options);
+        }
+
+        function formatRangeText(range) {
+          const start = formatRangeDate(range.start_ms);
+          const end = formatRangeDate(range.end_ms - 1);
+          return start === end ? start : `${start} - ${end}`;
+        }
+
         function renderTokenUsageRangeText(period, range) {
           const labels = {
-            day: "Day window",
-            weekToDate: "Week to date",
-            week: "Last 7 days",
-            monthToDate: "Month to date",
-            month: "Last 30 days",
+            today: "Today",
+            this_week: "This week",
+            last_7_days: "Last 7 days",
+            this_month: "This month",
+            last_30_days: "Last 30 days",
             lifetime: "Lifetime",
           };
+          const label = labels[period] || labels.today;
 
-          if (!range) {
-            return labels[period] || labels.day;
+          if (!range || range.end_ms <= range.start_ms) {
+            return label;
           }
 
-          return `${labels[period] || labels.day}: ${formatDateTime(
-            range.start_ms
-          )} - ${formatDateTime(range.end_ms)}`;
+          return `${label}: ${formatRangeText(range)}`;
         }
 
         /**
@@ -1387,7 +1411,7 @@
         }
 
         function renderTokenUsageDailyTrend(dailySummary, error) {
-          if (state.tokenUsagePeriod === "day") {
+          if (state.tokenUsagePeriod === "today") {
             return "";
           }
 

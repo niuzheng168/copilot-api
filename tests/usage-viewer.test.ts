@@ -18,15 +18,18 @@ describe("usage viewer period contract", () => {
     ].map((match) => [match[1], match[2]])
 
     expect(options).toEqual([
-      ["day", "Day"],
-      ["weekToDate", "Week to date"],
-      ["week", "Week"],
-      ["monthToDate", "Month to date"],
-      ["month", "Month"],
+      ["today", "Today"],
+      ["this_week", "This week"],
+      ["last_7_days", "Last 7 days"],
+      ["this_month", "This month"],
+      ["last_30_days", "Last 30 days"],
       ["lifetime", "Lifetime"],
     ])
 
-    expect(html).toContain("return VALID_PERIODS.has(value)")
+    expect(html).toContain("if (VALID_PERIODS.has(value)) {")
+    expect(html).toContain(
+      "LEGACY_PERIODS[value] || DEFAULT_TOKEN_USAGE_PERIOD",
+    )
     expect(html).toContain("const MAX_LIFETIME_TREND_POINTS = 180")
     expect(html).toContain(
       "getDailyTrendTotals(day, selectedModel).request_count > 0",
