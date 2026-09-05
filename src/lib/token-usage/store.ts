@@ -358,8 +358,8 @@ function getPeriodRange(period: TokenUsagePeriod, now = new Date()) {
   if (period === "lifetime") {
     const nowMs = now.getTime()
     return {
-      endMs: nowMs,
-      startMs: nowMs,
+      endMs: nowMs + 1,
+      startMs: nowMs + 1,
     }
   }
 

@@ -32,7 +32,8 @@ describe("usage viewer period contract", () => {
       "getDailyTrendTotals(day, selectedModel).request_count > 0",
     )
     expect(html).toContain("tokenUsageTrendDay: null")
-    expect(html).toContain('data-trend-day="${day.date}"')
+    expect(html).toContain('data-trend-day="${escapeHtml(day.date)}"')
+    expect(html).not.toContain('data-trend-day="${day.date}"')
     expect(html).toContain(
       "fetchJson(buildTokenUsageSummaryUrl(usageUrl, period))",
     )

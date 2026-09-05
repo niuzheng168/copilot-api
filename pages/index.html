@@ -1597,7 +1597,7 @@
                     value
                   )}" r="2.5" fill="${
                     metric.color
-                  }" data-trend-day="${day.date}">
+                  }" data-trend-day="${escapeHtml(day.date)}">
                     <title>${escapeHtml(
                       `${formatChartDate(day.date)} ${metric.label}: ${formatNumber(
                         value
@@ -1641,7 +1641,7 @@
               ].join("\n");
               return `<rect x="${hitStart}" y="${padding.top}" width="${
                 hitEnd - hitStart
-              }" height="${plotHeight}" fill="transparent" style="cursor: pointer;" data-trend-day="${day.date}">
+              }" height="${plotHeight}" fill="transparent" style="cursor: pointer;" data-trend-day="${escapeHtml(day.date)}">
                 <title>${escapeHtml(title)}</title>
               </rect>`;
             })
