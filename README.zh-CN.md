@@ -840,8 +840,8 @@ curl http://localhost:4141/admin/config/model-mappings \
 | 端点                                                       | 方法 | 说明                                                                                                 |
 | ---------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------- |
 | `POST /v1/alpha/search`            | `POST` | 将 Codex alpha-search 请求路由到 Codex 后端，或在本地及通过 Responses web search 处理支持的命令。 |
-| `POST /v1/images/generations` | `POST` | 将 JSON 图片生成请求转发到 Codex Images 上游。请求未携带 `Content-Type` 时，网关默认补充 `application/json`。 |
-| `POST /v1/images/edits` | `POST` | 将图片编辑请求转发到 Codex Images 上游。请使用 `multipart/form-data`，并让 HTTP 客户端自动生成 `boundary`；网关会保留传入的 content type，并以流式方式转发上传请求体。 |
+| `POST /v1/images/generations` | `POST` | 将 JSON 图片生成请求转发到 Codex Images 上游。请求未携带 `Content-Type` 时，网关默认补充 `application/json`。请求 `model` 命中已配置的 model mapping 时会被改写；映射结果为已配置 provider 的 `provider/model` 别名时，请求将转发到该 provider 的 images 端点。 |
+| `POST /v1/images/edits` | `POST` | 将图片编辑请求转发到 Codex Images 上游。请使用 `multipart/form-data`，并让 HTTP 客户端自动生成 `boundary`；网关会保留传入的 content type，并在转发前缓冲上传请求体。model mapping 与 `provider/model` 别名路由同样适用于此端点。 |
 
 对于路由到 Codex 后端的请求，网关会使用当前 Codex 登录态覆盖客户端的 authorization 和 account header，并保留兼容的请求元数据。基于 Responses 的 alpha-search 则遵循所选 Copilot 或 provider 的路由。
 
