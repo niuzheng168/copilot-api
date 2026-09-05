@@ -1,5 +1,3 @@
-import { DefaultAzureCredential, getBearerTokenProvider } from "@azure/identity"
-
 import {
   getRawProviderConfig,
   getProviderConfig,
@@ -12,10 +10,40 @@ import {
 import { state } from "~/lib/state"
 import { setupCodexToken } from "~/lib/token"
 
-const getAzureOpenAIAccessToken = getBearerTokenProvider(
-  new DefaultAzureCredential(),
-  "https://cognitiveservices.azure.com/.default",
-)
+const AZURE_OPENAI_SCOPE = "https://cognitiveservices.azure.com/.default"
+
+type AzureAccessTokenProvider = () => Promise<string>
+
+let cachedAzureAccessTokenProvider: Promise<AzureAccessTokenProvider> | null =
+  null
+
+/**
+ * Lazily creates the Entra token provider on first use and reuses it
+ * afterwards. Importing @azure/identity eagerly adds ~0.5s to every process
+ * startup, and constructing a new DefaultAzureCredential per call would drop
+ * the token cache, so both the import and the credential are singletons.
+ */
+async function getAzureAccessTokenProvider(): Promise<AzureAccessTokenProvider> {
+  cachedAzureAccessTokenProvider ??= (async () => {
+    try {
+      const { DefaultAzureCredential, getBearerTokenProvider } = await import(
+        "@azure/identity"
+      )
+      return getBearerTokenProvider(
+        new DefaultAzureCredential(),
+        AZURE_OPENAI_SCOPE,
+      )
+    } catch (error) {
+      cachedAzureAccessTokenProvider = null
+      throw error
+    }
+  })()
+  return cachedAzureAccessTokenProvider
+}
+
+async function getDefaultAzureAccessToken(): Promise<string> {
+  return (await getAzureAccessTokenProvider())()
+}
 
 function isMissingCodexCredentialsError(error: unknown): boolean {
   return (
@@ -27,7 +55,7 @@ function isMissingCodexCredentialsError(error: unknown): boolean {
 
 export async function resolveProviderConfig(
   providerName: string,
-  getAzureAccessToken: () => Promise<string> = getAzureOpenAIAccessToken,
+  getAzureAccessToken: () => Promise<string> = getDefaultAzureAccessToken,
 ): Promise<ResolvedProviderConfig | null> {
   const normalizedProviderName = providerName.trim()
   if (!normalizedProviderName) {
@@ -61,9 +89,20 @@ export async function resolveProviderConfig(
   }
 
   const providerConfig = getProviderConfig(normalizedProviderName)
-  return providerConfig?.authType === "azure-entra" ?
-      { ...providerConfig, apiKey: await getAzureAccessToken() }
-    : providerConfig
+  if (providerConfig?.authType !== "azure-entra") {
+    return providerConfig
+  }
+
+  try {
+    return { ...providerConfig, apiKey: await getAzureAccessToken() }
+  } catch (error) {
+    throw new Error(
+      `Failed to acquire Azure Entra token for provider '${normalizedProviderName}': ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error },
+    )
+  }
 }
 
 export type ProviderConfigResolver = typeof resolveProviderConfig
