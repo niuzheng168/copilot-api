@@ -442,7 +442,7 @@ describe("model routes", () => {
 
     expect(response.status).toBe(200)
     const body = (await response.json()) as { data: Array<{ id: string }> }
-    expect(body.data.map((model) => model.id)).toContain("codex/gpt-5.4")
+    expect(body.data.map((model) => model.id)).toContain("codex/gpt-6-astra")
     expect(body.data.map((model) => model.id)).toContain("codex/gpt-5.6-sol")
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -1051,7 +1051,7 @@ describe("model routes", () => {
 
     expect(response.status).toBe(200)
     const body = (await response.json()) as { data: Array<{ id: string }> }
-    expect(body.data.map((model) => model.id)).toContain("gpt-5.4")
+    expect(body.data.map((model) => model.id)).toContain("gpt-6-astra")
     expect(body.data.map((model) => model.id)).toContain("gpt-5.6-sol")
     expect(fetchMock).not.toHaveBeenCalled()
   })
