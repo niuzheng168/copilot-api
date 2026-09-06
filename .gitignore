@@ -19,3 +19,29 @@ dist/
 *.vsix
 
 .claude
+
+# Codey deployment credentials and local runtime state
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.pfx
+*.p12
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+*.pid
+*.backup
+*.bak
+*.tgz
+*.tgzz
+*.tar.gz
+artifacts/
+coverage/
+__pycache__/
+.pytest_cache/
