@@ -434,8 +434,11 @@ npx @jeffreycao/copilot-api@latest start
 带参数示例：
 
 ```sh
-npx @jeffreycao/copilot-api@latest start --port 8080
+npx @jeffreycao/copilot-api@latest auth keys --add your-gateway-api-key
+npx @jeffreycao/copilot-api@latest start --host 0.0.0.0 --port 8080
 ```
+
+绑定到 `0.0.0.0` 会将网关暴露到网络，因此服务要求至少配置一个网关 API Key，并将 CORS 限制为同源请求。
 
 如果只想做认证或 provider 配置：
 
@@ -464,15 +467,17 @@ docker build -t copilot-api .
 
 ```sh
 mkdir -p ./copilot-data
+docker run --rm -v $(pwd)/copilot-data:/root/.local/share/copilot-api copilot-api --auth keys --add your-gateway-api-key
 docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api copilot-api
 ```
 
 这会把宿主机上的 `./copilot-data` 映射到容器内的 `/root/.local/share/copilot-api`，用于持久化 GitHub 认证数据、provider 配置和其他 gateway 状态。
+镜像会显式监听 `0.0.0.0` 以支持 Docker 端口映射，并在未配置网关 API Key 时拒绝启动。非回环监听还会将 CORS 限制为请求自身的同源地址。
 
 也可以直接通过环境变量传入 GitHub token：
 
 ```sh
-docker run -p 4141:4141 -e GH_TOKEN=your_github_token_here copilot-api
+docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api -e GH_TOKEN=your_github_token_here copilot-api
 ```
 
 <a id="electron-desktop-app"></a>
@@ -670,6 +675,7 @@ Copilot API 现在使用子命令结构，主要命令包括：
 
 | 选项 | 说明 | 默认值 | 别名 |
 | --- | --- | --- | --- |
+| --host | 监听主机；非回环地址要求已配置网关 API Key | 127.0.0.1 | 无 |
 | --port | 监听端口 | 4141 | -p |
 | --verbose | 启用详细日志 | false | -v |
 | --github-token | 直接提供 GitHub token（必须通过 `auth` 子命令生成） | 无 | -g |
@@ -691,7 +697,7 @@ Copilot API 现在使用子命令结构，主要命令包括：
 
 使用 `copilot-api auth login --provider custom` 可以通过 CLI 新增或更新其他第三方 provider。命令会依次提示输入 provider name、项目支持的 type（`anthropic`、`openai-compatible` 或 `openai-responses`）、`baseUrl`、掩码显示的 `apiKey` 和 `authType`；`authType` 可保持 type 默认值，也可选择 `x-api-key` / `authorization`。
 
-网关 API Key 存放在 `config.json` 的 `auth.apiKeys` 中，可通过 `copilot-api auth keys` 管理（每次只执行一种操作）：`--add <key>` 添加、`--remove <key>` 删除、`--list` 列出全部、`--clear` 清空。客户端通过 `x-api-key` 或 `Authorization: Bearer` 使用任意已配置的 Key 认证。未配置任何 Key 时，`copilot-api start` 会以“不校验认证”的方式启动并输出一条 info 级别的启动提示。
+网关 API Key 存放在 `config.json` 的 `auth.apiKeys` 中，可通过 `copilot-api auth keys` 管理（每次只执行一种操作）：`--add <key>` 添加、`--remove <key>` 删除、`--list` 列出全部、`--clear` 清空。客户端通过 `x-api-key` 或 `Authorization: Bearer` 使用任意已配置的 Key 认证。未配置任何 Key 时，回环监听会以“不校验认证”的方式启动并输出一条 info 级别提示；非回环监听则拒绝启动。
 
 ### Debug 命令选项
 
@@ -744,7 +750,7 @@ Copilot API 现在使用子命令结构，主要命令包括：
     "messageApiWebSearchModel": "gpt-5-mini"
   }
   ```
-- **auth.apiKeys：** 用于普通非 admin 路由的 API key。支持多个 key 轮换使用。请求可通过 `x-api-key: <key>` 或 `Authorization: Bearer <key>` 进行认证。若为空或省略，则普通路由的认证会被禁用。
+- **auth.apiKeys：** 用于普通非 admin 路由的 API key。支持多个 key 轮换使用。请求可通过 `x-api-key: <key>` 或 `Authorization: Bearer <key>` 进行认证。若为空或省略，仅回环监听会禁用普通路由认证；非回环监听会拒绝启动。
 - **auth.adminApiKey：** 仅用于 `/admin/*` 路由的单个 admin key。若未配置，服务会在启动时自动生成一个随机 key，并回写到 `config.json`。它同样使用 `x-api-key` 或 `Authorization: Bearer` 这两种头，但普通 `auth.apiKeys` 不能访问 `/admin/*`。
 - **modelMappings：** 用于顶层 `POST /v1/messages`、`POST /v1/messages/count_tokens`、`POST /v1/responses` 和 `POST /v1/chat/completions` 请求的精确 `sourceModel -> targetModel` 重写映射，这几类接口共用同一份规则。省略该字段或保留为 `{}` 时，不会做模型重写。`source` 和 `target` 都必须是非空字符串。`target` 可以是普通模型 ID，也可以是 `provider/model` 形式的别名，例如 `dashscope/qwen3.6-plus`；重写发生在 provider alias 解析之前。这些映射不再按接口区分。`GET/POST /admin/config/model-mappings` 管理接口读写的也只有这个字段。
 - **extraPrompts：** `model -> prompt` 的映射。把 Anthropic 风格请求翻译为 Responses API 时，会将其附加到第一条 system prompt 后面。你可以借此为不同模型注入护栏或指引。缺失的默认项会自动补齐，但不会覆盖你自定义的 prompt。对于 GPT-5.3+ 模型（如 `gpt-5.3-codex`、`gpt-5.4`、`gpt-5.5`），未显式配置时会自动使用内置的 commentary prompt。内置 prompt 会启用带阶段感知的 commentary，让模型在工具调用或更深层推理前先发出简短的用户可见进度说明。
@@ -794,7 +800,7 @@ Copilot API 现在使用子命令结构，主要命令包括：
 
 ## API 认证
 
-- **受保护的普通路由：** 当配置了 `auth.apiKeys` 且非空时，除 `/`、`/usage-viewer` 和 `/usage-viewer/` 以外的普通路由都需要认证。
+- **受保护的普通路由：** 当配置了 `auth.apiKeys` 且非空时，除 `/`、`/usage-viewer` 和 `/usage-viewer/` 以外的普通路由都需要认证。非回环监听要求启动时存在非空的 `auth.apiKeys`，即使运行期间 Key 被清空也会继续以拒绝请求的方式安全失败。
 - **Admin 路由：** 所有 `/admin/*` 路由都要求 `auth.adminApiKey`。如果缺失，服务会在启动时自动生成并在开始提供服务前写回 `config.json`。
 - **允许的认证头：**
   - `x-api-key: <your_key>`
@@ -828,7 +834,7 @@ curl http://localhost:4141/admin/config/model-mappings \
 
 | 端点                        | 方法 | 说明                                                                                                     |
 | --------------------------- | ---- | -------------------------------------------------------------------------------------------------------- |
-| `POST /v1/responses`        | `POST` | OpenAI 中用于生成模型响应的高级接口。支持 `openai-responses` provider 的 `provider/model` 别名。        |
+| `POST /v1/responses`        | `POST` | OpenAI 中用于生成模型响应的高级接口。支持 `Content-Encoding: zstd` 请求体和 `openai-responses` provider 的 `provider/model` 别名。zstd 请求解压仅作用于 Responses 路由，包括 provider-scoped 别名路由。 |
 | `POST /v1/chat/completions` | `POST` | 为给定聊天对话创建模型响应。支持 `openai-compatible` provider 的 `provider/model` 别名；目标 provider 已配置时可在没有 Copilot 的情况下使用。 |
 | `GET /v1/models`            | `GET` | 列出 Copilot 模型以及已启用 provider 的 `provider/model-id` 模型。来自 Codex 客户端（`User-Agent` 以 `codex` 开头）的请求会转发到 Codex Models 上游。 |
 | `POST /v1/embeddings`       | `POST` | 创建表示输入文本的向量嵌入。                                                                             |
@@ -841,7 +847,7 @@ curl http://localhost:4141/admin/config/model-mappings \
 | ---------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------- |
 | `POST /v1/alpha/search`            | `POST` | 将 Codex alpha-search 请求路由到 Codex 后端，或在本地及通过 Responses web search 处理支持的命令。 |
 | `POST /v1/images/generations` | `POST` | 将 JSON 图片生成请求转发到 Codex Images 上游。请求未携带 `Content-Type` 时，网关默认补充 `application/json`。请求 `model` 命中已配置的 model mapping 时会被改写；映射结果为已配置 provider 的 `provider/model` 别名时，请求将转发到该 provider 的 images 端点。 |
-| `POST /v1/images/edits` | `POST` | 将图片编辑请求转发到 Codex Images 上游。请使用 `multipart/form-data`，并让 HTTP 客户端自动生成 `boundary`；网关会保留传入的 content type，并在转发前缓冲上传请求体。model mapping 与 `provider/model` 别名路由同样适用于此端点。 |
+| `POST /v1/images/edits` | `POST` | 将图片编辑请求转发到 Codex Images 上游。请使用 `multipart/form-data`，并让 HTTP 客户端自动生成 `boundary`；网关在接收上传时就把文件流式写入临时磁盘文件，转发时从磁盘读取，大文件不会常驻内存。multipart 请求总大小上限为 128 MiB，单文件上限为 64 MiB，最多包含 16 个文件；超过限制时返回 `413`。model mapping 与 `provider/model` 别名路由同样适用于此端点。 |
 
 对于路由到 Codex 后端的请求，网关会使用当前 Codex 登录态覆盖客户端的 authorization 和 account header，并保留兼容的请求元数据。基于 Responses 的 alpha-search 则遵循所选 Copilot 或 provider 的路由。
 
