@@ -41,6 +41,9 @@ const { providerImageRoutes } = await import("~/routes/provider/images/route")
 const { server } = await import("~/server")
 
 const originalDebugJsonAsync = imageRouteDependencies.debugJsonAsync
+const originalResolveMappedModel = imageRouteDependencies.resolveMappedModel
+const originalResolveProviderConfig =
+  imageRouteDependencies.resolveProviderConfig
 const originalStageMultipartBodyToDisk =
   imageEditsRouteDependencies.stageMultipartBodyToDisk
 let stagedCleanupTasks: Array<() => Promise<void>> = []
@@ -109,6 +112,14 @@ beforeEach(() => {
   debugJsonAsyncMock.mockClear()
   debugValues = []
   imageRouteDependencies.debugJsonAsync = debugJsonAsyncMock
+  imageRouteDependencies.resolveMappedModel = (model) =>
+    modelMappings[model] ?? model
+  imageRouteDependencies.resolveProviderConfig = (provider) =>
+    Promise.resolve(
+      provider === "codex" ? codexProviderConfig
+      : provider === "openrouter" ? openrouterProviderConfig
+      : null,
+    )
   stagedCleanupTasks = []
   imageEditsRouteDependencies.stageMultipartBodyToDisk = async (
     body,
@@ -130,6 +141,8 @@ afterEach(async () => {
   state.verbose = false
   openrouterProviderConfig = null
   imageRouteDependencies.debugJsonAsync = originalDebugJsonAsync
+  imageRouteDependencies.resolveMappedModel = originalResolveMappedModel
+  imageRouteDependencies.resolveProviderConfig = originalResolveProviderConfig
   imageEditsRouteDependencies.stageMultipartBodyToDisk =
     originalStageMultipartBodyToDisk
 })
