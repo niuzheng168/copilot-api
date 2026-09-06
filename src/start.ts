@@ -3,17 +3,24 @@
 import { defineCommand } from "citty"
 import clipboard from "clipboardy"
 import consola from "consola"
+import { readFileSync } from "node:fs"
 import { serve, type ServerHandler } from "srvx"
 import invariant from "tiny-invariant"
 
 import { runProviderSetup } from "./auth"
+import { createCodeyBrowserHandler } from "./lib/codey-browser-handler"
+import { resolveCodeyHttpsConfig } from "./lib/codey-https-config"
 import { listEnabledProviders, mergeConfigWithDefaults } from "./lib/config"
 import { readGitHubToken } from "./lib/credential-store"
 import { getLatestModelForFamily } from "./lib/models"
 import { initOpencodeVersion } from "./lib/opencode"
 import { ensurePaths } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
-import { getMissingApiKeysMessage } from "./lib/request-auth"
+import {
+  getConfiguredApiKeys,
+  getConfiguredSessionHistoryApiKeys,
+  getMissingApiKeysMessage,
+} from "./lib/request-auth"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
 import { logUser, setupCopilotToken } from "./lib/token"
@@ -205,6 +212,39 @@ export async function runServer(options: RunServerOptions): Promise<void> {
       idleTimeout: 0,
     },
   })
+
+  const codeyHttps = resolveCodeyHttpsConfig()
+  if (codeyHttps) {
+    const signingKey = readFileSync(codeyHttps.signingKeyFile, "utf8").trim()
+    if (signingKey.length < 32) {
+      throw new Error(
+        "COPILOT_API_CODEY_SIGNING_KEY_FILE must contain at least 32 characters",
+      )
+    }
+    const codeyHandler = createCodeyBrowserHandler({
+      allowedOrigin: codeyHttps.allowedOrigin,
+      fetchApp: (request) => server.fetch(request),
+      getHistoryApiKeys: getConfiguredSessionHistoryApiKeys,
+      getUsageApiKeys: getConfiguredApiKeys,
+      nodeId: codeyHttps.nodeId,
+      signingKey,
+    })
+    serve({
+      fetch: codeyHandler as ServerHandler,
+      hostname: codeyHttps.host,
+      port: codeyHttps.port,
+      tls: {
+        cert: codeyHttps.certPath,
+        key: codeyHttps.keyPath,
+      },
+      bun: {
+        idleTimeout: 0,
+      },
+    })
+    consola.box(
+      `🔒 Codey HTTPS: https://${codeyHttps.nodeId}:${codeyHttps.port}`,
+    )
+  }
 }
 
 export const start = defineCommand({
