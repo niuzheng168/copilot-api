@@ -780,7 +780,7 @@ These endpoints mimic the OpenAI API structure.
 
 | Endpoint                    | Method | Description                                                      |
 | --------------------------- | ------ | ---------------------------------------------------------------- |
-| `POST /v1/responses`        | `POST` | OpenAI Most advanced interface for generating model responses. Supports `provider/model` aliases for `openai-responses` providers. |
+| `POST /v1/responses`        | `POST` | OpenAI Most advanced interface for generating model responses. Supports `Content-Encoding: zstd` request bodies and `provider/model` aliases for `openai-responses` providers. Zstd request decompression is limited to Responses routes, including provider-scoped aliases. |
 | `POST /v1/chat/completions` | `POST` | Creates a model response for the given chat conversation. Supports `provider/model` aliases for `openai-compatible` providers and can be used without Copilot when the target provider is configured. |
 | `GET /v1/models`            | `GET`  | Lists Copilot models plus enabled provider models using `provider/model-id` IDs. Requests from Codex clients (`User-Agent` beginning with `codex`) are forwarded to the Codex Models upstream. |
 | `POST /v1/embeddings`       | `POST` | Creates an embedding vector representing the input text.         |
@@ -793,7 +793,7 @@ These endpoints implement Codex backend APIs. Top-level image requests require a
 | -------------------------------------------------------------- | ------ | --------------------------------------------------------------- |
 | `POST /v1/alpha/search`                | `POST` | Routes Codex alpha-search requests to the Codex backend, or handles supported commands locally and through Responses web search. |
 | `POST /v1/images/generations` | `POST` | Forwards a JSON image generation request to the Codex Images upstream. When the request omits `Content-Type`, the gateway defaults it to `application/json`. Configured model mappings apply to the request `model`; a mapping that resolves to a `provider/model` alias forwards the request to that provider's images endpoint when the provider is configured. |
-| `POST /v1/images/edits` | `POST` | Forwards an image edit request to the Codex Images upstream. Send this request as `multipart/form-data` and let the HTTP client generate the `boundary`; the gateway preserves the incoming content type and buffers the upload body before forwarding it. Model mappings and `provider/model` alias routing apply to this endpoint as well. |
+| `POST /v1/images/edits` | `POST` | Forwards an image edit request to the Codex Images upstream. Send this request as `multipart/form-data` and let the HTTP client generate the `boundary`. The gateway streams uploaded files to temporary disk files while receiving them and forwards them from disk, so large uploads are not held in memory. Multipart requests are limited to 128 MiB total, 64 MiB per file, and 16 files; requests over a limit return `413`. Model mappings and `provider/model` alias routing apply to this endpoint as well. |
 
 For requests routed to the Codex backend, the gateway replaces client authorization and account headers with the active Codex login and preserves compatible request metadata. Responses-backed alpha search instead follows the selected Copilot or provider route.
 

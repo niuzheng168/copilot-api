@@ -8,7 +8,6 @@ import {
   getConfiguredAdminApiKeys,
 } from "./lib/request-auth"
 import { traceIdMiddleware } from "./lib/trace"
-import { zstdDecompressionMiddleware } from "./lib/zstd-request"
 import { alphaSearchRoutes } from "./routes/alpha-search/route"
 import { completionRoutes } from "./routes/chat-completions/route"
 import { configRoutes } from "./routes/admin/config/route"
@@ -45,7 +44,6 @@ server.use(
     allowWhenNoApiKeys: false,
   }),
 )
-server.use(zstdDecompressionMiddleware)
 
 server.get("/", (c) => c.text("Server running"))
 server.get("/usage-viewer", (c) => {
