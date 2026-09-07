@@ -19,7 +19,7 @@ import {
   prepareInteractionHeaders,
 } from "~/lib/api-config"
 import { COMPACT_REQUEST, type CompactType } from "~/lib/compact"
-import { getResponsesTransportConfig } from "~/lib/config"
+import { getUpstreamTransportConfig } from "~/lib/config"
 import {
   logCopilotQuotaSnapshots,
   logCopilotRateLimits,
@@ -36,10 +36,7 @@ import {
   encodePoolKeyPart,
   isTerminalResponsesStreamChunk,
 } from "~/services/responses-websocket-helpers"
-import {
-  createResponsesHttpEventStream,
-  fetchResponsesWithLifecycle,
-} from "~/services/responses-http"
+import { createResponsesHttpEventStream } from "~/services/responses-http"
 import {
   fetchCopilotResponsesWithRecovery,
   listEncryptedHistoryItems,
@@ -47,6 +44,7 @@ import {
   staleEncryptedContentStore,
   type EncryptedHistoryStore,
 } from "~/services/copilot/responses-resilience"
+import { fetchUpstreamWithLifecycle } from "~/services/upstream-http"
 
 interface ResponsesRequestOptions {
   vision: boolean
@@ -56,7 +54,7 @@ interface ResponsesRequestOptions {
   sessionId?: string
   compactType?: CompactType
   transport?: ResponsesTransport
-  signal?: AbortSignal
+  clientSignal?: AbortSignal
 }
 
 export const copilotResponsesDependencies: {
@@ -75,7 +73,7 @@ export const createResponses = async (
     sessionId,
     compactType,
     transport = "http",
-    signal,
+    clientSignal,
   }: ResponsesRequestOptions,
 ): Promise<CreateResponsesReturn> => {
   if (!state.copilotToken) throw new Error("Copilot token not found")
@@ -109,32 +107,35 @@ export const createResponses = async (
     compactType === COMPACT_REQUEST || hasEncryptedHistory ? "http" : transport
 
   if (payload.stream === true && effectiveTransport === "websocket") {
+    clientSignal?.throwIfAborted()
     const websocketRequest = prepareResponsesWebSocketRequest(
       payload,
       headers,
       {
         requestId,
-        signal,
         subagentMarker,
       },
     )
-    const stream = createPooledResponsesWebSocketStream(websocketRequest)
+    const stream = createPooledResponsesWebSocketStream(
+      websocketRequest,
+      clientSignal,
+    )
     return stream
   }
 
-  return await createHttpResponses(payload, headers, signal)
+  return await createHttpResponses(payload, headers, clientSignal)
 }
 
 const createHttpResponses = async (
   payload: ResponsesPayload,
   headers: Record<string, string>,
-  signal?: AbortSignal,
+  clientSignal?: AbortSignal,
 ): Promise<CreateResponsesReturn> => {
-  const transportConfig = getResponsesTransportConfig()
+  const transportConfig = getUpstreamTransportConfig()
   const response = await fetchCopilotResponsesWithRecovery(
     payload,
     (nextPayload) =>
-      fetchResponsesWithLifecycle(
+      fetchUpstreamWithLifecycle(
         `${copilotBaseUrl(state)}/responses`,
         {
           method: "POST",
@@ -142,8 +143,8 @@ const createHttpResponses = async (
           body: JSON.stringify(nextPayload),
         },
         {
+          clientSignal,
           headersTimeoutMs: transportConfig.headersTimeoutMs,
-          signal,
           streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
         },
       ),
@@ -158,10 +159,7 @@ const createHttpResponses = async (
   }
 
   if (payload.stream) {
-    return createResponsesSafeStream(
-      createResponsesHttpEventStream(response, signal),
-      { signal },
-    )
+    return createResponsesSafeStream(createResponsesHttpEventStream(response))
   }
 
   return (await response.json()) as ResponsesResult
@@ -180,7 +178,6 @@ export const prepareResponsesWebSocketRequest = (
   preparedHeaders: Record<string, string>,
   options: {
     requestId: string
-    signal?: AbortSignal
     subagentMarker?: SubagentMarker | null
   },
 ): ResponsesWebSocketRequest => {
@@ -190,7 +187,6 @@ export const prepareResponsesWebSocketRequest = (
     headers: copilotWebSocketHeaders(preparedHeaders),
     poolKey: buildResponsesWebSocketPoolKey(payload, options),
     payload: buildResponsesWebSocketPayload(payload, initiator),
-    signal: options.signal,
     url: buildResponsesWebSocketUrl(copilotBaseUrl(state)),
   }
 }
@@ -232,25 +228,41 @@ export const getResponsesWebSocketInitiator = (
 
 const createPooledResponsesWebSocketStream = (
   request: ResponsesWebSocketRequest,
-): ResponsesStream => {
-  const transportConfig = getResponsesTransportConfig()
-  return createResponsesSafeStream(
-    createPooledWebSocketStream(request, {
-      createChunk: createResponsesWebSocketStreamChunk,
-      maxBufferedBytes: transportConfig.websocketMaxBufferedBytes,
-      maxBufferedMessages: transportConfig.websocketMaxBufferedMessages,
-      isTerminalChunk: isTerminalResponsesStreamChunk,
-      openErrorMessage: "Failed to create responses websocket",
-      openTimeoutMs: transportConfig.websocketOpenTimeoutMs,
-      poolIdleTimeoutMs: transportConfig.websocketPoolIdleTimeoutMs,
-      streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
-      streamErrorMessage:
-        "Upstream connection lost, Responses websocket stream error",
-      terminalChunkMissingMessage:
-        "Responses websocket ended without a terminal response, retry your request.",
-    }),
-    { signal: request.signal },
+  clientSignal?: AbortSignal,
+): ResponsesStream =>
+  createResponsesSafeStream(
+    createClientPreflightStream(
+      createPooledWebSocketStream(request, {
+        ...getResponsesWebSocketOptions(),
+      }),
+      clientSignal,
+    ),
   )
+
+const getResponsesWebSocketOptions = () => {
+  const transportConfig = getUpstreamTransportConfig()
+  return {
+    createChunk: createResponsesWebSocketStreamChunk,
+    maxBufferedBytes: transportConfig.websocketMaxBufferedBytes,
+    maxBufferedMessages: transportConfig.websocketMaxBufferedMessages,
+    isTerminalChunk: isTerminalResponsesStreamChunk,
+    openErrorMessage: "Failed to create responses websocket",
+    openTimeoutMs: transportConfig.websocketOpenTimeoutMs,
+    poolIdleTimeoutMs: transportConfig.websocketPoolIdleTimeoutMs,
+    streamInactivityTimeoutMs: transportConfig.streamInactivityTimeoutMs,
+    streamErrorMessage:
+      "Upstream connection lost, Responses websocket stream error",
+    terminalChunkMissingMessage:
+      "Responses websocket ended without a terminal response, retry your request.",
+  }
+}
+
+const createClientPreflightStream = async function* <T>(
+  source: AsyncIterable<T>,
+  clientSignal?: AbortSignal,
+): AsyncGenerator<T, void, unknown> {
+  if (clientSignal?.aborted) return
+  yield* source
 }
 
 export const buildResponsesWebSocketPayload = (
