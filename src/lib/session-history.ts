@@ -266,20 +266,23 @@ export class SessionHistoryService {
     const offset = options.offset ?? 0
     const startAtMs = options.startAtMs ?? 0
 
-    const rows = await this.withDatabase((db) => {
-      const columns = this.threadColumns(db)
-      const selected = THREAD_COLUMNS.filter((column) => columns.has(column))
-      if (!selected.includes("id")) {
-        throw new SessionHistoryRequestError(
-          "Codex threads table does not contain id",
-          503,
-        )
-      }
-      return db
-        .prepare(`SELECT ${selected.join(", ")} FROM threads LIMIT ?`)
-        .all(MAX_THREAD_ROWS + 1)
-        .map(asRow)
-    })
+    const rows = await this.withDatabase(
+      (db) => {
+        const columns = this.threadColumns(db)
+        const selected = THREAD_COLUMNS.filter((column) => columns.has(column))
+        if (!selected.includes("id")) {
+          throw new SessionHistoryRequestError(
+            "Codex threads table does not contain id",
+            503,
+          )
+        }
+        return db
+          .prepare(`SELECT ${selected.join(", ")} FROM threads LIMIT ?`)
+          .all(MAX_THREAD_ROWS + 1)
+          .map(asRow)
+      },
+      () => [],
+    )
     if (rows.length > MAX_THREAD_ROWS) {
       throw new SessionHistoryRequestError(
         `Codex session history exceeds the ${MAX_THREAD_ROWS} row safety limit`,
@@ -338,10 +341,16 @@ export class SessionHistoryService {
     if (!SESSION_ID_PATTERN.test(sessionId)) {
       throw new SessionHistoryRequestError("Session ID is invalid", 400)
     }
-    const row = await this.withDatabase((db) =>
-      asRow(
-        db.prepare("SELECT * FROM threads WHERE id = ? LIMIT 1").get(sessionId),
-      ),
+    const row = await this.withDatabase(
+      (db) =>
+        asRow(
+          db
+            .prepare("SELECT * FROM threads WHERE id = ? LIMIT 1")
+            .get(sessionId),
+        ),
+      () => {
+        throw new SessionHistoryRequestError("Session was not found", 404)
+      },
     )
     if (!text(row.id) || isArchived(row) !== (state === "archived")) {
       throw new SessionHistoryRequestError("Session was not found", 404)
@@ -381,11 +390,17 @@ export class SessionHistoryService {
 
   private async withDatabase<T>(
     operation: (db: SqliteDatabase) => T,
+    onMissing: () => T,
   ): Promise<T> {
     const dbPath = path.join(this.codexHome, "state_5.sqlite")
     try {
       await fs.access(dbPath)
-    } catch {
+    } catch (error) {
+      // New machines have no state DB until Codex creates its first session.
+      // Do not invent a Codex schema or hide permission/corruption failures.
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return onMissing()
+      }
       throw new SessionHistoryRequestError(
         "Codex session database is unavailable",
         503,

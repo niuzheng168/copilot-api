@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import assert from "node:assert/strict"
+import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -104,6 +105,47 @@ afterEach(async () => {
 })
 
 describe("Codex session history service", () => {
+  test("a new machine returns empty history without creating a fake Codex database", async () => {
+    const freshHome = path.join(root, "fresh-codex")
+    let opens = 0
+    const fresh = new SessionHistoryService({
+      codexHome: freshHome,
+      openDatabase: () => {
+        opens++
+        return Promise.reject(
+          new Error("An absent database must not be opened or initialized"),
+        )
+      },
+    })
+    const result = await fresh.list({ limit: 10, offset: 0 })
+    expect(result.items).toEqual([])
+    expect(result.total).toBe(0)
+    expect(result.has_more).toBe(false)
+    expect(opens).toBe(0)
+    await assert.rejects(fresh.detail("active", "unknown"), {
+      status: 404,
+    })
+  })
+
+  test("missing history is not cached after Codex creates its real database", async () => {
+    await rm(path.join(codexHome, "state_5.sqlite"))
+    expect((await service.list()).items).toEqual([])
+    await writeFile(path.join(codexHome, "state_5.sqlite"), "")
+    expect((await service.list()).total).toBe(2)
+  })
+
+  test.skipIf(process.platform === "win32")(
+    "permission failures are not misreported as an empty new machine",
+    async () => {
+      await chmod(codexHome, 0o000)
+      try {
+        await assert.rejects(service.list(), { status: 503 })
+      } finally {
+        await chmod(codexHome, 0o700)
+      }
+    },
+  )
+
   test("filters and paginates local Codex threads before reading rollout metadata", async () => {
     const all = await service.list({ state: "all", limit: 1 })
     expect(all.total).toBe(2)
