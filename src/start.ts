@@ -45,6 +45,7 @@ interface RunServerOptions {
   claudeCode: boolean
   showToken: boolean
   proxyEnv: boolean
+  headless?: boolean
 }
 
 async function setupCopilotMode(
@@ -207,6 +208,13 @@ export async function runServer(options: RunServerOptions): Promise<void> {
       serverUrl,
       options.claudeCode,
     )
+  } else if (options.headless && listEnabledProviders().length === 0) {
+    // A fresh Codey machine must expose authenticated Usage/History before its
+    // owner completes provider login. Never prompt inside a systemd service,
+    // invent credentials, or change the normal interactive startup behavior.
+    consola.warn(
+      "No provider is configured. Codey services are available; model requests require `copilot-api auth login`.",
+    )
   } else {
     await setupProviderMode(serverUrl, options.claudeCode)
   }
@@ -307,6 +315,12 @@ export const start = defineCommand({
       default: false,
       description: "Initialize proxy from environment variables",
     },
+    headless: {
+      type: "boolean",
+      default: false,
+      description:
+        "Start without an interactive provider setup; model requests still require provider authentication",
+    },
   },
   run({ args }) {
     return runServer({
@@ -317,6 +331,7 @@ export const start = defineCommand({
       claudeCode: args["claude-code"],
       showToken: args["show-token"],
       proxyEnv: args["proxy-env"],
+      headless: args.headless,
     })
   },
 })
