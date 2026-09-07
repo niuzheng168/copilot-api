@@ -700,7 +700,7 @@ async function requestProviderSearch(
     providerConfig,
     payload,
     c.req.raw.headers,
-    { signal: c.req.raw.signal },
+    { clientSignal: c.req.raw.signal },
   )
   if (!upstreamResponse.ok) {
     throw new HTTPError(
@@ -731,7 +731,7 @@ async function requestCopilotSearch(
   model: string,
   requestId: string,
   sessionId: string,
-  signal?: AbortSignal,
+  clientSignal?: AbortSignal,
 ): Promise<ResponsesResult> {
   debugJson(logger, "Alpha search Copilot Responses request:", payload)
   const result = (await alphaSearchResponsesDependencies.createResponses(
@@ -742,7 +742,7 @@ async function requestCopilotSearch(
       transport: "http",
       requestId,
       sessionId,
-      signal,
+      clientSignal,
     },
   )) as ResponsesResult
   debugJson(logger, "Alpha search Copilot Responses result:", result)
