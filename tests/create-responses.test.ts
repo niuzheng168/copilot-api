@@ -16,7 +16,6 @@ import {
   buildResponsesWebSocketUrl,
   copilotResponsesDependencies,
   createResponses,
-  createResponsesDependencies,
   prepareResponsesWebSocketRequest,
 } from "~/services/copilot/create-responses"
 import type { EncryptedHistoryItem } from "~/services/copilot/responses-resilience"
@@ -37,9 +36,6 @@ const recordRecoveredItems = mock((_items: Array<EncryptedHistoryItem>) => {})
 const encryptedHistoryStore = {
   has: mock((_hash: string) => false),
   record: recordRecoveredItems,
-}
-const defaultCreateResponsesDependencies = {
-  ...createResponsesDependencies,
 }
 
 const createResponsesResult = (model: string): ResponsesResult => ({
@@ -105,7 +101,6 @@ afterEach(() => {
   state.vsCodeVersion = originalState.vsCodeVersion
   copilotResponsesDependencies.encryptedHistoryStore =
     originalEncryptedHistoryStore
-  Object.assign(createResponsesDependencies, defaultCreateResponsesDependencies)
   ;(globalThis as unknown as { fetch: typeof fetch }).fetch = originalFetch
 })
 
@@ -167,135 +162,6 @@ describe("createResponses", () => {
     expect(requestInit.headers["x-interaction-type"]).toBe(
       "conversation-subagent",
     )
-  })
-
-  test("waits one second before a subagent websocket request after a root message", async () => {
-    let releaseDelay: (() => void) | undefined
-    const sleepMock = mock(
-      (_milliseconds: number) =>
-        new Promise<void>((resolve) => {
-          releaseDelay = resolve
-        }),
-    )
-    createResponsesDependencies.sleep = sleepMock
-
-    const responsePromise = createResponses(
-      {
-        input: [
-          {
-            arguments: "{}",
-            call_id: "call-1",
-            name: "test_tool",
-            type: "function_call",
-          },
-          {
-            author: "/root",
-            content: [{ type: "input_text", text: "done" }],
-            recipient: "/root/reviewer",
-            type: "agent_message",
-          },
-        ],
-        model: "gpt-test",
-        stream: true,
-      },
-      {
-        initiator: "agent",
-        requestId: "request-1",
-        transport: "websocket",
-        vision: false,
-      },
-    )
-
-    expect(sleepMock).toHaveBeenCalledWith(1_000)
-    expect(fetchMock).not.toHaveBeenCalled()
-
-    releaseDelay?.()
-    const response = await responsePromise
-
-    expect(
-      typeof (response as AsyncIterable<unknown>)[Symbol.asyncIterator],
-    ).toBe("function")
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  test("does not wait before a subagent HTTP request after a root message", async () => {
-    const sleepMock = mock((_milliseconds: number) => Promise.resolve())
-    createResponsesDependencies.sleep = sleepMock
-
-    await createResponses(
-      {
-        input: [
-          {
-            author: "/root",
-            content: [{ type: "input_text", text: "done" }],
-            recipient: "/root/reviewer",
-            type: "agent_message",
-          },
-        ],
-        model: "gpt-test",
-      },
-      {
-        initiator: "agent",
-        requestId: "request-1",
-        vision: false,
-      },
-    )
-
-    expect(sleepMock).not.toHaveBeenCalled()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-  })
-
-  test("does not wait over websocket when the final input item is not from root", async () => {
-    const sleepMock = mock((_milliseconds: number) => Promise.resolve())
-    createResponsesDependencies.sleep = sleepMock
-
-    const payloads: Array<ResponsesPayload> = [
-      {
-        input: "hello",
-        model: "gpt-test",
-      },
-      {
-        input: [
-          {
-            author: "/root",
-            content: [{ type: "input_text", text: "done" }],
-            recipient: "/root/reviewer",
-            type: "agent_message",
-          },
-          { role: "user", content: "continue" },
-        ],
-        model: "gpt-test",
-      },
-      {
-        input: [
-          {
-            author: "/root/worker",
-            content: [{ type: "input_text", text: "done" }],
-            recipient: "/root",
-            type: "agent_message",
-          },
-        ],
-        model: "gpt-test",
-      },
-    ]
-
-    for (const payload of payloads) {
-      await createResponses(
-        {
-          ...payload,
-          stream: true,
-        },
-        {
-          initiator: "agent",
-          requestId: "request-1",
-          transport: "websocket",
-          vision: false,
-        },
-      )
-    }
-
-    expect(sleepMock).not.toHaveBeenCalled()
-    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   test("uses HTTP when websocket transport is requested without stream=true", async () => {
