@@ -143,6 +143,10 @@ export const defaultContextManagement = {
   responses: false,
 } satisfies Required<ContextManagementConfig>
 
+// Codey opts out by default; standalone copilot-api retains its existing default.
+// Keep fresh config generation and the missing-field fallback consistent.
+const defaultResponsesApiWebSocketEnabled = process.env.CODEY_MANAGED !== "true"
+
 export const defaultConfig: AppConfig = {
   auth: {
     apiKeys: [],
@@ -159,7 +163,7 @@ export const defaultConfig: AppConfig = {
     "gpt-5-mini": "low",
   },
   useMessagesApi: true,
-  useResponsesApiWebSocket: true,
+  useResponsesApiWebSocket: defaultResponsesApiWebSocketEnabled,
   upstreamTransport: defaultUpstreamTransportConfig,
   useResponsesApiWebSearch: true,
   alphaSearchCodexPriority: true,
@@ -500,7 +504,7 @@ export function isMessagesApiEnabled(): boolean {
 
 export function isResponsesApiWebSocketEnabled(): boolean {
   const config = getConfig()
-  return config.useResponsesApiWebSocket ?? true
+  return config.useResponsesApiWebSocket ?? defaultResponsesApiWebSocketEnabled
 }
 
 // Applies to every upstream HTTP transport (Copilot Chat Completions and
