@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@jeffreycao/copilot-api"><img src="https://img.shields.io/npm/v/@jeffreycao/copilot-api.svg" alt="npm version"></a>
-  <a href="https://github.com/caozhiyuan/copilot-api/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/caozhiyuan/copilot-api/blob/dev/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
   <a href="https://github.com/caozhiyuan/copilot-api/stargazers"><img src="https://img.shields.io/github/stars/caozhiyuan/copilot-api.svg" alt="GitHub stars"></a>
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/Bun-%3E%3D1.2.x-orange.svg" alt="Bun >= 1.2.x"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/badge/Node-%3E%3D22.13.0-green.svg" alt="Node >= 22.13.0"></a>
@@ -455,30 +455,39 @@ npx @jeffreycao/copilot-api@latest start
 
 ## 配合 Docker 使用
 
-构建镜像：
+仓库提供的 Compose 文件使用当前已发布的 `ghcr.io/caozhiyuan/copilot-api:latest` 镜像，无需在用户机器上构建镜像。它将 gateway 状态保存在 `/data`，并以非 root 的 `bun` 用户运行服务。
+
+### 使用 Docker Compose 快速启动
+
+在仓库根目录执行以下命令。将 `YOUR_GATEWAY_API_KEY` 替换为客户端访问 gateway 时使用的强密钥：
 
 ```sh
-docker build -t copilot-api .
+mkdir -p copilot-data
+docker compose pull
+docker compose run --rm copilot-api --auth keys --add YOUR_GATEWAY_API_KEY
+docker compose run --rm copilot-api --auth login
+docker compose up -d
+docker compose ps
 ```
 
-通过 bind mount 运行容器，让认证数据在重启后保留：
+如果环境变量或用户自己创建的私有 `.env` 中已经设置 `COPILOT_API_GITHUB_TOKEN` 或旧变量 `GH_TOKEN`，可以跳过 `--auth login`。GitHub token 用于访问 GitHub Copilot，不能替代上面配置的 gateway API Key。
 
-```sh
-mkdir -p ./copilot-data
-docker run --rm -v $(pwd)/copilot-data:/root/.local/share/copilot-api copilot-api --auth keys --add your-gateway-api-key
-docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api copilot-api
+每次启动服务或执行认证命令前，一次性的 `data-init` 服务都会修复挂载数据目录的所有权。因此非 root 服务可以直接复用旧 root 容器写入的数据，包括权限为 `0600` 的配置文件。宿主机目录仍默认使用旧 Docker 文档中的 `./copilot-data`；Compose 将它挂载到 `/data`，并设置对应的 `COPILOT_API_HOME`。如需复用其他位置的已有目录，可在环境变量或用户自己的 `.env` 中设置 `COPILOT_API_DATA_DIR`。
+
+```dotenv
+COPILOT_API_DATA_DIR=/absolute/path/to/copilot-data
 ```
 
-这会把宿主机上的 `./copilot-data` 映射到容器内的 `/root/.local/share/copilot-api`，用于持久化 GitHub 认证数据、provider 配置和其他 gateway 状态。
-镜像会显式监听 `0.0.0.0` 以支持 Docker 端口映射，并在未配置网关 API Key 时拒绝启动。非回环监听还会将 CORS 限制为请求自身的同源地址。
+首次运行前请先建好宿主机目录。Compose 不会自动创建缺失的宿主机目录（`create_host_path: false`），因此 `COPILOT_API_DATA_DIR` 写错会直接报错，而不会以空状态启动。一次性的 `data-init` 服务在改归属前也会拒绝 `/` 这类危险路径。
 
-也可以直接通过环境变量传入 GitHub token：
+默认本地地址为 `http://127.0.0.1:4141`。配置好 gateway API Key 后，如需监听宿主机所有网卡，可在用户自己的 `.env` 中设置：
 
-```sh
-docker run -p 4141:4141 -v $(pwd)/copilot-data:/root/.local/share/copilot-api -e GH_TOKEN=your_github_token_here copilot-api
+```dotenv
+COPILOT_API_BIND=0.0.0.0
+COPILOT_API_PORT=4141
 ```
 
-entrypoint 会把 `GH_TOKEN` 导出为 `COPILOT_API_GITHUB_TOKEN`，因此 token 是通过环境变量交给服务的，不会出现在进程参数里。
+Token 和代理变量也可以在同一文件中覆盖。代理地址必须能从容器内部访问。容器内部端口保持 `4141`，以便健康检查正常工作。
 
 <a id="electron-desktop-app"></a>
 
