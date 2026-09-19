@@ -1,7 +1,7 @@
 import consola from "consola"
 import { setTimeout as delay } from "node:timers/promises"
 
-import { isOpencodeOauthApp } from "~/lib/api-config"
+import { isDirectGitHubAuth } from "~/lib/api-config"
 import { getRawProviderConfig, setProviderConfig } from "~/lib/config"
 import {
   readCodexCredentialStore,
@@ -286,12 +286,13 @@ export const applyCopilotTokenResponse = (
 export const setupCopilotToken = async (
   dependencies: CopilotTokenDependencies = defaultCopilotTokenDependencies,
 ) => {
-  if (isOpencodeOauthApp()) {
-    if (!state.githubToken) throw new Error(`opencode token not found`)
+  if (isDirectGitHubAuth()) {
+    if (!state.githubToken)
+      throw new Error("Direct GitHub OAuth token not found")
 
     state.copilotToken = state.githubToken
 
-    consola.debug("GitHub Copilot token set from opencode auth token")
+    consola.debug("Using direct GitHub OAuth authentication for Copilot")
     if (state.showToken) {
       consola.info("Copilot token:", state.copilotToken)
     }
