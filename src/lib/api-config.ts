@@ -11,6 +11,14 @@ export const isOpencodeOauthApp = (): boolean => {
   return process.env.COPILOT_API_OAUTH_APP?.trim() === "opencode"
 }
 
+// Codey can supply a verified gh OAuth credential without pretending it was
+// issued to OpenCode or exchanging it for a VS Code-specific Copilot token.
+export const isDirectGitHubAuth = (): boolean =>
+  isOpencodeOauthApp() || process.env.COPILOT_API_AUTH_MODE?.trim() === "direct"
+
+const directOAuthUserAgent = (): string =>
+  isOpencodeOauthApp() ? getOpencodeVersion() : "codey-gh-auth"
+
 export const normalizeDomain = (input: string): string => {
   return input
     .trim()
@@ -102,7 +110,7 @@ export const prepareForCompact = (
 ) => {
   if (compactType) {
     headers["x-initiator"] = "agent"
-    if (!isOpencodeOauthApp() && compactType === COMPACT_REQUEST) {
+    if (!isDirectGitHubAuth() && compactType === COMPACT_REQUEST) {
       headers["x-interaction-type"] = "conversation-compaction"
       headers["openai-intent"] = "conversation-agent"
     }
@@ -114,7 +122,7 @@ export const prepareInteractionHeaders = (
   isSubagent: boolean,
   headers: Record<string, string>,
 ) => {
-  const sendInteractionHeaders = !isOpencodeOauthApp()
+  const sendInteractionHeaders = !isDirectGitHubAuth()
 
   if (isSubagent) {
     headers["x-initiator"] = "agent"
@@ -162,7 +170,7 @@ export const copilotBaseUrl = (state: State) => {
     return `https://copilot-api.${enterpriseDomain}`
   }
 
-  if (isOpencodeOauthApp()) {
+  if (isDirectGitHubAuth()) {
     return "https://api.githubcopilot.com"
   }
 
@@ -176,7 +184,7 @@ export const copilotBaseUrl = (state: State) => {
 }
 
 export const prepareMessageProxyHeaders = (headers: Record<string, string>) => {
-  if (isOpencodeOauthApp()) {
+  if (isDirectGitHubAuth()) {
     return
   }
 
@@ -195,10 +203,10 @@ export const prepareMessageProxyHeaders = (headers: Record<string, string>) => {
 }
 
 export const githubUserHeaders = (state: State): Record<string, string> => {
-  if (isOpencodeOauthApp()) {
+  if (isDirectGitHubAuth()) {
     return {
       Authorization: `Bearer ${state.githubToken}`,
-      "User-Agent": getOpencodeVersion(),
+      "User-Agent": directOAuthUserAgent(),
     }
   }
   return {
@@ -211,10 +219,10 @@ export const githubUserHeaders = (state: State): Record<string, string> => {
 }
 
 export const copilotModelsHeaders = (state: State) => {
-  if (isOpencodeOauthApp()) {
+  if (isDirectGitHubAuth()) {
     return {
       Authorization: `Bearer ${state.copilotToken}`,
-      "User-Agent": getOpencodeVersion(),
+      "User-Agent": directOAuthUserAgent(),
     }
   }
   const headers = githubCopilotHeaders(state)
@@ -230,18 +238,19 @@ export const copilotHeaders = (
   requestId?: string,
   vision: boolean = false,
 ) => {
-  if (isOpencodeOauthApp()) {
+  if (isDirectGitHubAuth()) {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${state.copilotToken}`,
-      ...getOpencodeLLMHeaders(),
-      "Openai-Intent": "conversation-edits",
+      ...(isOpencodeOauthApp() ?
+        { ...getOpencodeLLMHeaders(), "Openai-Intent": "conversation-edits" }
+      : { ...standardHeaders(), "User-Agent": directOAuthUserAgent() }),
     }
 
     const store = requestContext.getStore()
     const userAgent = store?.userAgent.trim()
     // Real opencode traffic already carries a versioned opencode/* UA,
     // so prefer the inbound header to keep upstream behavior aligned.
-    if (userAgent?.startsWith("opencode/")) {
+    if (isOpencodeOauthApp() && userAgent?.startsWith("opencode/")) {
       headers["User-Agent"] = normalizeOpencodeUserAgent(userAgent)
     }
 
@@ -264,7 +273,7 @@ export const copilotHeaders = (
 export const copilotWebSocketHeaders = (
   preparedHeaders: Record<string, string>,
 ) => {
-  if (isOpencodeOauthApp()) {
+  if (isDirectGitHubAuth()) {
     return omitHeader(preparedHeaders, "x-initiator")
   }
 
@@ -398,10 +407,15 @@ const githubCopilotHeaders = (
 
 export const GITHUB_API_BASE_URL = "https://api.github.com"
 export const githubHeaders = (state: State): Record<string, string> => {
-  if (isOpencodeOauthApp()) {
+  if (isDirectGitHubAuth()) {
     return {
       Authorization: `Bearer ${state.githubToken}`,
-      ...getOpencodeOauthHeaders(),
+      ...(isOpencodeOauthApp() ?
+        getOpencodeOauthHeaders()
+      : {
+          ...standardHeaders(),
+          "User-Agent": directOAuthUserAgent(),
+        }),
     }
   }
   return {
