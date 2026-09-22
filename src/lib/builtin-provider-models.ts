@@ -516,6 +516,28 @@ export class BuiltinProviderModelRegistry {
         },
         reasoningEfforts: ["low", "medium", "high", "xhigh"],
       },
+      "grok-4.7": {
+        contextWindow: 500_000,
+        defaultReasoningEffort: "high",
+        inputModalities: ["text", "image"],
+        maxOutputTokens: 64_000,
+        pricing: {
+          tiers: [
+            {
+              cachedInput: 0.5,
+              input: 2,
+              maxInputTokens: 200_000,
+              output: 6,
+            },
+            {
+              cachedInput: 1,
+              input: 4,
+              output: 12,
+            },
+          ],
+        },
+        reasoningEfforts: ["low", "medium", "high", "xhigh"],
+      },
       "deepseek-v4.1-flash": {
         contextWindow: 1_000_000,
         inputModalities: ["text", "image"],
