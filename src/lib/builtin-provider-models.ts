@@ -516,6 +516,28 @@ export class BuiltinProviderModelRegistry {
         },
         reasoningEfforts: ["low", "medium", "high", "xhigh"],
       },
+      "grok-4.7": {
+        contextWindow: 500_000,
+        defaultReasoningEffort: "high",
+        inputModalities: ["text", "image"],
+        maxOutputTokens: 64_000,
+        pricing: {
+          tiers: [
+            {
+              cachedInput: 0.5,
+              input: 2,
+              maxInputTokens: 200_000,
+              output: 6,
+            },
+            {
+              cachedInput: 1,
+              input: 4,
+              output: 12,
+            },
+          ],
+        },
+        reasoningEfforts: ["low", "medium", "high", "xhigh"],
+      },
       "deepseek-v4.1-flash": {
         contextWindow: 1_000_000,
         inputModalities: ["text", "image"],
@@ -620,6 +642,26 @@ export class BuiltinProviderModelRegistry {
           cachedInput: 0.0145,
           input: 1.74,
           output: 3.48,
+        },
+      },
+      "mimo-v2.6-flash": {
+        contextWindow: 1_048_576,
+        inputModalities: ["text", "image"],
+        maxOutputTokens: 131_072,
+        pricing: {
+          cachedInput: 0.0028,
+          input: 0.14,
+          output: 0.28,
+        },
+      },
+      "mimo-v2.6-pro": {
+        contextWindow: 1_048_576,
+        inputModalities: ["text", "image"],
+        maxOutputTokens: 131_072,
+        pricing: {
+          cachedInput: 0.003625,
+          input: 0.435,
+          output: 0.87,
         },
       },
       "qwen3.7-plus": {
