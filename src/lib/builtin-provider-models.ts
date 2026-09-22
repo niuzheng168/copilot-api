@@ -622,6 +622,26 @@ export class BuiltinProviderModelRegistry {
           output: 3.48,
         },
       },
+      "mimo-v2.6-flash": {
+        contextWindow: 1_048_576,
+        inputModalities: ["text", "image"],
+        maxOutputTokens: 131_072,
+        pricing: {
+          cachedInput: 0.0028,
+          input: 0.14,
+          output: 0.28,
+        },
+      },
+      "mimo-v2.6-pro": {
+        contextWindow: 1_048_576,
+        inputModalities: ["text", "image"],
+        maxOutputTokens: 131_072,
+        pricing: {
+          cachedInput: 0.003625,
+          input: 0.435,
+          output: 0.87,
+        },
+      },
       "qwen3.7-plus": {
         contextWindow: 1_000_000,
         inputModalities: ["text", "image"],
