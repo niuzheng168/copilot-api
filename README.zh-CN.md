@@ -244,6 +244,8 @@ npx @jeffreycao/copilot-api@latest start
 
 这个 AI gateway 也可以为 Codex 提供后端能力。
 
+推荐使用 Codex `0.155.1` 版本。
+
 ### Codex `config.toml` 参考配置
 
 把以下 `[model_providers.copilot_api]` 段加入你的 Codex `~/.codex/config.toml`：

@@ -228,6 +228,8 @@ Why these fields matter:
 
 This AI gateway can also power Codex.
 
+Recommended Codex version: `0.155.1`.
+
 ### Codex `config.toml` Reference
 
 Add the following `[model_providers.copilot_api]` section to your Codex `~/.codex/config.toml`:
