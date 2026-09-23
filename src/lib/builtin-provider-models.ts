@@ -163,6 +163,44 @@ export class BuiltinProviderModelRegistry {
           ],
         },
       },
+      "gpt-6-luna": {
+        pricing: {
+          tiers: [
+            {
+              cacheCreationInput: 0.125,
+              cachedInput: 0.01,
+              input: 0.1,
+              maxInputTokens: 272_000,
+              output: 0.5,
+            },
+            {
+              cacheCreationInput: 0.25,
+              cachedInput: 0.02,
+              input: 0.2,
+              output: 0.75,
+            },
+          ],
+        },
+      },
+      "gpt-6-sol": {
+        pricing: {
+          tiers: [
+            {
+              cacheCreationInput: 2.5,
+              cachedInput: 0.2,
+              input: 2,
+              maxInputTokens: 272_000,
+              output: 10,
+            },
+            {
+              cacheCreationInput: 5,
+              cachedInput: 0.4,
+              input: 4,
+              output: 15,
+            },
+          ],
+        },
+      },
     },
     dashscope: {
       "glm-5.1": {
