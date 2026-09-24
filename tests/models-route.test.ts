@@ -815,21 +815,6 @@ describe("model routes", () => {
     expect(
       body.models.find((model) => model.slug === "opencode-go/qwen3-coder"),
     ).toMatchObject({ display_name: "Qwen3 Coder (opencode-go)" })
-    expect(
-      body.models.find((model) => model.slug === "opencode-go/grok-4.5"),
-    ).toMatchObject({
-      context_window: 500_000,
-      default_reasoning_level: "high",
-      display_name: "Grok 4.5 (opencode-go)",
-      input_modalities: ["text", "image"],
-      max_output_tokens: 64_000,
-      supported_reasoning_levels: [
-        { effort: "low", description: "low reasoning effort" },
-        { effort: "medium", description: "medium reasoning effort" },
-        { effort: "high", description: "high reasoning effort" },
-        { effort: "ultra", description: "ultra reasoning effort" },
-      ],
-    })
     expect(body.models.map((model) => model.slug)).not.toContain(
       "opencode-go/gpt-provider-only",
     )

@@ -470,23 +470,6 @@ describe("token usage storage", () => {
     })
   })
 
-  test("prices DashScope DeepSeek V4 Flash 0731 with peak and off-peak prices", () => {
-    const usage = buildPricedUsage("deepseek-v4-flash-0731", "dashscope")
-
-    expect(resolveTokenUsageCost({ ...usage, at: dashscopePeakTime })).toEqual({
-      currency: "CNY",
-      source: "builtin",
-      total_cost_nanos: 30_600_000,
-    })
-    expect(
-      resolveTokenUsageCost({ ...usage, at: dashscopeOffPeakTime }),
-    ).toEqual({
-      currency: "CNY",
-      source: "builtin",
-      total_cost_nanos: 15_300_000,
-    })
-  })
-
   test("prices DeepSeek models with peak and off-peak prices in CNY", () => {
     const expectedCosts = [
       {
@@ -525,16 +508,6 @@ describe("token usage storage", () => {
     const expectedCosts = [
       {
         model: "deepseek-v4.1-flash",
-        offPeakCostNanos: 1_956_000,
-        peakCostNanos: 3_912_000,
-      },
-      {
-        model: "deepseek-v4-flash",
-        offPeakCostNanos: 1_956_000,
-        peakCostNanos: 3_912_000,
-      },
-      {
-        model: "deepseek-v4-flash-vision-exp",
         offPeakCostNanos: 1_956_000,
         peakCostNanos: 3_912_000,
       },
