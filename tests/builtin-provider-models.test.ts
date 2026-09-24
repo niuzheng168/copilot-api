@@ -34,8 +34,6 @@ describe("builtin provider model registry", () => {
   test("lists model ids for a normalized provider name", () => {
     const modelIds = builtinProviderModelRegistry.getModelIds(" OPENCODE-GO ")
     for (const modelId of [
-      "hy3",
-      "gpt-5.6-luna",
       "qwen3.8-max",
       "minimax-m3",
       "glm-5.3-flash",
@@ -75,11 +73,6 @@ describe("builtin provider model registry", () => {
   })
 
   test("flags models that expect the OpenRouter-style reasoning field", () => {
-    expect(
-      builtinProviderModelRegistry.getModelConfig("opencode-go", "hy3"),
-    ).toMatchObject({
-      reasoningField: "reasoning",
-    })
     expect(
       builtinProviderModelRegistry.getModelConfig("opencode-go", "hy4-preview"),
     ).toMatchObject({

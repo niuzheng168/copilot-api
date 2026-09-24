@@ -372,17 +372,6 @@ export class BuiltinProviderModelRegistry {
       },
     },
     "opencode-go": {
-      hy3: {
-        contextWindow: 256_000,
-        inputModalities: ["text"],
-        maxOutputTokens: 64_000,
-        pricing: {
-          cachedInput: 0.035,
-          input: 0.14,
-          output: 0.58,
-        },
-        reasoningField: "reasoning",
-      },
       "hy4-preview": {
         contextWindow: 1_024_000,
         inputModalities: ["text"],
@@ -395,7 +384,7 @@ export class BuiltinProviderModelRegistry {
         reasoningEfforts: ["high"],
         reasoningField: "reasoning",
       },
-      "gpt-5.6-luna": {
+      "gpt-6-luna": {
         pricing: {
           tiers: [
             {
@@ -403,13 +392,13 @@ export class BuiltinProviderModelRegistry {
               cachedInput: 0.01,
               input: 0.1,
               maxInputTokens: 272_000,
-              output: 0.6,
+              output: 0.5,
             },
             {
               cacheCreationInput: 0.25,
               cachedInput: 0.02,
               input: 0.2,
-              output: 0.9,
+              output: 0.75,
             },
           ],
         },

@@ -319,8 +319,7 @@ describe("model routes", () => {
     expect(modelIds).toContain("deepseek/deepseek-v4-pro")
     expect(modelIds).toContain("kimi/k3")
     expect(modelIds).toContain("kimi/k3-256k")
-    expect(modelIds).toContain("opencode-go/hy3")
-    expect(modelIds).toContain("opencode-go/gpt-5.6-luna")
+    expect(modelIds).toContain("opencode-go/gpt-6-luna")
     expect(
       body.data.find((model) => model.id === "deepseek/deepseek-flash"),
     ).toMatchObject({
@@ -377,7 +376,6 @@ describe("model routes", () => {
     const modelSlugs = body.models.map((model) => model.slug)
     expect(modelSlugs).toContain("deepseek/deepseek-flash")
     expect(modelSlugs).toContain("kimi/k3")
-    expect(modelSlugs).toContain("opencode-go/hy3")
     expect(modelSlugs).toContain("opencode-go/qwen3.7-plus")
     expect(
       body.models.find((model) => model.slug === "deepseek/deepseek-flash"),
@@ -394,13 +392,6 @@ describe("model routes", () => {
         max_output_tokens: 64_000,
       },
     )
-    expect(
-      body.models.find((model) => model.slug === "opencode-go/hy3"),
-    ).toMatchObject({
-      context_window: 256_000,
-      input_modalities: ["text"],
-      max_output_tokens: 64_000,
-    })
     expect(
       body.models.find((model) => model.slug === "opencode-go/qwen3.7-plus"),
     ).toMatchObject({
