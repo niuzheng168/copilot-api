@@ -87,6 +87,7 @@ const bundledCodexModels = (
   }
 ).models
 const bundledCodexSlugs = bundledCodexModels.map((model) => model.slug)
+const CODEX_CATALOG_ETAG = 'W/"catalog-1"'
 
 let codexCatalogModels: Array<Record<string, unknown>> =
   createDefaultCodexCatalogModels()
@@ -99,9 +100,10 @@ const fetchMock = mock((url: string | URL | Request, _init?: RequestInit) => {
 
   if (requestUrl.startsWith("https://chatgpt.com/backend-api/codex/models")) {
     return Promise.resolve(
-      Response.json({
-        models: codexCatalogModels,
-      }),
+      Response.json(
+        { models: codexCatalogModels },
+        { headers: { ETag: CODEX_CATALOG_ETAG } },
+      ),
     )
   }
 
@@ -345,6 +347,7 @@ describe("model routes", () => {
     })
 
     expect(response.status).toBe(200)
+    expect(response.headers.get("etag")).toBeNull()
     const body = (await response.json()) as {
       models: Array<Record<string, unknown> & { slug: string }>
     }
@@ -551,6 +554,7 @@ describe("model routes", () => {
     })
 
     expect(response.status).toBe(200)
+    expect(response.headers.get("etag")).toBe(CODEX_CATALOG_ETAG)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://chatgpt.com/backend-api/codex/models?client=codex",
@@ -583,6 +587,8 @@ describe("model routes", () => {
     })
 
     expect(response.status).toBe(200)
+    expect(response.headers.get("etag")).toBe(CODEX_CATALOG_ETAG)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
     const body = (await response.json()) as {
       models: Array<Record<string, unknown> & { slug: string }>
     }
