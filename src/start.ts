@@ -14,6 +14,7 @@ import {
   readGitHubTokenFromEnv,
 } from "./lib/credential-store"
 import { getLatestModelForFamily } from "./lib/models"
+import { startModelsDevCache } from "./lib/models-dev-cache"
 import { initOpencodeVersion } from "./lib/opencode"
 import { ensurePaths } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
@@ -217,6 +218,7 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   state.showToken = options.showToken
 
   await ensurePaths()
+  await startModelsDevCache()
 
   const serverUrl = formatServerUrl(binding.clientHostname, options.port)
 

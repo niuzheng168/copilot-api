@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
 import type { ResolvedProviderConfig } from "~/lib/config"
+import { installModelsDevCatalog } from "~/lib/models-dev-cache"
 import { state } from "~/lib/state"
 import type { ResponsesResult } from "~/lib/types/responses"
+
+import { modelsDevCatalogFixture } from "./fixtures/models-dev-catalog"
 
 let providerConfig: ResolvedProviderConfig | null = null
 
@@ -282,6 +285,7 @@ describe("provider Responses context management", () => {
   })
 
   test("normalizes Grok effort across the Codex Messages fallback", async () => {
+    installModelsDevCatalog(modelsDevCatalogFixture)
     providerConfig = {
       apiKey: "provider-key",
       authType: "authorization",

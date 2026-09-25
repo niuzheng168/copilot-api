@@ -11,6 +11,7 @@ import {
   type ProviderConfig,
   type ProviderType,
 } from "./config-store"
+import { getOpencodeGoModelProviderType } from "./models-dev-cache"
 
 export interface ResolvedProviderConfig {
   name: string
@@ -21,9 +22,6 @@ export interface ResolvedProviderConfig {
   pricingCurrency?: string
   models?: Record<string, ModelConfig>
 }
-
-const OPENCODE_ANTHROPIC_MODEL_PATTERN = /^(?:qwen|minimax)/iu
-const OPENCODE_RESPONSES_MODEL_PATTERN = /^(?:gpt|grok|muse-spark)(?:[-_.]|$)/iu
 
 export function normalizeProviderBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/u, "")
@@ -195,12 +193,7 @@ export function resolveEffectiveProviderType(
   }
 
   if (providerConfig.name === "opencode-go") {
-    if (OPENCODE_ANTHROPIC_MODEL_PATTERN.test(model)) {
-      return "anthropic"
-    }
-    if (OPENCODE_RESPONSES_MODEL_PATTERN.test(model)) {
-      return "openai-responses"
-    }
+    return getOpencodeGoModelProviderType(model)
   }
 
   if (providerConfig.name === "openrouter") {

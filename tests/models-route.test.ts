@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { Hono } from "hono"
 
 import type { ResolvedProviderConfig } from "~/lib/config"
+import { installModelsDevCatalog } from "~/lib/models-dev-cache"
 import type { ModelsResponse } from "~/lib/types/models"
 import bundledCodexCatalogJson from "~/routes/models/models.json"
+
+import { modelsDevCatalogFixture } from "./fixtures/models-dev-catalog"
 
 const actualConfigModule = await import("~/lib/config")
 const actualTokenModule = await import("~/lib/token")
@@ -226,6 +229,7 @@ function createApp() {
 }
 
 beforeEach(() => {
+  installModelsDevCatalog(modelsDevCatalogFixture)
   enabledProviders = []
   providerConfigs = {}
   codexSetupError = null
@@ -299,7 +303,7 @@ describe("model routes", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  test("falls back to pricing models for each failed provider models request", async () => {
+  test("uses the models.dev catalog for OpenCode Go when other providers fail", async () => {
     enabledProviders = ["deepseek", "kimi", "opencode-go"]
     providerConfigs = {
       deepseek: createProviderConfig("deepseek", "https://bad.example"),
@@ -322,6 +326,7 @@ describe("model routes", () => {
     expect(modelIds).toContain("kimi/k3")
     expect(modelIds).toContain("kimi/k3-256k")
     expect(modelIds).toContain("opencode-go/gpt-6-luna")
+    expect(modelIds).not.toContain("opencode-go/grok-4.5")
     expect(
       body.data.find((model) => model.id === "deepseek/deepseek-flash"),
     ).toMatchObject({
@@ -329,7 +334,38 @@ describe("model routes", () => {
       object: "model",
       owned_by: "deepseek",
     })
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  test("serves OpenCode Go provider models from models.dev without upstream fetch", async () => {
+    providerConfigs = {
+      "opencode-go": createProviderConfig(
+        "opencode-go",
+        "https://opencode.example",
+      ),
+    }
+
+    const response = await createApp().request("/opencode-go/v1/models")
+
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as {
+      object: string
+      data: Array<Record<string, unknown> & { id: string }>
+    }
+    expect(body.object).toBe("list")
+    const modelIds = body.data.map((model) => model.id)
+    expect(modelIds).toEqual([...modelIds].sort())
+    expect(
+      body.data.find((model) => model.id === "glm-5.3-flash"),
+    ).toMatchObject({
+      name: "GLM-5.3-Flash",
+      context_window: 1_000_000,
+      max_output_tokens: 131_072,
+      input_modalities: ["text", "image"],
+      reasoning_efforts: ["low", "high", "max"],
+    })
+    expect(body.data.map((model) => model.id)).not.toContain("grok-4.5")
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   test("ignores providers whose models fetch rejects when merging the Codex catalog", async () => {
@@ -402,7 +438,7 @@ describe("model routes", () => {
       input_modalities: ["text", "image"],
       max_output_tokens: 64_000,
     })
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   test("prefers user model config over upstream and built-in defaults", async () => {
@@ -799,7 +835,7 @@ describe("model routes", () => {
       ...lunaCatalogModel,
       slug: "opencode-go/gpt-5.6-luna",
       display_name: "opencode-go GPT-5.6 Luna",
-      priority: 3_000,
+      priority: expect.any(Number),
     })
     expect(
       body.models.find((model) => model.slug === "codex/gpt-remote-only"),
@@ -810,11 +846,13 @@ describe("model routes", () => {
       priority: 1_002,
     })
     expect(
-      body.models.find((model) => model.slug === "opencode-go/qwen3-coder"),
-    ).toMatchObject({ display_name: "Qwen3 Coder (opencode-go)" })
-    expect(body.models.map((model) => model.slug)).not.toContain(
-      "opencode-go/gpt-provider-only",
-    )
+      body.models.find((model) => model.slug === "opencode-go/qwen3.7-plus"),
+    ).toMatchObject({ display_name: "Qwen3.7 Plus (opencode-go)" })
+    expect(
+      body.models.find(
+        (model) => model.slug === "opencode-go/gpt-provider-only",
+      ),
+    ).toMatchObject({ display_name: "GPT Provider Only (opencode-go)" })
   })
 
   test("orders merged Codex models as catalog, codex, copilot, opencode-go, then providers", async () => {
@@ -848,14 +886,22 @@ describe("model routes", () => {
     const body = (await response.json()) as {
       models: Array<Record<string, unknown> & { slug: string }>
     }
-    expect(body.models.map((model) => model.slug)).toEqual([
+    const slugs = body.models.map((model) => model.slug)
+    expect(slugs.slice(0, 3)).toEqual([
       "gpt-native",
       "codex/gpt-native",
       "claude-sonnet-4-6",
-      "opencode-go/grok-4.5",
-      "opencode-go/qwen3-coder",
-      "kimi/kimi-k2.5",
     ])
+    expect(slugs).toContain("opencode-go/grok-4.7")
+    expect(slugs).toContain("opencode-go/qwen3.7-plus")
+    expect(slugs).not.toContain("opencode-go/grok-4.5")
+    const kimiIndex = slugs.indexOf("kimi/kimi-k2.5")
+    expect(kimiIndex).toBe(slugs.length - 1)
+    expect(
+      slugs
+        .slice(3, kimiIndex)
+        .every((slug) => slug.startsWith("opencode-go/")),
+    ).toBe(true)
     const priorities = body.models.map((model) =>
       typeof model.priority === "number" ? model.priority : 0,
     )

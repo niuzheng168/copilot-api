@@ -74,6 +74,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.37.0",
+    "@opencode-ai/models": "0.0.85",
     "@types/bun": "^1.2.23",
     "@types/proxy-from-env": "^1.0.4",
     "@types/winreg": "^1.2.36",
