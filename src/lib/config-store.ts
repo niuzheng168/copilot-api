@@ -119,6 +119,7 @@ export interface ProviderConfig {
   type?: string
   enabled?: boolean
   baseUrl?: string
+  modelsDevProviderId?: string
   apiKey?: string
   authType?: ProviderAuthType
   accountId?: string

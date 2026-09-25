@@ -7,10 +7,15 @@ import path from "node:path"
 import { builtinProviderModelRegistry } from "~/lib/builtin-provider-models"
 import { resolveTokenUsageCost } from "~/lib/token-usage/pricing"
 import {
+  getModelsDevModelApi,
+  getModelsDevModelPricing,
+  getModelsDevModelProviderType,
+  getModelsDevProviderOptions,
   getOpencodeGoModelIds,
   getOpencodeGoModelProviderType,
   getOpencodeGoModelRecords,
   installModelsDevCatalog,
+  loadModelsDevProviderOptions,
   startModelsDevCache,
   stopModelsDevRefreshLoop,
 } from "~/lib/models-dev-cache"
@@ -40,6 +45,111 @@ afterEach(async () => {
   await stopModelsDevRefreshLoop()
   if (tempDir) await fs.rm(tempDir, { recursive: true, force: true })
   tempDir = undefined
+})
+
+test("lists usable Chat, Responses, and Anthropic providers without the built-in choices", async () => {
+  installModelsDevCatalog({
+    ...modelsDevCatalogFixture,
+    "opencode-go": {
+      ...modelsDevCatalogFixture["opencode-go"],
+      api: "https://opencode.example/v1",
+    },
+    "chat-provider": {
+      name: "Chat Provider",
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://chat.example/api/v4/",
+      models: {
+        chat: {
+          id: "chat",
+          cost: { input: 0.1, output: 0.5, cache_read: 0.01 },
+        },
+        response: {
+          id: "response",
+          provider: {
+            npm: "@ai-sdk/openai",
+            api: "https://responses.example/v1",
+          },
+        },
+        claude: {
+          id: "claude",
+          provider: { npm: "@ai-sdk/anthropic" },
+        },
+      },
+    },
+    "responses-provider": {
+      npm: "@ai-sdk/openai",
+      api: "https://responses.example/v1",
+      models: {
+        completion: {
+          id: "completion",
+          provider: { shape: "completions" },
+        },
+      },
+    },
+    "anthropic-provider": {
+      npm: "@ai-sdk/anthropic",
+      api: "https://anthropic.example/v1",
+      models: {},
+    },
+    openrouter: {
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://openrouter.example/v1",
+    },
+    "github-copilot": {
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://copilot.example/v1",
+    },
+    "missing-api": { npm: "@ai-sdk/openai-compatible" },
+    templated: {
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://${ACCOUNT}.example/v1",
+    },
+    unsupported: {
+      npm: "@ai-sdk/google",
+      api: "https://google.example/v1",
+    },
+  })
+
+  expect(await loadModelsDevProviderOptions()).toEqual(
+    getModelsDevProviderOptions(),
+  )
+  expect(getModelsDevProviderOptions()).toEqual([
+    {
+      id: "anthropic-provider",
+      name: "anthropic-provider",
+      api: "https://anthropic.example/v1",
+      type: "anthropic",
+    },
+    {
+      id: "chat-provider",
+      name: "Chat Provider",
+      api: "https://chat.example/api/v4",
+      type: "openai-compatible",
+    },
+    {
+      id: "responses-provider",
+      name: "responses-provider",
+      api: "https://responses.example/v1",
+      type: "openai-responses",
+    },
+  ])
+  expect(getModelsDevModelProviderType("chat-provider", "response")).toBe(
+    "openai-responses",
+  )
+  expect(getModelsDevModelProviderType("chat-provider", "claude")).toBe(
+    "anthropic",
+  )
+  expect(
+    getModelsDevModelProviderType("responses-provider", "completion"),
+  ).toBe("openai-compatible")
+  expect(getModelsDevModelApi("chat-provider", "response")).toBe(
+    "https://responses.example/v1",
+  )
+  expect(getModelsDevModelPricing("chat-provider", "chat")).toEqual({
+    input: 0.1,
+    output: 0.5,
+    cachedInput: 0.01,
+  })
 })
 
 test("persists the full models.dev response and filters deprecated models in memory", async () => {

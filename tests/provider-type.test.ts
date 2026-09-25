@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, test } from "bun:test"
 
 import {
   resolveEffectiveProviderType,
+  resolveProviderConfigForModel,
   type ResolvedProviderConfig,
 } from "~/lib/config"
 import { installModelsDevCatalog } from "~/lib/models-dev-cache"
+import { resolveTokenUsageCost } from "~/lib/token-usage/pricing"
 
 import { modelsDevCatalogFixture } from "./fixtures/models-dev-catalog"
 
@@ -151,5 +153,103 @@ describe("effective provider type", () => {
         "qwen3.8-flash",
       ),
     ).toBe("openai-compatible")
+  })
+
+  test("uses a selected models.dev model's protocol, API URL, and auth default", () => {
+    installModelsDevCatalog({
+      ...modelsDevCatalogFixture,
+      mixed: {
+        npm: "@ai-sdk/openai-compatible",
+        api: "https://mixed.example/v1",
+        models: {
+          claude: {
+            id: "claude",
+            provider: {
+              npm: "@ai-sdk/anthropic",
+              api: "https://mixed.example/anthropic/v1",
+            },
+          },
+          gpt: {
+            id: "gpt",
+            cost: { input: 0.1, output: 0.5, cache_read: 0.01 },
+            provider: {
+              npm: "@ai-sdk/openai",
+              api: "https://mixed.example/responses/v1",
+            },
+          },
+        },
+      },
+    })
+    const providerConfig = createProviderConfig({
+      name: "mixed",
+      modelsDevProviderId: "mixed",
+      baseUrl: "https://mixed.example/v1",
+    })
+
+    expect(
+      resolveProviderConfigForModel(providerConfig, "claude"),
+    ).toMatchObject({
+      type: "anthropic",
+      authType: "x-api-key",
+      baseUrl: "https://mixed.example/anthropic/v1",
+    })
+    expect(resolveProviderConfigForModel(providerConfig, "gpt")).toMatchObject({
+      type: "openai-responses",
+      authType: "authorization",
+      baseUrl: "https://mixed.example/responses/v1",
+      pricingCurrency: "USD",
+      models: { gpt: { pricing: { input: 0.1, output: 0.5 } } },
+    })
+    const pricedProvider = resolveProviderConfigForModel(providerConfig, "gpt")
+    expect(
+      resolveTokenUsageCost({
+        source: "provider",
+        providerName: pricedProvider.name,
+        model: "gpt",
+        pricing: pricedProvider.models?.gpt?.pricing,
+        pricingCurrency: pricedProvider.pricingCurrency,
+        input_tokens: 1_000,
+        output_tokens: 3_000,
+        cache_read_input_tokens: 2_000,
+      }),
+    ).toEqual({
+      currency: "USD",
+      source: "config",
+      total_cost_nanos: 1_620_000,
+    })
+    expect(resolveProviderConfigForModel(providerConfig, "unknown")).toBe(
+      providerConfig,
+    )
+    expect(
+      resolveProviderConfigForModel(
+        { ...providerConfig, pricingCurrency: "CNY" },
+        "unknown",
+      ).pricingCurrency,
+    ).toBe("CNY")
+    expect(
+      resolveProviderConfigForModel(
+        { ...providerConfig, baseUrl: "https://custom.example/v1" },
+        "claude",
+      ).baseUrl,
+    ).toBe("https://custom.example/v1")
+    expect(
+      resolveProviderConfigForModel(
+        { ...providerConfig, authTypeExplicit: true },
+        "claude",
+      ).authType,
+    ).toBe("authorization")
+    expect(
+      resolveProviderConfigForModel(
+        {
+          ...providerConfig,
+          pricingCurrency: "CNY",
+          models: { gpt: { pricing: { input: 3, output: 4 } } },
+        },
+        "gpt",
+      ),
+    ).toMatchObject({
+      pricingCurrency: "CNY",
+      models: { gpt: { pricing: { input: 3, output: 4 } } },
+    })
   })
 })

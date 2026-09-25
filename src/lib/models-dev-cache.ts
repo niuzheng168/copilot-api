@@ -61,6 +61,20 @@ interface CatalogSnapshot {
   configs: Record<string, BuiltinProviderModelConfig>
   providerTypes: Record<string, ProviderType>
   records: Array<ModelRecord>
+  selectableProviders: Array<ModelsDevProviderOption>
+  selectableProviderModelTypes: Record<string, Record<string, ProviderType>>
+  selectableProviderModelApis: Record<string, Record<string, string>>
+  selectableProviderModelPricing: Record<
+    string,
+    Record<string, TokenUsagePricingConfig>
+  >
+}
+
+export interface ModelsDevProviderOption {
+  id: string
+  name: string
+  api: string
+  type: ProviderType
 }
 
 interface ResponseValidator {
@@ -242,6 +256,135 @@ function mapProviderType(
   }
 }
 
+function normalizeCatalogApi(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.includes("${")) return undefined
+  const api = value.trim().replace(/\/+$/u, "")
+  let url: URL
+  try {
+    url = new URL(api)
+  } catch {
+    return undefined
+  }
+  if (
+    (url.protocol !== "https:" && url.protocol !== "http:")
+    || url.username
+    || url.password
+    || url.search
+    || url.hash
+  ) {
+    return undefined
+  }
+  return api
+}
+
+function parseSelectableProviders(
+  data: Record<string, unknown>,
+): Pick<
+  CatalogSnapshot,
+  | "selectableProviders"
+  | "selectableProviderModelTypes"
+  | "selectableProviderModelApis"
+  | "selectableProviderModelPricing"
+> {
+  const selectableProviders: Array<ModelsDevProviderOption> = []
+  const selectableProviderModelTypes: Record<
+    string,
+    Record<string, ProviderType>
+  > = Object.create(null) as Record<string, Record<string, ProviderType>>
+  const selectableProviderModelApis: Record<
+    string,
+    Record<string, string>
+  > = Object.create(null) as Record<string, Record<string, string>>
+  const selectableProviderModelPricing: Record<
+    string,
+    Record<string, TokenUsagePricingConfig>
+  > = Object.create(null) as Record<
+    string,
+    Record<string, TokenUsagePricingConfig>
+  >
+
+  for (const [id, value] of Object.entries(data)) {
+    if (
+      id === "openrouter"
+      || id === "github-copilot"
+      || id === "opencode-go"
+      || id === "copilot"
+      || id === "codex"
+      || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/u.test(id)
+      || !isRecord(value)
+      || (value.npm !== "@ai-sdk/openai-compatible"
+        && value.npm !== "@ai-sdk/openai"
+        && value.npm !== "@ai-sdk/anthropic")
+    ) {
+      continue
+    }
+
+    const api = normalizeCatalogApi(value.api)
+    if (!api) continue
+
+    selectableProviders.push({
+      id,
+      name:
+        typeof value.name === "string" && value.name.trim() ?
+          value.name.trim()
+        : id,
+      api,
+      type:
+        value.npm === "@ai-sdk/openai" ? "openai-responses"
+        : value.npm === "@ai-sdk/anthropic" ? "anthropic"
+        : "openai-compatible",
+    })
+
+    const modelTypes: Record<string, ProviderType> = Object.create(
+      null,
+    ) as Record<string, ProviderType>
+    const modelApis: Record<string, string> = Object.create(null) as Record<
+      string,
+      string
+    >
+    const modelPricing: Record<string, TokenUsagePricingConfig> = Object.create(
+      null,
+    ) as Record<string, TokenUsagePricingConfig>
+    if (isRecord(value.models)) {
+      for (const [modelId, model] of Object.entries(value.models)) {
+        if (!isRecord(model) || model.status === "deprecated") continue
+        const modelProvider = isRecord(model.provider) ? model.provider : null
+        const modelNpm = modelProvider?.npm ?? value.npm
+        if (
+          modelNpm !== "@ai-sdk/openai-compatible"
+          && modelNpm !== "@ai-sdk/openai"
+          && modelNpm !== "@ai-sdk/anthropic"
+        ) {
+          continue
+        }
+        const type = mapProviderType(
+          model as unknown as ModelsDevModel,
+          value.npm,
+        )
+        modelTypes[modelId] = type
+        const modelApi = normalizeCatalogApi(modelProvider?.api)
+        if (modelApi) modelApis[modelId] = modelApi
+        const pricing = mapPricing((model as unknown as ModelsDevModel).cost)
+        if (pricing) modelPricing[modelId] = pricing
+      }
+    }
+    selectableProviderModelTypes[id] = modelTypes
+    selectableProviderModelApis[id] = modelApis
+    selectableProviderModelPricing[id] = modelPricing
+  }
+
+  selectableProviders.sort(
+    (a, b) =>
+      a.name.localeCompare(b.name, "en") || a.id.localeCompare(b.id, "en"),
+  )
+  return {
+    selectableProviders,
+    selectableProviderModelTypes,
+    selectableProviderModelApis,
+    selectableProviderModelPricing,
+  }
+}
+
 function parseCatalog(data: unknown): CatalogSnapshot {
   const provider = isRecord(data) ? data[OPENCODE_GO] : undefined
   const models = isRecord(provider) ? provider.models : undefined
@@ -296,7 +439,12 @@ function parseCatalog(data: unknown): CatalogSnapshot {
   if (records.length === 0) {
     throw new Error("models.dev response has no valid opencode-go models")
   }
-  return { configs, providerTypes, records }
+  return {
+    configs,
+    providerTypes,
+    records,
+    ...parseSelectableProviders(data as Record<string, unknown>),
+  }
 }
 
 export function installModelsDevCatalog(data: unknown): number {
@@ -328,6 +476,59 @@ export function getOpencodeGoModelProviderType(modelId: string): ProviderType {
 
 export function getOpencodeGoModelRecords(): Array<ModelRecord> {
   return snapshot?.records ?? []
+}
+
+export function getModelsDevProviderOptions(): Array<ModelsDevProviderOption> {
+  return snapshot?.selectableProviders ?? []
+}
+
+export function getModelsDevProviderApi(
+  providerId: string,
+): string | undefined {
+  return snapshot?.selectableProviders.find(
+    (provider) => provider.id === providerId,
+  )?.api
+}
+
+export function getModelsDevModelProviderType(
+  providerId: string,
+  modelId: string,
+): ProviderType | undefined {
+  return snapshot?.selectableProviderModelTypes[providerId]?.[modelId]
+}
+
+export function getModelsDevModelApi(
+  providerId: string,
+  modelId: string,
+): string | undefined {
+  return snapshot?.selectableProviderModelApis[providerId]?.[modelId]
+}
+
+export function getModelsDevModelPricing(
+  providerId: string,
+  modelId: string,
+): TokenUsagePricingConfig | undefined {
+  return snapshot?.selectableProviderModelPricing[providerId]?.[modelId]
+}
+
+export async function loadModelsDevProviderOptions(): Promise<
+  Array<ModelsDevProviderOption>
+> {
+  if (!snapshot) {
+    const cachePath =
+      activeCachePath ?? path.join(PATHS.APP_DIR, "models-dev-api.json")
+    await loadDiskCache(cachePath)
+    if (!snapshot) {
+      await refreshCatalog(
+        cachePath,
+        fetch,
+        new AbortController().signal,
+        refreshGeneration,
+      )
+      activeCachePath = cachePath
+    }
+  }
+  return getModelsDevProviderOptions()
 }
 
 export async function stopModelsDevRefreshLoop(): Promise<void> {

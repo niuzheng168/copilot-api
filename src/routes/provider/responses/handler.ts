@@ -6,7 +6,7 @@ import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
 import {
   type ModelConfig,
   type ProviderType,
-  resolveEffectiveProviderType,
+  resolveProviderConfigForModel,
 } from "~/lib/config"
 import { HTTPError } from "~/lib/error"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
@@ -68,8 +68,11 @@ export async function handleProviderResponsesForProvider(
     provider,
   })
 
-  const providerConfig =
+  const configuredProvider =
     await providerResponsesHandlerDependencies.resolveProviderConfig(provider)
+  const providerConfig =
+    configuredProvider
+    && resolveProviderConfigForModel(configuredProvider, payload.model)
   if (!providerConfig) {
     return c.json(
       {
@@ -82,10 +85,7 @@ export async function handleProviderResponsesForProvider(
     )
   }
 
-  const effectiveType = resolveEffectiveProviderType(
-    providerConfig,
-    payload.model,
-  )
+  const effectiveType = providerConfig.type
   const normalizedReasoningEffort = normalizeProviderResponsesReasoningEffort(
     payload,
     providerConfig,
