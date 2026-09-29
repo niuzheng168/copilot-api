@@ -4,6 +4,7 @@ import consola from "consola"
 import {
   resolveEffectiveProviderType,
   resolveMappedModel,
+  resolveProviderConfigForModel,
   type ResolvedProviderConfig,
 } from "~/lib/config"
 import { HTTPError } from "~/lib/error"
@@ -646,7 +647,10 @@ async function resolveRemoteModel(
       )
     }
 
-    return { model, providerConfig }
+    return {
+      model,
+      providerConfig: resolveProviderConfigForModel(providerConfig, model),
+    }
   }
 
   const selectedModel =
