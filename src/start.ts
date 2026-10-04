@@ -194,7 +194,9 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   mergeConfigWithDefaults()
   const migratedModel = migrateCodeyManagedCodexModelFiles()
   if (migratedModel) {
-    consola.info(`Migrated Codey Codex model configuration to ${migratedModel}`)
+    consola.info(
+      `Updated Codey Codex model catalog (default: ${migratedModel})`,
+    )
   }
 
   const configuredApiKeys = getConfiguredApiKeys()

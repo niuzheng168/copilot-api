@@ -155,6 +155,50 @@ afterEach(async () => {
   Reflect.deleteProperty(process.env, DB_PATH_ENV)
 })
 
+test("an explicit Astra selection reaches Codex Responses without the legacy Sol mapping", async () => {
+  const originalCodexAccessToken = state.codexAccessToken
+  const originalCodexAccountId = state.codexAccountId
+  providerConfig = {
+    ...providerConfig!,
+    apiKey: "",
+    authType: "oauth2",
+    baseUrl: "https://chatgpt.example/backend-api",
+    name: "codex",
+    models: { "gpt-6-astra": {} },
+  }
+  state.codexAccessToken = "synthetic-codex-token"
+  state.codexAccountId = "synthetic-account"
+  responsesHandlerDependencies.resolveMappedModel = (model) =>
+    model === "gpt-6-astra" ? "gpt-6.1-sol" : model
+
+  try {
+    const response = await createApp().request("/v1/responses", {
+      body: JSON.stringify({
+        model: "codex/gpt-6-astra",
+        input: "hello",
+        reasoning: { effort: "max" },
+      }),
+      headers: {
+        "content-type": "application/json",
+        "user-agent": "codex/1.0",
+      },
+      method: "POST",
+    })
+
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe("https://chatgpt.example/backend-api/codex/responses")
+    expect(parseJsonRequestBody((init as RequestInit).body)).toMatchObject({
+      model: "gpt-6-astra",
+      reasoning: { effort: "max" },
+    })
+  } finally {
+    state.codexAccessToken = originalCodexAccessToken
+    state.codexAccountId = originalCodexAccountId
+  }
+})
+
 describe("Codex task title model routing on provider Responses", () => {
   const taskTitlePrompt =
     "Generate a concise, single-line task title of at most 36 characters and under five words where possible."

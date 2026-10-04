@@ -4,6 +4,7 @@ import path from "node:path"
 export type CodeyManagedModelPolicy = {
   schema: 1
   activeModel: string
+  selectableModels?: Array<string>
   aliases: Record<string, string>
   contextWindow: number
   autoCompactTokenLimit: number
@@ -31,6 +32,17 @@ export function readCodeyManagedModelPolicy(): CodeyManagedModelPolicy | null {
     policy.schema !== 1
     || typeof policy.activeModel !== "string"
     || !policy.activeModel
+    || (policy.selectableModels !== undefined
+      && (!Array.isArray(policy.selectableModels)
+        || !policy.selectableModels.includes(policy.activeModel)
+        || new Set(policy.selectableModels).size
+          !== policy.selectableModels.length
+        || policy.selectableModels.some(
+          (model) =>
+            typeof model !== "string"
+            || !model.trim()
+            || Object.hasOwn(policy.aliases ?? {}, model),
+        )))
     || !policy.aliases
     || typeof policy.aliases !== "object"
     || Array.isArray(policy.aliases)

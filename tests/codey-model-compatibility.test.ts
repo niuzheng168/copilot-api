@@ -5,6 +5,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { migrateCodeyManagedCodexModelFiles } from "~/lib/codey-model-migration"
+import { parseProviderModelAlias } from "~/lib/provider-model"
 
 const cwd = fileURLToPath(new URL("../", import.meta.url))
 const decoder = new TextDecoder()
@@ -16,6 +17,7 @@ const originalModelPolicyFile = process.env.CODEY_MODEL_POLICY_FILE
 function evaluate(
   managed: boolean,
   modelMappings: Record<string, string> = {},
+  requestedModel = "gpt-6-astra",
 ): { mappings: Record<string, string>; resolved: string } {
   const directory = fs.mkdtempSync(
     path.join(os.tmpdir(), "codey-model-compatibility-"),
@@ -49,7 +51,7 @@ const config = await import("./src/lib/config");
 config.mergeConfigWithDefaults();
 console.log(JSON.stringify({
   mappings: config.getModelMappings(),
-  resolved: config.resolveMappedModel("gpt-6-astra"),
+  resolved: config.resolveMappedModel(${JSON.stringify(requestedModel)}),
 }));
 `,
     ],
@@ -112,6 +114,164 @@ test("an explicit owner mapping overrides Codey's built-in successor", () => {
     mappings: { "gpt-6-astra": "provider/private-astra" },
     resolved: "provider/private-astra",
   })
+})
+
+test("the selectable Astra route bypasses the legacy Sol compatibility mapping", () => {
+  const result = evaluate(true, {}, "codex/gpt-6-astra")
+  expect(result).toEqual({
+    mappings: { "gpt-6-astra": "gpt-6.1-sol" },
+    resolved: "codex/gpt-6-astra",
+  })
+  expect(parseProviderModelAlias(result.resolved)).toEqual({
+    provider: "codex",
+    model: "gpt-6-astra",
+  })
+})
+
+function prepareSelectableCatalog(model = "gpt-6.1-sol"): string {
+  const directory = fs.mkdtempSync(
+    path.join(os.tmpdir(), "codey-selectable-models-"),
+  )
+  tempDirs.push(directory)
+  process.env.CODEY_MANAGED = "true"
+  process.env.CODEX_HOME = directory
+  process.env.CODEY_MODEL_POLICY_FILE = path.join(
+    directory,
+    "codey-model-policy.json",
+  )
+  fs.writeFileSync(
+    process.env.CODEY_MODEL_POLICY_FILE,
+    JSON.stringify({
+      schema: 1,
+      activeModel: "gpt-6.1-sol",
+      selectableModels: ["gpt-6.1-sol", "codex/gpt-6-astra"],
+      aliases: { "gpt-6-astra": "gpt-6.1-sol" },
+      contextWindow: 922_000,
+      autoCompactTokenLimit: 762_000,
+      catalogFile: "a100-models.json",
+    }),
+  )
+  fs.writeFileSync(
+    path.join(directory, "a100-models.json"),
+    JSON.stringify({
+      models: [
+        { slug: "gpt-6.1-sol", context_window: 922_000 },
+        { slug: "codex/gpt-6-astra", context_window: 872_000 },
+      ],
+    }),
+  )
+  fs.writeFileSync(
+    path.join(directory, "config.toml"),
+    `model = "${model}"\ncustom = "keep"\n`,
+  )
+  fs.writeFileSync(
+    path.join(directory, "models.json"),
+    JSON.stringify({
+      marker: "keep",
+      models: [
+        { slug: "gpt-6.1-sol", context_window: 922_000 },
+        { slug: "owner/custom", display_name: "Owner custom model" },
+      ],
+    }),
+  )
+  return directory
+}
+
+test("managed startup adds selectable metadata without changing the chosen model", () => {
+  for (const model of ["gpt-6.1-sol", "codex/gpt-6-astra"]) {
+    const directory = prepareSelectableCatalog(model)
+    const configFile = path.join(directory, "config.toml")
+    const before = fs.readFileSync(configFile, "utf8")
+
+    expect(migrateCodeyManagedCodexModelFiles()).toBe("gpt-6.1-sol")
+    expect(fs.readFileSync(configFile, "utf8")).toBe(before)
+    expect(
+      JSON.parse(fs.readFileSync(path.join(directory, "models.json"), "utf8")),
+    ).toEqual({
+      marker: "keep",
+      models: [
+        { slug: "gpt-6.1-sol", context_window: 922_000 },
+        { slug: "codex/gpt-6-astra", context_window: 872_000 },
+        { slug: "owner/custom", display_name: "Owner custom model" },
+      ],
+    })
+    expect(migrateCodeyManagedCodexModelFiles()).toBeNull()
+  }
+})
+
+test("selectable catalog synchronization leaves standalone and custom-only configurations untouched", () => {
+  const directory = prepareSelectableCatalog("owner/custom")
+  const modelsFile = path.join(directory, "models.json")
+  fs.writeFileSync(
+    modelsFile,
+    JSON.stringify({ models: [{ slug: "owner/custom" }] }),
+  )
+  const before = fs.readFileSync(modelsFile, "utf8")
+  expect(migrateCodeyManagedCodexModelFiles()).toBeNull()
+  expect(fs.readFileSync(modelsFile, "utf8")).toBe(before)
+
+  process.env.CODEY_MANAGED = "false"
+  expect(migrateCodeyManagedCodexModelFiles()).toBeNull()
+})
+
+test("selectable catalog synchronization skips missing policy or Codex files", () => {
+  const directory = prepareSelectableCatalog()
+  fs.unlinkSync(path.join(directory, "models.json"))
+  expect(migrateCodeyManagedCodexModelFiles()).toBeNull()
+  fs.unlinkSync(process.env.CODEY_MODEL_POLICY_FILE!)
+  expect(migrateCodeyManagedCodexModelFiles()).toBeNull()
+})
+
+test("selectable model policy requires the default and rejects empty or retired model IDs", () => {
+  for (const selectableModels of [
+    "not-an-array",
+    ["gpt-6.1-sol", "gpt-6.1-sol"],
+    ["codex/gpt-6-astra"],
+    ["gpt-6.1-sol", ""],
+    ["gpt-6.1-sol", "gpt-6-astra"],
+  ]) {
+    const directory = prepareSelectableCatalog()
+    const policyFile = path.join(directory, "codey-model-policy.json")
+    const policy = JSON.parse(fs.readFileSync(policyFile, "utf8")) as Record<
+      string,
+      unknown
+    >
+    fs.writeFileSync(
+      policyFile,
+      JSON.stringify({ ...policy, selectableModels }),
+    )
+    expect(() => migrateCodeyManagedCodexModelFiles()).toThrow(
+      "Invalid Codey managed model policy",
+    )
+  }
+})
+
+test("managed startup rejects missing selectable metadata before writing Codex files", () => {
+  const directory = prepareSelectableCatalog()
+  const modelsFile = path.join(directory, "models.json")
+  const before = fs.readFileSync(modelsFile, "utf8")
+  fs.writeFileSync(
+    path.join(directory, "a100-models.json"),
+    JSON.stringify({
+      models: [{ slug: "gpt-6.1-sol", context_window: 922_000 }],
+    }),
+  )
+
+  expect(() => migrateCodeyManagedCodexModelFiles()).toThrow(
+    "Codey package lacks model metadata for codex/gpt-6-astra",
+  )
+  expect(fs.readFileSync(modelsFile, "utf8")).toBe(before)
+})
+
+test("managed startup rejects an unsupported local catalog shape", () => {
+  const directory = prepareSelectableCatalog()
+  fs.writeFileSync(
+    path.join(directory, "models.json"),
+    JSON.stringify({ models: {} }),
+  )
+  expect(() => migrateCodeyManagedCodexModelFiles()).toThrow(
+    "Codey Codex model catalog has an unsupported shape",
+  )
 })
 
 test("managed startup migrates the active Codex files and preserves custom models", () => {
