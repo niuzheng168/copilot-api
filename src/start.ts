@@ -223,9 +223,9 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   state.showToken = options.showToken
 
   await ensurePaths()
-  await startModelsDevCache({
-    requiredOnEmpty: process.env.CODEY_MANAGED !== "true",
-  })
+  if (process.env.CODEY_MANAGED !== "true") {
+    await startModelsDevCache()
+  }
 
   const serverUrl = formatServerUrl(binding.clientHostname, options.port)
 

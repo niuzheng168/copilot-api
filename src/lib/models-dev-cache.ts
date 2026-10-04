@@ -86,7 +86,6 @@ export interface ModelsDevCacheOptions {
   cachePath?: string
   fetcher?: ModelsDevFetcher
   intervalMs?: number
-  requiredOnEmpty?: boolean
 }
 
 let snapshot: CatalogSnapshot | null = null
@@ -743,8 +742,7 @@ export async function startModelsDevCache(
   const intervalMs = options.intervalMs ?? REFRESH_INTERVAL_MS
   await loadDiskCache(cachePath)
   if (generation === refreshGeneration) {
-    const required =
-      snapshot === null && options.requiredOnEmpty !== false
+    const required = snapshot === null
     activeRefresh = runRefresh(
       cachePath,
       fetcher,
