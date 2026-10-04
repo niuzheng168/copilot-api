@@ -40,10 +40,6 @@
       "default_reasoning_level": "max",
       "supported_reasoning_levels": [
         {
-          "effort": "none",
-          "description": "Fast responses without extended reasoning"
-        },
-        {
           "effort": "low",
           "description": "Fast responses with lighter reasoning"
         },
