@@ -545,19 +545,28 @@ describe("model routes", () => {
           name: string
         }>
       }
-      expect(body.data.map((model) => model.id)).toContain("codex/gpt-6-astra")
+      expect(body.data.map((model) => model.id)).not.toContain(
+        "codex/gpt-6-astra",
+      )
       expect(body.data.map((model) => model.id)).toContain("codex/gpt-5.6-sol")
       expect(
         body.data.find((model) => model.id === "codex/gpt-6.1-sol"),
       ).toMatchObject({
         capabilities: {
           limits: {
-            max_context_window_tokens: 872_000,
+            max_context_window_tokens: 922_000,
             max_output_tokens: 128_000,
-            max_prompt_tokens: 872_000,
+            max_prompt_tokens: 922_000,
           },
           supports: {
-            reasoning_effort: ["low", "medium", "high", "xhigh", "max"],
+            reasoning_effort: [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+            ],
             vision: true,
           },
         },
@@ -759,17 +768,18 @@ describe("model routes", () => {
     expect(body.models).toContainEqual(template)
     const gpt61Sol = body.models.find((model) => model.slug === "gpt-6.1-sol")
     expect(gpt61Sol).toMatchObject({
-      context_window: 272_000,
-      default_reasoning_level: "low",
+      auto_compact_token_limit: 762_000,
+      context_window: 922_000,
+      default_reasoning_level: "max",
       input_modalities: ["text", "image"],
-      max_context_window: 872_000,
+      max_context_window: 1_050_000,
       multi_agent_reasoning_effort: "xhigh",
       supported_in_api: true,
       visibility: "list",
     })
     expect(
       gpt61Sol?.supported_reasoning_levels.map((level) => level.effort),
-    ).toEqual(["low", "medium", "high", "xhigh", "max", "ultra"])
+    ).toEqual(["none", "low", "medium", "high", "xhigh", "max"])
     expect(synthetic).toMatchObject({
       display_name: "claude-sonnet-4.6",
       shell_type: template?.shell_type,
@@ -1204,7 +1214,7 @@ describe("model routes", () => {
 
     expect(response.status).toBe(200)
     const body = (await response.json()) as { data: Array<{ id: string }> }
-    expect(body.data.map((model) => model.id)).toContain("gpt-6-astra")
+    expect(body.data.map((model) => model.id)).not.toContain("gpt-6-astra")
     expect(body.data.map((model) => model.id)).toContain("gpt-5.6-sol")
     expect(fetchMock).not.toHaveBeenCalled()
   })

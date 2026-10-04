@@ -1,5 +1,6 @@
 import {
   defaultConfig,
+  defaultCodeyManagedModelMappings,
   defaultContextManagement,
   getConfig,
   readEditableConfigFromDisk,
@@ -73,11 +74,13 @@ export function getExtraPromptForModel(model: string): string {
 export function getModelMappings(): Record<string, string> {
   const config = getConfig()
   const modelMappings = config.modelMappings
+  const builtInMappings =
+    process.env.CODEY_MANAGED === "true" ? defaultCodeyManagedModelMappings : {}
   if (!modelMappings) {
-    return { ...defaultConfig.modelMappings }
+    return { ...defaultConfig.modelMappings, ...builtInMappings }
   }
 
-  const validMappings: Record<string, string> = {}
+  const validMappings: Record<string, string> = { ...builtInMappings }
   for (const [sourceModel, targetModel] of Object.entries(modelMappings)) {
     if (
       !sourceModel
