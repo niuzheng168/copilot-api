@@ -252,20 +252,16 @@ describe("codex api helpers", () => {
           max_prompt_tokens: 922_000,
         },
         supports: {
-          reasoning_effort: [
-            "none",
-            "low",
-            "medium",
-            "high",
-            "xhigh",
-            "max",
-          ],
+          reasoning_effort: ["low", "medium", "high", "xhigh", "max"],
           vision: true,
         },
       },
       id: "gpt-6.1-sol",
       name: "GPT-6.1 Sol",
     })
+    expect(gpt61Sol?.capabilities.supports.reasoning_effort).not.toContain(
+      "none",
+    )
     expect(gpt61Sol?.capabilities.supports.reasoning_effort).not.toContain(
       "minimal",
     )

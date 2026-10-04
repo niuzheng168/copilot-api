@@ -559,14 +559,7 @@ describe("model routes", () => {
             max_prompt_tokens: 922_000,
           },
           supports: {
-            reasoning_effort: [
-              "none",
-              "low",
-              "medium",
-              "high",
-              "xhigh",
-              "max",
-            ],
+            reasoning_effort: ["low", "medium", "high", "xhigh", "max"],
             vision: true,
           },
         },
@@ -779,7 +772,7 @@ describe("model routes", () => {
     })
     expect(
       gpt61Sol?.supported_reasoning_levels.map((level) => level.effort),
-    ).toEqual(["none", "low", "medium", "high", "xhigh", "max"])
+    ).toEqual(["low", "medium", "high", "xhigh", "max"])
     expect(synthetic).toMatchObject({
       display_name: "claude-sonnet-4.6",
       shell_type: template?.shell_type,

@@ -60,7 +60,7 @@ const CODEX_MODELS: Array<CodexModelDefinition> = [
     input: ["text", "image"],
     maxTokens: 128_000,
     name: "GPT-6.1 Sol",
-    reasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
   },
 ]
 
