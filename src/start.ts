@@ -10,6 +10,7 @@ import invariant from "tiny-invariant"
 import { runProviderSetup } from "./auth"
 import { createCodeyBrowserHandler } from "./lib/codey-browser-handler"
 import { resolveCodeyHttpsConfig } from "./lib/codey-https-config"
+import { migrateCodeyManagedCodexModelFiles } from "./lib/codey-model-migration"
 import { listEnabledProviders, mergeConfigWithDefaults } from "./lib/config"
 import {
   GITHUB_TOKEN_ENV,
@@ -191,6 +192,10 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   consola.options.throttle = 0
 
   mergeConfigWithDefaults()
+  const migratedModel = migrateCodeyManagedCodexModelFiles()
+  if (migratedModel) {
+    consola.info(`Migrated Codey Codex model configuration to ${migratedModel}`)
+  }
 
   const configuredApiKeys = getConfiguredApiKeys()
   const binding = resolveServerBinding(
@@ -218,7 +223,9 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   state.showToken = options.showToken
 
   await ensurePaths()
-  await startModelsDevCache()
+  await startModelsDevCache({
+    requiredOnEmpty: process.env.CODEY_MANAGED !== "true",
+  })
 
   const serverUrl = formatServerUrl(binding.clientHostname, options.port)
 

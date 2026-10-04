@@ -301,6 +301,19 @@ test("fails startup when the first catalog cannot be fetched", async () => {
   expect(getOpencodeGoModelIds()).toEqual([])
 })
 
+test("allows managed startup without a cached models.dev catalog", async () => {
+  const cachePath = await getCachePath()
+
+  await startModelsDevCache({
+    cachePath,
+    fetcher: () => Promise.reject(new Error("offline")),
+    intervalMs: 60_000,
+    requiredOnEmpty: false,
+  })
+
+  expect(getOpencodeGoModelIds()).toEqual([])
+})
+
 test("uses the higher price at the models.dev context tier threshold", () => {
   installModelsDevCatalog(modelsDevCatalogFixture)
   const costAt = (inputTokens: number) =>

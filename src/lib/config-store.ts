@@ -5,6 +5,7 @@ import fs from "node:fs"
 import type { TokenUsagePricingConfig } from "~/lib/token-usage/pricing"
 
 import { writeFileAtomically } from "./atomic-file"
+import { readCodeyManagedModelPolicy } from "./codey-model-policy"
 import { PATHS } from "./paths"
 
 export interface AppConfig {
@@ -147,13 +148,15 @@ export const defaultContextManagement = {
 // Codey opts out by default; standalone copilot-api retains its existing default.
 // Keep fresh config generation and the missing-field fallback consistent.
 const defaultResponsesApiWebSocketEnabled = process.env.CODEY_MANAGED !== "true"
+export const defaultCodeyManagedModelMappings =
+  readCodeyManagedModelPolicy()?.aliases ?? {}
 
 export const defaultConfig: AppConfig = {
   auth: {
     apiKeys: [],
   },
   providers: {},
-  modelMappings: {},
+  modelMappings: defaultCodeyManagedModelMappings,
   smallModels: {
     codex: "gpt-6-luna",
     copilot: "gpt-6-luna",
@@ -291,6 +294,8 @@ function mergeDefaultConfig(config: AppConfig): {
     defaultConfig.modelResponsesApiCompactThresholds ?? {}
   const modelReasoningEfforts = config.modelReasoningEfforts ?? {}
   const defaultModelReasoningEfforts = defaultConfig.modelReasoningEfforts ?? {}
+  const modelMappings = config.modelMappings ?? {}
+  const defaultModelMappings = defaultConfig.modelMappings ?? {}
   const contextManagement = normalizeContextManagementConfig(
     config.contextManagement,
   )
@@ -311,6 +316,9 @@ function mergeDefaultConfig(config: AppConfig): {
   const missingReasoningEffortModels = Object.keys(
     defaultModelReasoningEfforts,
   ).filter((model) => !Object.hasOwn(modelReasoningEfforts, model))
+  const missingModelMappings = Object.keys(defaultModelMappings).filter(
+    (model) => !Object.hasOwn(modelMappings, model),
+  )
   const missingResponsesApiCompactThresholdModels = Object.keys(
     defaultResponsesApiCompactThresholds,
   ).filter((model) => !Object.hasOwn(responsesApiCompactThresholds, model))
@@ -320,6 +328,7 @@ function mergeDefaultConfig(config: AppConfig): {
 
   const hasExtraPromptChanges = missingExtraPromptModels.length > 0
   const hasReasoningEffortChanges = missingReasoningEffortModels.length > 0
+  const hasModelMappingChanges = missingModelMappings.length > 0
   const hasResponsesApiCompactThresholdChanges =
     missingResponsesApiCompactThresholdModels.length > 0
   const hasContextManagementChanges = missingContextManagementKeys.length > 0
@@ -331,6 +340,7 @@ function mergeDefaultConfig(config: AppConfig): {
   if (
     !hasExtraPromptChanges
     && !hasReasoningEffortChanges
+    && !hasModelMappingChanges
     && !hasResponsesApiCompactThresholdChanges
     && !hasContextManagementChanges
     && !hasUpstreamTransportChanges
@@ -361,6 +371,10 @@ function mergeDefaultConfig(config: AppConfig): {
       modelReasoningEfforts: {
         ...defaultModelReasoningEfforts,
         ...modelReasoningEfforts,
+      },
+      modelMappings: {
+        ...defaultModelMappings,
+        ...modelMappings,
       },
       upstreamTransport,
     },

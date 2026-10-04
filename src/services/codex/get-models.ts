@@ -40,14 +40,6 @@ const CODEX_MODELS: Array<CodexModelDefinition> = [
   },
   {
     contextWindow: 872_000,
-    id: "gpt-6-astra",
-    input: ["text", "image"],
-    maxTokens: 128_000,
-    name: "GPT-6 Astra",
-    reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
-  },
-  {
-    contextWindow: 872_000,
     id: "gpt-6-luna",
     input: ["text", "image"],
     maxTokens: 128_000,
@@ -63,12 +55,12 @@ const CODEX_MODELS: Array<CodexModelDefinition> = [
     reasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
   },
   {
-    contextWindow: 872_000,
+    contextWindow: 922_000,
     id: "gpt-6.1-sol",
     input: ["text", "image"],
     maxTokens: 128_000,
     name: "GPT-6.1 Sol",
-    reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+    reasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
   },
 ]
 
