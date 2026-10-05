@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
 
+import { assertGitHubCopilotEnabled } from "./github-copilot-provider"
+
 import { COMPACT_REQUEST, type CompactType } from "~/lib/compact"
 
 import type { State } from "./state"
@@ -221,6 +223,7 @@ export const githubUserHeaders = (state: State): Record<string, string> => {
 }
 
 export const copilotModelsHeaders = (state: State) => {
+  assertGitHubCopilotEnabled()
   if (isDirectGitHubAuth()) {
     return {
       Authorization: `Bearer ${state.copilotToken}`,
@@ -240,6 +243,7 @@ export const copilotHeaders = (
   requestId?: string,
   vision: boolean = false,
 ) => {
+  assertGitHubCopilotEnabled()
   if (isDirectGitHubAuth()) {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${state.copilotToken}`,
@@ -275,6 +279,7 @@ export const copilotHeaders = (
 export const copilotWebSocketHeaders = (
   preparedHeaders: Record<string, string>,
 ) => {
+  assertGitHubCopilotEnabled()
   if (isDirectGitHubAuth()) {
     return omitHeader(preparedHeaders, "x-initiator")
   }

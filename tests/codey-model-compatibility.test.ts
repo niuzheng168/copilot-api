@@ -95,21 +95,32 @@ afterEach(() => {
 
 test("Codey-managed gateways retain the retired Astra ID as a compatibility alias", () => {
   expect(evaluate(true)).toEqual({
-    mappings: { "gpt-6-astra": "gpt-6.1-sol" },
+    mappings: {
+      "codex-auto-review": "codex/codex-auto-review",
+      "gpt-reserve": "codex/gpt-reserve",
+      "gpt-6-astra": "gpt-6.1-sol",
+    },
     resolved: "gpt-6.1-sol",
   })
 })
 
 test("standalone gateways do not acquire Codey's compatibility policy", () => {
   expect(evaluate(false)).toEqual({
-    mappings: {},
+    mappings: {
+      "codex-auto-review": "codex/codex-auto-review",
+      "gpt-reserve": "codex/gpt-reserve",
+    },
     resolved: "gpt-6-astra",
   })
 })
 
 test("an explicit owner mapping overrides Codey's built-in successor", () => {
   expect(evaluate(true, { "gpt-6-astra": "provider/private-astra" })).toEqual({
-    mappings: { "gpt-6-astra": "provider/private-astra" },
+    mappings: {
+      "codex-auto-review": "codex/codex-auto-review",
+      "gpt-reserve": "codex/gpt-reserve",
+      "gpt-6-astra": "provider/private-astra",
+    },
     resolved: "provider/private-astra",
   })
 })

@@ -133,6 +133,7 @@ export interface ProviderConfig {
   accountId?: string
   pricingCurrency?: string
   models?: Record<string, ModelConfig>
+  codexModels?: Array<string>
 }
 
 const modelResponsesApiCompactThresholds = {
@@ -150,13 +151,20 @@ export const defaultContextManagement = {
 const defaultResponsesApiWebSocketEnabled = process.env.CODEY_MANAGED !== "true"
 export const defaultCodeyManagedModelMappings =
   readCodeyManagedModelPolicy()?.aliases ?? {}
+const defaultModelMappings = {
+  "codex-auto-review": "codex/codex-auto-review",
+  "gpt-reserve": "codex/gpt-reserve",
+}
 
 export const defaultConfig: AppConfig = {
   auth: {
     apiKeys: [],
   },
   providers: {},
-  modelMappings: defaultCodeyManagedModelMappings,
+  modelMappings: {
+    ...defaultModelMappings,
+    ...defaultCodeyManagedModelMappings,
+  },
   smallModels: {
     codex: "gpt-6-luna",
     copilot: "gpt-6-luna",
@@ -286,6 +294,8 @@ function mergeDefaultConfig(config: AppConfig): {
   mergedConfig: AppConfig
   changed: boolean
 } {
+  const modelMappings = config.modelMappings ?? {}
+  const defaultModelMappings = defaultConfig.modelMappings ?? {}
   const extraPrompts = config.extraPrompts ?? {}
   const defaultExtraPrompts = defaultConfig.extraPrompts ?? {}
   const responsesApiCompactThresholds =
@@ -294,8 +304,6 @@ function mergeDefaultConfig(config: AppConfig): {
     defaultConfig.modelResponsesApiCompactThresholds ?? {}
   const modelReasoningEfforts = config.modelReasoningEfforts ?? {}
   const defaultModelReasoningEfforts = defaultConfig.modelReasoningEfforts ?? {}
-  const modelMappings = config.modelMappings ?? {}
-  const defaultModelMappings = defaultConfig.modelMappings ?? {}
   const contextManagement = normalizeContextManagementConfig(
     config.contextManagement,
   )
@@ -309,6 +317,9 @@ function mergeDefaultConfig(config: AppConfig): {
   )
   const defaultContextManagementConfig = defaultConfig.contextManagement ?? {}
 
+  const missingModelMappings = Object.keys(defaultModelMappings).filter(
+    (model) => !Object.hasOwn(modelMappings, model),
+  )
   const missingExtraPromptModels = Object.keys(defaultExtraPrompts).filter(
     (model) => !Object.hasOwn(extraPrompts, model),
   )
@@ -316,9 +327,6 @@ function mergeDefaultConfig(config: AppConfig): {
   const missingReasoningEffortModels = Object.keys(
     defaultModelReasoningEfforts,
   ).filter((model) => !Object.hasOwn(modelReasoningEfforts, model))
-  const missingModelMappings = Object.keys(defaultModelMappings).filter(
-    (model) => !Object.hasOwn(modelMappings, model),
-  )
   const missingResponsesApiCompactThresholdModels = Object.keys(
     defaultResponsesApiCompactThresholds,
   ).filter((model) => !Object.hasOwn(responsesApiCompactThresholds, model))
@@ -326,9 +334,9 @@ function mergeDefaultConfig(config: AppConfig): {
     defaultContextManagementConfig,
   ).filter((key) => !Object.hasOwn(contextManagement, key))
 
+  const hasModelMappingChanges = missingModelMappings.length > 0
   const hasExtraPromptChanges = missingExtraPromptModels.length > 0
   const hasReasoningEffortChanges = missingReasoningEffortModels.length > 0
-  const hasModelMappingChanges = missingModelMappings.length > 0
   const hasResponsesApiCompactThresholdChanges =
     missingResponsesApiCompactThresholdModels.length > 0
   const hasContextManagementChanges = missingContextManagementKeys.length > 0
@@ -338,9 +346,9 @@ function mergeDefaultConfig(config: AppConfig): {
   )
 
   if (
-    !hasExtraPromptChanges
+    !hasModelMappingChanges
+    && !hasExtraPromptChanges
     && !hasReasoningEffortChanges
-    && !hasModelMappingChanges
     && !hasResponsesApiCompactThresholdChanges
     && !hasContextManagementChanges
     && !hasUpstreamTransportChanges
@@ -356,6 +364,10 @@ function mergeDefaultConfig(config: AppConfig): {
   return {
     mergedConfig: {
       ...persistedConfig,
+      modelMappings: {
+        ...defaultModelMappings,
+        ...modelMappings,
+      },
       contextManagement: {
         ...defaultContextManagementConfig,
         ...contextManagement,
@@ -371,10 +383,6 @@ function mergeDefaultConfig(config: AppConfig): {
       modelReasoningEfforts: {
         ...defaultModelReasoningEfforts,
         ...modelReasoningEfforts,
-      },
-      modelMappings: {
-        ...defaultModelMappings,
-        ...modelMappings,
       },
       upstreamTransport,
     },
@@ -503,6 +511,11 @@ export function mergeConfigWithDefaults(): AppConfig {
 export function getConfig(): AppConfig {
   cachedConfig ??= mergeDefaultConfig(readConfigFromDisk()).mergedConfig
   return cachedConfig
+}
+
+// Refresh this process on its next read without rewriting defaults to disk.
+export function invalidateConfigCache(): void {
+  cachedConfig = null
 }
 
 export function reloadConfig(): AppConfig {

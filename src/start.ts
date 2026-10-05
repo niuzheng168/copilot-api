@@ -11,7 +11,9 @@ import { runProviderSetup } from "./auth"
 import { createCodeyBrowserHandler } from "./lib/codey-browser-handler"
 import { resolveCodeyHttpsConfig } from "./lib/codey-https-config"
 import { migrateCodeyManagedCodexModelFiles } from "./lib/codey-model-migration"
+import { isGitHubCopilotEnabled } from "./lib/github-copilot-provider"
 import { listEnabledProviders, mergeConfigWithDefaults } from "./lib/config"
+import { setupCopilotRuntime } from "~/lib/copilot-runtime"
 import {
   GITHUB_TOKEN_ENV,
   readGitHubToken,
@@ -34,14 +36,6 @@ import {
 } from "./lib/server-host"
 import { generateEnvScript } from "./lib/shell"
 import { state } from "./lib/state"
-import { logUser, setupCopilotToken } from "./lib/token"
-import { cacheModels } from "./services/copilot/models-cache"
-import {
-  cacheMacMachineId,
-  cacheVSCodeVersion,
-  cacheVsCodeSessionId,
-  cacheVsCodeDeviceId,
-} from "./services/vscode-env"
 
 interface RunServerOptions {
   host: string
@@ -79,7 +73,7 @@ async function setupCopilotMode(
   serverUrl: string,
   claudeCode: boolean,
 ): Promise<void> {
-  state.githubToken = githubToken
+  state.githubTokenSource = source
   consola.info(
     source === "cli" ? "Using provided GitHub token"
     : source === "env" ?
@@ -87,15 +81,7 @@ async function setupCopilotMode(
     : "Using GitHub token from local file",
   )
 
-  await logUser()
-
-  await cacheVSCodeVersion()
-  cacheMacMachineId()
-  cacheVsCodeSessionId()
-  await cacheVsCodeDeviceId()
-
-  await setupCopilotToken()
-  await cacheModels()
+  await setupCopilotRuntime(githubToken)
 
   if (claudeCode) {
     runClaudeCode(serverUrl)
@@ -167,10 +153,16 @@ async function setupProviderMode(
     return
   }
 
+  if (!isGitHubCopilotEnabled()) {
+    throw new Error(
+      "No enabled providers found. Enable GitHub Copilot with `copilot-api provider enable github-copilot`, or enable another configured provider.",
+    )
+  }
+
   consola.info("No enabled providers found. Setting one up...")
   await runProviderSetup()
 
-  if (state.githubToken) {
+  if (state.githubToken && isGitHubCopilotEnabled()) {
     // The setup flow persisted the token with the credential store.
     await setupCopilotMode(state.githubToken, "file", serverUrl, claudeCode)
     return
@@ -229,8 +221,11 @@ export async function runServer(options: RunServerOptions): Promise<void> {
 
   const serverUrl = formatServerUrl(binding.clientHostname, options.port)
 
-  const resolvedGitHubToken = await resolveGitHubToken(options.githubToken)
-  if (resolvedGitHubToken) {
+  const resolvedGitHubToken =
+    isGitHubCopilotEnabled() ?
+      await resolveGitHubToken(options.githubToken)
+    : null
+  if (resolvedGitHubToken && isGitHubCopilotEnabled()) {
     await setupCopilotMode(
       resolvedGitHubToken.token,
       resolvedGitHubToken.source,
