@@ -24,7 +24,7 @@ const fixture: ProviderManagementConfig = {
       name: 'codex',
       type: 'openai-responses',
       enabled: false,
-      codexModels: [],
+      agentsModels: [],
     },
   ],
 }
@@ -771,6 +771,10 @@ describe('provider management UI', () => {
       )
     })
     expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.querySelector('h4')?.textContent).toBe(
+      'Models shown in Coding Agent',
+    )
+    expect(container.textContent).not.toContain('1 MiB')
     await selectMode('Selected models')
     await act(async () => {
       container
@@ -797,7 +801,7 @@ describe('provider management UI', () => {
       button('Save').click()
     })
     expect(saveConfig).toHaveBeenCalledWith({
-      providers: { dashscope: { codexModels: ['qwen-plus'] } },
+      providers: { dashscope: { agentsModels: ['qwen-plus'] } },
     })
   })
   test('keeps selected models first while searching and preserves unknown selections', async () => {
@@ -809,7 +813,7 @@ describe('provider management UI', () => {
             name: 'codex',
             type: 'openai-responses',
             enabled: true,
-            codexModels: ['unknown-model'],
+            agentsModels: ['unknown-model'],
           },
         ],
       }),
@@ -865,7 +869,7 @@ describe('provider management UI', () => {
     })
     expect(saveConfig).toHaveBeenCalledWith({
       providers: {
-        codex: { codexModels: ['unknown-model', 'live-model', 'gpt-5.5'] },
+        codex: { agentsModels: ['unknown-model', 'live-model', 'gpt-5.5'] },
       },
     })
   })
@@ -919,7 +923,7 @@ describe('provider management UI', () => {
     })
     expect(saveConfig).toHaveBeenCalledWith({
       providers: {
-        codex: { enabled: true, codexModels: ['gpt-5.5', 'gpt-6.1-sol'] },
+        codex: { enabled: true, agentsModels: ['gpt-5.5', 'gpt-6.1-sol'] },
       },
     })
     expect(container.querySelector('[role="status"]')?.textContent).toContain(
