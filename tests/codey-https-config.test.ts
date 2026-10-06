@@ -5,7 +5,7 @@ import { resolveCodeyHttpsConfig } from "~/lib/codey-https-config"
 const validEnvironment = {
   COPILOT_API_CODEY_ALLOWED_ORIGIN: "https://codey.example.test",
   COPILOT_API_CODEY_HTTPS_PORT: "8443",
-  COPILOT_API_CODEY_NODE_ID: "zhn-a100",
+  COPILOT_API_CODEY_NODE_ID: "linux-gpu",
   COPILOT_API_CODEY_SIGNING_KEY_FILE: "/config/signing.key",
   COPILOT_API_CODEY_TLS_CERT: "/config/tls.crt",
   COPILOT_API_CODEY_TLS_KEY: "/config/tls.key",
@@ -22,7 +22,7 @@ describe("resolveCodeyHttpsConfig", () => {
       certPath: "/config/tls.crt",
       host: "0.0.0.0",
       keyPath: "/config/tls.key",
-      nodeId: "zhn-a100",
+      nodeId: "linux-gpu",
       port: 8443,
       signingKeyFile: "/config/signing.key",
     })
@@ -32,9 +32,9 @@ describe("resolveCodeyHttpsConfig", () => {
     expect(
       resolveCodeyHttpsConfig({
         ...validEnvironment,
-        COPILOT_API_CODEY_HTTPS_HOST: "10.0.0.7",
+        COPILOT_API_CODEY_HTTPS_HOST: "10.0.0.10",
       })?.host,
-    ).toBe("10.0.0.7")
+    ).toBe("10.0.0.10")
   })
 
   it("rejects partial configuration", () => {

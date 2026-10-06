@@ -14,11 +14,11 @@ function ticket(
   const issuedAt = Math.floor(now / 1000)
   const payload = Buffer.from(
     JSON.stringify({
-      aud: "zhn-a100",
+      aud: "linux-gpu",
       exp: issuedAt + 600,
       iat: issuedAt,
       scope: ["usage", "history"],
-      sub: "zhn@microsoft.com",
+      sub: "operator@microsoft.com",
       v: 1,
       ...overrides,
     }),
@@ -33,15 +33,15 @@ describe("verifyCodeyClientTicket", () => {
   it("accepts a valid scoped ticket", () => {
     expect(
       verifyCodeyClientTicket({
-        nodeId: "zhn-a100",
+        nodeId: "linux-gpu",
         now,
         requiredScope: "usage",
         signingKey,
         token: ticket(),
       }),
     ).toMatchObject({
-      nodeId: "zhn-a100",
-      principalId: "zhn@microsoft.com",
+      nodeId: "linux-gpu",
+      principalId: "operator@microsoft.com",
       scopes: ["history", "usage"],
     })
   })
@@ -49,7 +49,7 @@ describe("verifyCodeyClientTicket", () => {
   it("rejects a ticket for another node", () => {
     expect(() =>
       verifyCodeyClientTicket({
-        nodeId: "jpe3",
+        nodeId: "node-east-2",
         now,
         requiredScope: "usage",
         signingKey,
@@ -62,7 +62,7 @@ describe("verifyCodeyClientTicket", () => {
     const issuedAt = Math.floor(now / 1000)
     expect(() =>
       verifyCodeyClientTicket({
-        nodeId: "zhn-a100",
+        nodeId: "linux-gpu",
         now,
         requiredScope: "usage",
         signingKey,
@@ -74,7 +74,7 @@ describe("verifyCodeyClientTicket", () => {
   it("rejects a missing scope", () => {
     expect(() =>
       verifyCodeyClientTicket({
-        nodeId: "zhn-a100",
+        nodeId: "linux-gpu",
         now,
         requiredScope: "history",
         signingKey,
@@ -86,7 +86,7 @@ describe("verifyCodeyClientTicket", () => {
   it("rejects a modified signature", () => {
     expect(() =>
       verifyCodeyClientTicket({
-        nodeId: "zhn-a100",
+        nodeId: "linux-gpu",
         now,
         requiredScope: "usage",
         signingKey,

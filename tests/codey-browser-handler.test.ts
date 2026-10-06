@@ -3,8 +3,7 @@ import { describe, expect, it } from "bun:test"
 
 import { createCodeyBrowserHandler } from "~/lib/codey-browser-handler"
 
-const allowedOrigin =
-  "https://codey.ambitiouspond-a4ecfeb2.japaneast.azurecontainerapps.io"
+const allowedOrigin = "https://portal.example.test"
 const signingKey = "b".repeat(64)
 const now = Date.UTC(2026, 8, 4, 13, 30, 0)
 
@@ -12,11 +11,11 @@ function ticket(scopes = ["usage", "history"]): string {
   const issuedAt = Math.floor(now / 1000)
   const payload = Buffer.from(
     JSON.stringify({
-      aud: "zhn-a100",
+      aud: "linux-gpu",
       exp: issuedAt + 600,
       iat: issuedAt,
       scope: scopes,
-      sub: "zhn@microsoft.com",
+      sub: "operator@microsoft.com",
       v: 1,
     }),
   ).toString("base64url")
@@ -34,14 +33,14 @@ function createHandler(
     fetchApp,
     getHistoryApiKeys: () => ["history-secret"],
     getUsageApiKeys: () => ["usage-secret"],
-    nodeId: "zhn-a100",
+    nodeId: "linux-gpu",
     now: () => now,
     signingKey,
   })
 }
 
 function request(path: string, tokenValue = ticket()): Request {
-  return new Request(`https://zhn-a100.example.test${path}`, {
+  return new Request(`https://linux-gpu.example.test${path}`, {
     headers: {
       authorization: `Bearer ${tokenValue}`,
       origin: allowedOrigin,
@@ -53,7 +52,7 @@ describe("createCodeyBrowserHandler", () => {
   it("serves an unauthenticated health response", async () => {
     const handler = createHandler(() => new Response("unused"))
     const response = await handler(
-      new Request("https://zhn-a100.example.test/healthz", {
+      new Request("https://linux-gpu.example.test/healthz", {
         headers: { origin: allowedOrigin },
       }),
     )
@@ -62,7 +61,7 @@ describe("createCodeyBrowserHandler", () => {
       allowedOrigin,
     )
     expect(await response.json()).toMatchObject({
-      nodeId: "zhn-a100",
+      nodeId: "linux-gpu",
       ok: true,
     })
   })
@@ -95,7 +94,7 @@ describe("createCodeyBrowserHandler", () => {
   it("handles private-network CORS preflight", async () => {
     const handler = createHandler(() => new Response("unused"))
     const response = await handler(
-      new Request("https://zhn-a100.example.test/usage", {
+      new Request("https://linux-gpu.example.test/usage", {
         headers: {
           "access-control-request-private-network": "true",
           origin: allowedOrigin,
@@ -112,7 +111,7 @@ describe("createCodeyBrowserHandler", () => {
   it("rejects another origin", async () => {
     const handler = createHandler(() => Response.json({ ok: true }))
     const response = await handler(
-      new Request("https://zhn-a100.example.test/usage", {
+      new Request("https://linux-gpu.example.test/usage", {
         headers: {
           authorization: `Bearer ${ticket()}`,
           origin: "https://example.com",
