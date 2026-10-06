@@ -3,8 +3,7 @@ import { describe, expect, it } from "bun:test"
 
 import { createCodeyBrowserHandler } from "~/lib/codey-browser-handler"
 
-const allowedOrigin =
-  "https://portal.example.test"
+const allowedOrigin = "https://portal.example.test"
 const signingKey = "b".repeat(64)
 const now = Date.UTC(2026, 8, 4, 13, 30, 0)
 
@@ -16,7 +15,7 @@ function ticket(scopes = ["usage", "history"]): string {
       exp: issuedAt + 600,
       iat: issuedAt,
       scope: scopes,
-      sub: "operator@microsoft.com",
+      sub: "operator@example.test",
       v: 1,
     }),
   ).toString("base64url")

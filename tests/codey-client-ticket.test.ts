@@ -18,7 +18,7 @@ function ticket(
       exp: issuedAt + 600,
       iat: issuedAt,
       scope: ["usage", "history"],
-      sub: "operator@microsoft.com",
+      sub: "operator@example.test",
       v: 1,
       ...overrides,
     }),
@@ -41,7 +41,7 @@ describe("verifyCodeyClientTicket", () => {
       }),
     ).toMatchObject({
       nodeId: "linux-gpu",
-      principalId: "operator@microsoft.com",
+      principalId: "operator@example.test",
       scopes: ["history", "usage"],
     })
   })
