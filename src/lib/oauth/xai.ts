@@ -133,9 +133,12 @@ async function send(
   dependencies: XaiOAuthDependencies = {},
 ): Promise<Response> {
   const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS
-  const timeout = AbortSignal.timeout(timeoutMs)
+  const timeoutController = new AbortController()
+  const timeout = setTimeout(() => timeoutController.abort(), timeoutMs)
   const signal =
-    options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
+    options.signal ?
+      AbortSignal.any([options.signal, timeoutController.signal])
+    : timeoutController.signal
   try {
     return await (dependencies.fetcher ?? fetch)(`${ISSUER}/${endpoint}`, {
       method: "POST",
@@ -149,13 +152,15 @@ async function send(
     })
   } catch (error) {
     options.signal?.throwIfAborted()
-    if (timeout.aborted) {
+    if (timeoutController.signal.aborted) {
       throw new Error(
         `xAI authorization request timed out after ${timeoutMs}ms`,
         { cause: error },
       )
     }
     throw error
+  } finally {
+    clearTimeout(timeout)
   }
 }
 
