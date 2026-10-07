@@ -198,6 +198,7 @@ export class BuiltinProviderModelRegistry {
       },
       "deepseek-v4.1-flash": {
         contextWindow: 1_000_000,
+        defaultReasoningEffort: "high",
         inputModalities: ["text", "image"],
         maxOutputTokens: 393_216,
         pricing: {
@@ -211,9 +212,11 @@ export class BuiltinProviderModelRegistry {
           output: 8,
           peakWindows: dashscopePeakWindows,
         },
+        reasoningEfforts: ["low", "high", "max"],
       },
       "qwen3.8-max": {
         contextWindow: 1_000_000,
+        defaultReasoningEffort: "xhigh",
         inputModalities: ["text", "image"],
         maxOutputTokens: 64_000,
         pricing: {
@@ -223,9 +226,11 @@ export class BuiltinProviderModelRegistry {
           input: 12,
           output: 36,
         },
+        reasoningEfforts: ["low", "medium", "xhigh"],
       },
       "qwen3.8-max-0902": {
         contextWindow: 1_000_000,
+        defaultReasoningEffort: "xhigh",
         inputModalities: ["text", "image"],
         maxOutputTokens: 131_072,
         pricing: {
@@ -235,9 +240,11 @@ export class BuiltinProviderModelRegistry {
           input: 12,
           output: 36,
         },
+        reasoningEfforts: ["low", "medium", "xhigh"],
       },
       "qwen3.8-flash": {
         contextWindow: 1_000_000,
+        defaultReasoningEffort: "xhigh",
         inputModalities: ["text", "image"],
         maxOutputTokens: 131_072,
         pricing: {
@@ -247,9 +254,11 @@ export class BuiltinProviderModelRegistry {
           input: 0.8,
           output: 2.7,
         },
+        reasoningEfforts: ["low", "medium", "xhigh"],
       },
       "qwen3.7-plus": {
         contextWindow: 1_000_000,
+        defaultReasoningEffort: "xhigh",
         inputModalities: ["text", "image"],
         maxOutputTokens: 64_000,
         pricing: {
@@ -272,9 +281,11 @@ export class BuiltinProviderModelRegistry {
             },
           ],
         },
+        reasoningEfforts: ["low", "medium", "xhigh"],
       },
       "kimi/kimi-k3": {
         contextWindow: 1_048_576,
+        defaultReasoningEffort: "max",
         inputModalities: ["text", "image"],
         maxOutputTokens: 64_000,
         pricing: {
@@ -282,6 +293,7 @@ export class BuiltinProviderModelRegistry {
           input: 20,
           output: 100,
         },
+        reasoningEfforts: ["max"],
       },
       "ZHIPU/GLM-5.3": {
         contextWindow: 1_048_576,

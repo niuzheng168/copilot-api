@@ -27,6 +27,7 @@
       "messages": true,
       "responses": false
     },
+    "opencodeModelContextWindow": 300000,
     "modelResponsesApiCompactThresholds": {
       "gpt-5.4": 217600,
       "gpt-5.5": 217600
@@ -79,6 +80,7 @@
     - `defaultReasoningEffort`：可选，Codex 默认推理档位；内置模型元数据可以提供已知默认值，否则可用档位包含 `max` 时默认取 `max`，再回退到配置的第一个档位。合成 Codex 模型始终启用并行工具调用。
     - `reasoningField`：可选，OpenAI-compatible `/v1/messages` 转发 assistant 思考文本时使用的字段，支持 `reasoning` 与 `reasoning_content`，默认 `reasoning_content`；OpenRouter 风格模型设为 `reasoning`，OpenCode Go 的 Hy 系列模型会根据 models.dev 的 family 元数据使用 `reasoning` 字段。
 - **smallModels：** 按 provider 指定 Codex 客户端 `/v1/responses` 标题请求的模型。`codex`、`copilot` 默认使用 `gpt-6-luna`；其他 provider 仅在配置同名键时切换（如 `smallModels.dashscope`）。模型须受对应 provider 支持；设为空字符串可禁用切换。标题提示词须出现在最后两个 input 项之一的 user `input_text` 中。`copilot` 也用于非 token-based 计费账户的 Claude Code 无工具预热；旧 `smallModel` 不再生效。
+- **opencodeModelContextWindow：** OpenCode 模型目录（携带 OpenCode User-Agent 的 `GET /v1/models`）中 `limit.context` 和已有 `limit.input` 的 token 上限，默认 `300000`。两个字段分别在超过上限时截断，较小值保持不变，未提供的 input 上限不会补填。不修改 `limit.output`、上游实际限制或其他客户端的模型目录。正数会向下取整；缺失、无效、零或负数回退到默认值。启动合并配置时会将归一化后的值写入 `config.json`。
 - **contextManagement：** 控制代理是否为 Responses API 附加 `context_management` 压缩指令。`messages` 作用于被翻译成 Responses API 的 Anthropic 风格 `/v1/messages` 请求，包括 `openai-responses` provider 的 Messages 路由，默认值为 `true`。`responses` 作用于 native `/v1/responses` 流量，包括 `provider/model` 别名和内置 `codex` provider，默认值为 `false`。只有在确认客户端支持 context management compaction 后，才建议在 Responses API 下启用 `responses`。启用后，请求体会带上 `context_management`，并在后续轮次中仅保留最新的压缩承载内容。代理仅为 `gpt-*` 模型添加 context management 并压缩历史；这两个配置开关对 Grok 等非 GPT 模型不生效。**注意：** 对于 GPT-5.6 及以上模型（如 `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`），context management 功能同样会被强制禁用，因为开启后会破坏这些模型的 prompt 缓存命中。这些强制覆盖优先于 `contextManagement` 和 `modelResponsesApiCompactThresholds` 配置。
  - **modelResponsesApiCompactThresholds：** 按模型覆盖 Responses API 的 `compact_threshold`，仅在代理自动附加 `context_management` 时使用。它的优先级高于 `resolveResponsesCompactThreshold` 基于 `max_prompt_tokens * ratio` 的兜底阈值。默认将 `gpt-5.4` 和 `gpt-5.5` 设为 `217600`（`272000 * 0.8`）。未列出的模型继续使用原有兜底逻辑。
 - **modelReasoningEfforts：** `/v1/messages` 请求的模型级默认推理强度。仅当请求没有传入 `output_config.effort` 时，该配置才会生效。
@@ -92,7 +94,7 @@
 - **alphaSearchCodexPriority：** 默认值为 `true`。顶层 alpha-search 请求优先使用 Codex alpha-search 端点，因为它不会消耗 provider 配额。若 Codex 不可用，或该配置设为 `false`，使用非 `codex/model` 的 `provider/model` 别名的请求会调用目标 provider 的 `/v1/responses` 端点，没有 provider 前缀的请求使用 GitHub Copilot Responses web search。该适配器会识别当前所有 Codex search command；不受支持的 `image_query` 和 `screenshot` 会返回成功且明确要求不要重试的 tool output。
 - **alphaSearchModel：** Messages-backed 的 Responses Lite 模型不能直接执行 Responses web search 时使用的原生 Responses 搜索模型，默认值为 `gpt-6-luna`。可以配置普通 Copilot 模型或 `openai-responses` 类型的 `provider/model`；设为空字符串可禁用，此时这类模型的 alpha-search 请求会返回参数错误。
 - **messageApiWebSearchModel：** 顶层 Copilot `/v1/messages` 请求只包含服务端 `web_search` 工具时使用的全局模型，默认值为 `gpt-6-luna`。如果该值是 `provider/model` 别名，请求会进入对应 provider 的 Messages API 路径，并在转发前移除 provider 前缀。对于 Copilot GPT 模型，web search 会通过 `/responses` 执行。混合 `web_search` 与自定义工具的场景暂不支持，服务端会移除 server-side `web_search`。
-- **claudeAutoModel：** 用于 Claude Code 后台 security-monitor 请求的模型，作用于 `/v1/messages` 和 provider Messages 路由。当请求不带任何工具、`stop_sequences` 为 `["</block>"]`，且 system 文本块以 `You are a security monitor for autonomous AI coding agents.` 开头时，会被识别为 security-monitor 请求，其模型会被替换为该配置值。对于顶层请求，`provider/model` 别名会转发到对应 provider 的 Messages API；对于 provider 路由，则保持当前 provider，直接使用该配置值。默认为空（禁用）。
+- **claudeAutoModel：** 用于 Claude Code 后台 security-monitor 请求的模型，作用于 `/v1/messages` 和 provider Messages 路由。当请求不带任何工具、`stop_sequences` 为 `["</block>"]`，且 system 文本块以 `You are a security monitor for autonomous AI coding agents.` 开头时，会被识别为 security-monitor 请求，其模型会被替换为该配置值。用户显式配置对两类路由均生效，且优先于默认值。未配置时，只有顶层 `/v1/messages` 使用动态默认值：已启用的 `codex` provider 默认使用 `codex-auto-review`，否则只有 `github-copilot` 开关允许且运行时 GitHub token 与 Copilot token 均已加载时，才默认使用 `gpt-6-luna`（未配置 Copilot 开关时视为启用）。Codex 优先；不满足任何默认条件时不替换模型，未授权的 Copilot 不会触发默认切换。显式设为空字符串可禁用。默认值随 provider 配置和 Copilot 凭据状态动态选择，不写回 `claudeAutoModel`。对于顶层请求，替换后的模型会应用 `modelMappings`，默认将 `codex-auto-review` 转发到 `codex/codex-auto-review`；`provider/model` 别名会转发到对应 provider 的 Messages API。provider 专属路由（如 `/dashscope/v1/messages`）仅使用显式配置的非空 `claudeAutoModel`；未配置时保留请求中的模型。显式配置生效时保持当前 provider，直接使用配置值，不应用 `modelMappings`。
 - **claudeTokenMultiplier：** 用于 Claude `/v1/messages/count_tokens` 请求在本地走 GPT tokenizer 估算时的乘数。默认值为 `1.15`。如果你的客户端仍然过晚触发上下文压缩，可以适当调大。这个配置只会在代理本地估算 Claude token 时生效；如果已经配置 `anthropicApiKey` 且 Anthropic token counting 调用成功，则会直接返回 Anthropic 的精确计数，不会使用这个乘数。
 - **anthropicApiKey：** 用于把 Claude `/v1/messages/count_tokens` 请求转发到 Anthropic 真实 token counting 端点的 API key，这样会返回精确计数，而不是 GPT tokenizer 估算值。也可通过环境变量 `ANTHROPIC_API_KEY` 设置。若未配置，或上游调用失败，则回退到由 `claudeTokenMultiplier` 控制的本地 GPT tokenizer 估算。
 

@@ -393,6 +393,7 @@ export const handleWithMessagesApi = async (
     anthropicPayload,
     anthropicBetaHeader,
     {
+      anthropicVersionHeader: c.req?.header("anthropic-version"),
       clientSignal: c.req?.raw?.signal,
       subagentMarker,
       requestId,
