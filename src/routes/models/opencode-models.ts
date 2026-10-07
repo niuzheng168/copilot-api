@@ -1,7 +1,6 @@
 import type {
   Cost,
   CostTier,
-  Limit,
   Model as ModelsDevModel,
   ModelCost,
 } from "@opencode-ai/models"
@@ -50,7 +49,7 @@ export interface OpencodeModel {
   cost: Array<OpencodeModelCost>
   status: "active" | "alpha" | "beta" | "deprecated"
   enabled: boolean
-  limit: Limit
+  limit: ModelsDevModel["limit"]
 }
 
 type ModelsDevModelWithMetadata = ModelsDevModel & {
