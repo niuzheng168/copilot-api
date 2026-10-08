@@ -5,7 +5,6 @@ import fs from "node:fs"
 import type { TokenUsagePricingConfig } from "~/lib/token-usage/pricing"
 
 import { writeFileAtomically } from "./atomic-file"
-import { readCodeyManagedModelPolicy } from "./codey-model-policy"
 import { PATHS } from "./paths"
 
 export interface AppConfig {
@@ -148,15 +147,12 @@ export const defaultContextManagement = {
 // Codey opts out by default; standalone copilot-api retains its existing default.
 // Keep fresh config generation and the missing-field fallback consistent.
 const defaultResponsesApiWebSocketEnabled = process.env.CODEY_MANAGED !== "true"
-export const defaultCodeyManagedModelMappings =
-  readCodeyManagedModelPolicy()?.aliases ?? {}
-
 export const defaultConfig: AppConfig = {
   auth: {
     apiKeys: [],
   },
   providers: {},
-  modelMappings: defaultCodeyManagedModelMappings,
+  modelMappings: {},
   smallModels: {
     codex: "gpt-6-luna",
     copilot: "gpt-6-luna",

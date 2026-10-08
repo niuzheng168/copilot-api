@@ -293,6 +293,27 @@ describe("Codex task title model routing on Responses", () => {
     expect(createResponses.mock.calls[0]?.[0].model).toBe("gpt-test")
   })
 
+  test("Codey-managed title requests honor the selected model without small-model switching", async () => {
+    const previous = process.env.CODEY_MANAGED
+    process.env.CODEY_MANAGED = "true"
+    try {
+      const response = await createApp().request("/v1/responses", {
+        body: JSON.stringify({ model: "gpt-test", input: titleInput }),
+        headers: {
+          "content-type": "application/json",
+          "user-agent": "codex/1.0",
+        },
+        method: "POST",
+      })
+      expect(response.status).toBe(200)
+      expect(createResponses.mock.calls[0]?.[0].model).toBe("gpt-test")
+    } finally {
+      if (previous === undefined)
+        Reflect.deleteProperty(process.env, "CODEY_MANAGED")
+      else process.env.CODEY_MANAGED = previous
+    }
+  })
+
   test("keeps request tools without remapping the configured small model", async () => {
     taskTitleDependencies.getSmallModelForProvider = () => "gpt-small"
     responsesHandlerDependencies.resolveMappedModel = (model) =>

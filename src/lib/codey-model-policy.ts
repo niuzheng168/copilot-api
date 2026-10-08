@@ -5,6 +5,7 @@ export type CodeyManagedModelPolicy = {
   schema: 1
   activeModel: string
   selectableModels?: Array<string>
+  retiredModels?: Array<string>
   aliases: Record<string, string>
   contextWindow: number
   autoCompactTokenLimit: number
@@ -42,6 +43,16 @@ export function readCodeyManagedModelPolicy(): CodeyManagedModelPolicy | null {
             typeof model !== "string"
             || !model.trim()
             || Object.hasOwn(policy.aliases ?? {}, model),
+        )))
+    || (policy.retiredModels !== undefined
+      && (!Array.isArray(policy.retiredModels)
+        || new Set(policy.retiredModels).size !== policy.retiredModels.length
+        || policy.retiredModels.some(
+          (model) =>
+            typeof model !== "string"
+            || !model.trim()
+            || model === policy.activeModel
+            || policy.selectableModels?.includes(model),
         )))
     || !policy.aliases
     || typeof policy.aliases !== "object"

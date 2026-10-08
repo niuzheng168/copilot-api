@@ -16,6 +16,7 @@ export const getCodexTaskTitleModel = (
   input: ResponsesPayload["input"],
   provider: string,
 ): string | undefined => {
+  if (process.env.CODEY_MANAGED === "true") return undefined
   if (!isCodexUserAgent(userAgent) || !Array.isArray(input)) return undefined
 
   const isTaskTitleRequest = input.slice(-2).some((item) => {

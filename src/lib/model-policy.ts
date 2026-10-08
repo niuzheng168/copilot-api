@@ -1,6 +1,5 @@
 import {
   defaultConfig,
-  defaultCodeyManagedModelMappings,
   defaultContextManagement,
   getConfig,
   readEditableConfigFromDisk,
@@ -72,15 +71,17 @@ export function getExtraPromptForModel(model: string): string {
 }
 
 export function getModelMappings(): Record<string, string> {
-  const config = getConfig()
-  const modelMappings = config.modelMappings
-  const builtInMappings =
-    process.env.CODEY_MANAGED === "true" ? defaultCodeyManagedModelMappings : {}
-  if (!modelMappings) {
-    return { ...defaultConfig.modelMappings, ...builtInMappings }
+  if (process.env.CODEY_MANAGED === "true") {
+    return {}
   }
 
-  const validMappings: Record<string, string> = { ...builtInMappings }
+  const config = getConfig()
+  const modelMappings = config.modelMappings
+  if (!modelMappings) {
+    return { ...defaultConfig.modelMappings }
+  }
+
+  const validMappings: Record<string, string> = {}
   for (const [sourceModel, targetModel] of Object.entries(modelMappings)) {
     if (
       !sourceModel
@@ -125,6 +126,9 @@ export function setModelMappings(
 }
 
 export function resolveMappedModel(model: string): string {
+  if (process.env.CODEY_MANAGED === "true") {
+    return model === "codex/gpt-6-astra" ? "gpt-6-astra" : model
+  }
   return getModelMappings()[model] ?? model
 }
 
