@@ -17,6 +17,7 @@ const setModelMappings = mock((nextModelMappings: Record<string, string>) => {
 await mock.module("~/lib/config", () => ({
   ...actualConfigModule,
   getModelMappings,
+  getEditableModelMappings: getModelMappings,
   setModelMappings,
 }))
 

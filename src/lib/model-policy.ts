@@ -3,10 +3,13 @@ import {
   defaultCodeyManagedModelMappings,
   defaultContextManagement,
   getConfig,
+  getBaseConfig,
   readEditableConfigFromDisk,
   reloadConfig,
   writeConfigToDisk,
+  type AppConfig,
 } from "./config-store"
+import { codeySettings, isCodeyProxyModelAlias } from "./codey-settings"
 
 const GPT_MODEL_PATTERN = /^gpt-(\d+)(?:\.(\d+))?/
 
@@ -71,8 +74,7 @@ export function getExtraPromptForModel(model: string): string {
   return isGpt53OrAbove(model) ? gpt5CommentaryPrompt : ""
 }
 
-export function getModelMappings(): Record<string, string> {
-  const config = getConfig()
+function mappingsForConfig(config: AppConfig): Record<string, string> {
   const modelMappings = config.modelMappings
   const builtInMappings =
     process.env.CODEY_MANAGED === "true" ? defaultCodeyManagedModelMappings : {}
@@ -95,6 +97,15 @@ export function getModelMappings(): Record<string, string> {
   return validMappings
 }
 
+export function getModelMappings(): Record<string, string> {
+  return mappingsForConfig(getConfig())
+}
+
+/** Legacy admin edits cannot turn derived Codey routes into a second persistence source. */
+export function getEditableModelMappings(): Record<string, string> {
+  return mappingsForConfig(getBaseConfig())
+}
+
 function validateModelMappings(
   modelMappings: Record<string, string>,
 ): Record<string, string> {
@@ -103,6 +114,11 @@ function validateModelMappings(
     if (!sourceModel || !targetModel) {
       throw new Error(
         "Each model mapping must use non-empty source and target values.",
+      )
+    }
+    if (codeySettings.isEnabled() && isCodeyProxyModelAlias(targetModel)) {
+      throw new Error(
+        "Configure additional proxy routes in the node settings file.",
       )
     }
     validatedMappings[sourceModel] = targetModel
@@ -121,7 +137,7 @@ export function setModelMappings(
 
   writeConfigToDisk(nextConfig)
   reloadConfig()
-  return getModelMappings()
+  return getEditableModelMappings()
 }
 
 export function resolveMappedModel(model: string): string {

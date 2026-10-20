@@ -1,6 +1,7 @@
 import type { Context } from "hono"
 
 import { getBuiltinProviderModelRecords } from "~/lib/builtin-provider-models"
+import { codeySettings } from "~/lib/codey-settings"
 import {
   getRawProviderConfig,
   listEnabledProviders,
@@ -129,8 +130,19 @@ function normalizeProviderModels(
   provider: string,
   models: Array<unknown>,
 ): Array<ClientModel> {
+  const selected = codeySettings.selectedModels(provider)
   return models
-    .map((model) => normalizeProviderModel(provider, model))
+    .filter(
+      (model) =>
+        !selected || (isRecord(model) && selected.includes(String(model.id))),
+    )
+    .map((model) => {
+      const normalized = normalizeProviderModel(provider, model)
+      // Publish the caller's exact model ID; modelMappings performs routing.
+      return normalized && selected ?
+          { ...normalized, id: String((model as Record<string, unknown>).id) }
+        : normalized
+    })
     .filter((model): model is ClientModel => model !== null)
 }
 
@@ -260,8 +272,18 @@ export async function getAggregatedModels(
     ),
   )
 
+  const additionalIds = new Set(
+    listEnabledProviders().flatMap(
+      (provider) => codeySettings.selectedModels(provider) ?? [],
+    ),
+  )
+  const providerModels = providerModelsByProvider.flat()
   return deduplicateModels(
-    [...copilotModels, ...providerModelsByProvider.flat()],
+    [
+      ...providerModels.filter((model) => additionalIds.has(model.id)),
+      ...copilotModels.filter((model) => !additionalIds.has(model.id)),
+      ...providerModels.filter((model) => !additionalIds.has(model.id)),
+    ],
     (model) => model.id,
   )
 }

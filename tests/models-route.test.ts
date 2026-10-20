@@ -125,6 +125,69 @@ const createDefaultCodexCatalogModels = () => [
   },
 ]
 
+test("additional proxy catalogs expose only selected exact model IDs and override default metadata", async () => {
+  const oldFile = process.env.CODEY_SETTINGS_FILE
+  const settingsFile = path.join(catalogConfigDir!, "codey-settings.json")
+  fs.writeFileSync(
+    settingsFile,
+    JSON.stringify({
+      additionalCopilotProxies: [
+        {
+          id: "selected",
+          endpoint: "https://selected.example",
+          key: "test-key",
+          models: ["claude-opus-5.5"],
+        },
+      ],
+    }),
+    { mode: 0o600 },
+  )
+  process.env.CODEY_SETTINGS_FILE = settingsFile
+  enabledProviders = ["codey-extra-selected"]
+  providerConfigs["codey-extra-selected"] = createProviderConfig(
+    "codey-extra-selected",
+    "https://selected.example",
+  )
+  state.models = createCopilotModels(["claude-opus-5.5", "gpt-default"])
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      Response.json({
+        data: [
+          {
+            id: "claude-opus-5.5",
+            name: "Claude proxy model",
+            supported_endpoints: ["/v1/messages"],
+          },
+          { id: "unselected", name: "Must not appear" },
+        ],
+      }),
+    )) as unknown as typeof fetch
+  try {
+    const response = await createApp().request("/models")
+    expect(response.status).toBe(200)
+    const { data } = (await response.json()) as {
+      data: Array<{ id: string; name: string }>
+    }
+    expect(data.filter((model) => model.id === "claude-opus-5.5")).toHaveLength(
+      1,
+    )
+    expect(data.find((model) => model.id === "claude-opus-5.5")?.name).toBe(
+      "Claude proxy model",
+    )
+    expect(
+      data.some(
+        (model) =>
+          model.id.includes("unselected")
+          || model.id.startsWith("codey-extra-"),
+      ),
+    ).toBe(false)
+    expect(data.some((model) => model.id === "gpt-default")).toBe(true)
+  } finally {
+    if (oldFile === undefined) delete process.env.CODEY_SETTINGS_FILE
+    else process.env.CODEY_SETTINGS_FILE = oldFile
+  }
+})
+
 const bundledCodexModels = (bundledCodexCatalogJson as CodexModelsResponse)
   .models
 const bundledCodexSlugs = bundledCodexModels
