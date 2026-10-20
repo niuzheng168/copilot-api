@@ -8,6 +8,7 @@ import { writeFileAtomically } from "./atomic-file"
 import { readCodeyManagedModelPolicy } from "./codey-model-policy"
 import { isGitHubCopilotAvailable } from "./github-copilot-provider"
 import { PATHS } from "./paths"
+import { codeySettings } from "./codey-settings"
 
 export interface AppConfig {
   auth?: {
@@ -551,11 +552,15 @@ export function mergeConfigWithDefaults(): AppConfig {
   return mergedConfigWithAdminApiKey
 }
 
-export function getConfig(): AppConfig {
+// Authentication remains available even when a bulk-edited settings file is invalid.
+export function getBaseConfig(): AppConfig {
   cachedConfig ??= mergeDefaultConfig(readConfigFromDisk()).mergedConfig
   return cachedConfig
 }
 
+export function getConfig(): AppConfig {
+  return codeySettings.overlay(getBaseConfig())
+}
 // Refresh this process on its next read without rewriting defaults to disk.
 export function invalidateConfigCache(): void {
   cachedConfig = null

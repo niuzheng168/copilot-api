@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono"
 import { cors } from "hono/cors"
 import { logger } from "hono/logger"
 import { readFileSync } from "node:fs"
+import { codeySettings, CodeySettingsError } from "./lib/codey-settings"
 
 import {
   createAuthMiddleware,
@@ -75,6 +76,26 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   )
 
   server.get("/", (c) => c.text("Server running"))
+  // An in-flight request keeps its chosen route while the owner edits the file.
+  // Admin requests stay outside this scope so a bad file cannot disable repair.
+  server.use("*", async (c, next) => {
+    const modelRequest =
+      /(?:^|\/)(?:models|messages|responses|embeddings|images|chat\/completions|alpha\/search)(?:\/|$)/u.test(
+        c.req.path,
+      )
+    if (!modelRequest || c.req.path.startsWith("/admin/")) return next()
+    try {
+      return await codeySettings.withSnapshot(next)
+    } catch (error) {
+      if (error instanceof CodeySettingsError) {
+        return c.json(
+          { error: { message: error.message, type: "codey_settings_invalid" } },
+          503,
+        )
+      }
+      throw error
+    }
+  })
   server.get("/usage-viewer", (c) => {
     const usageViewerFileUrl = new URL("../pages/index.html", import.meta.url)
     return c.html(readFileSync(usageViewerFileUrl, "utf8"))
