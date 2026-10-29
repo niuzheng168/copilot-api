@@ -152,9 +152,31 @@ export interface TokenUsageEventsPage {
   total_pages: number
 }
 
+export interface TokenUsageSessionSummary {
+  first_ms: number
+  last_ms: number
+  models: Array<string>
+  request_count: number
+  session_id: string | null
+  totals: TokenUsageTotals
+}
+
+export interface TokenUsageSessionsSummary {
+  period: TokenUsagePeriod
+  range: {
+    end_ms: number
+    end_utc: string
+    start_ms: number
+    start_utc: string
+  }
+  sessions: Array<TokenUsageSessionSummary>
+  truncated: boolean
+}
+
 const DB_PATH_ENV = "COPILOT_API_SQLITE_DB_PATH"
 const DEFAULT_DB_FILENAME = "copilot-api.sqlite"
 const COST_NANOS_PER_UNIT = 1_000_000_000
+const MAX_SESSION_SUMMARIES = 1000
 
 let writeQueue: Promise<void> = Promise.resolve()
 
@@ -592,6 +614,17 @@ function createEmptyEventsPage(input: {
   }
 }
 
+function createEmptySessionsSummary(
+  period: TokenUsagePeriod,
+): TokenUsageSessionsSummary {
+  return {
+    period,
+    range: rangePayload(getPeriodRange(period)),
+    sessions: [],
+    truncated: false,
+  }
+}
+
 function rangePayload(range: { endMs: number; startMs: number }) {
   return {
     end_ms: range.endMs,
@@ -725,6 +758,31 @@ function usageEventFromRow(
   }
 }
 
+function modelsFromRow(row: Record<string, unknown>): Array<string> {
+  // The column holds the JSON array built by json_group_array.
+  const models: unknown = JSON.parse(stringFromRow(row, "models") || "[]")
+  return Array.isArray(models) ?
+      models
+        .filter((model): model is string => typeof model === "string")
+        .sort()
+    : []
+}
+
+function sessionSummaryFromRow(
+  row: Record<string, unknown>,
+  costs: Array<TokenUsageCost> = [],
+): TokenUsageSessionSummary {
+  const totals = totalsFromRow(row, costs)
+  return {
+    first_ms: numberFromRow(row, "first_ms"),
+    last_ms: numberFromRow(row, "last_ms"),
+    models: modelsFromRow(row),
+    request_count: totals.request_count,
+    session_id: stringFromRow(row, "session_id") || null,
+    totals,
+  }
+}
+
 function getTotalsRow(
   db: SqliteDatabase,
   range: { endMs: number; startMs: number },
@@ -847,6 +905,107 @@ function getModelSummaries(
     const model = stringFromRow(row, "model") || "unknown"
     return modelSummaryFromRow(row, costMap.get(model) ?? [])
   })
+}
+
+function getSessionRows(
+  db: SqliteDatabase,
+  range: { endMs: number; startMs: number },
+  limit: number,
+): Array<Record<string, unknown>> {
+  return db
+    .prepare(
+      `
+    SELECT
+      session_id,
+      MIN(created_at_ms) AS first_ms,
+      MAX(created_at_ms) AS last_ms,
+      json_group_array(DISTINCT model) AS models,
+      COUNT(*) AS request_count,
+      COALESCE(SUM(input_tokens), 0) AS input_tokens,
+      COALESCE(SUM(output_tokens), 0) AS output_tokens,
+      COALESCE(SUM(cache_read_input_tokens), 0) AS cache_read_input_tokens,
+      COALESCE(SUM(cache_creation_input_tokens), 0) AS cache_creation_input_tokens,
+      SUM(total_nano_aiu) AS total_nano_aiu,
+      COALESCE(SUM(total_tokens), 0) AS total_tokens
+    FROM token_usage_events
+    WHERE created_at_ms >= ? AND created_at_ms < ?
+    GROUP BY session_id
+    ORDER BY
+      total_tokens DESC,
+      session_id ASC
+    LIMIT ?
+  `,
+    )
+    .all(range.startMs, range.endMs, limit) as Array<Record<string, unknown>>
+}
+
+function getSessionCostMap(
+  db: SqliteDatabase,
+  range: { endMs: number; startMs: number },
+  sessionIds: Array<string>,
+): Map<string, Array<TokenUsageCost>> {
+  if (sessionIds.length === 0) {
+    return new Map()
+  }
+
+  // Only price the sessions being returned; a period can hold far more.
+  const rows = db
+    .prepare(
+      `
+    SELECT
+      session_id,
+      cost_currency,
+      COALESCE(SUM(total_cost_nanos), 0) AS total_cost_nanos
+    FROM token_usage_events
+    WHERE
+      created_at_ms >= ?
+      AND created_at_ms < ?
+      AND cost_currency IS NOT NULL
+      AND total_cost_nanos IS NOT NULL
+      AND session_id IN (${sessionIds.map(() => "?").join(", ")})
+    GROUP BY session_id, cost_currency
+    ORDER BY session_id ASC, cost_currency ASC
+  `,
+    )
+    .all(range.startMs, range.endMs, ...sessionIds) as Array<
+    Record<string, unknown>
+  >
+
+  const costMap = new Map<string, Array<TokenUsageCost>>()
+  for (const row of rows) {
+    const sessionId = stringFromRow(row, "session_id")
+    const cost = costFromRow(row)
+    if (!cost) {
+      continue
+    }
+    costMap.set(sessionId, [...(costMap.get(sessionId) ?? []), cost])
+  }
+
+  return costMap
+}
+
+function getSessionSummaries(
+  db: SqliteDatabase,
+  range: { endMs: number; startMs: number },
+): { sessions: Array<TokenUsageSessionSummary>; truncated: boolean } {
+  // Ask for one extra row so the response can say whether more exist.
+  const rows = getSessionRows(db, range, MAX_SESSION_SUMMARIES + 1)
+  const sessionRows = rows.slice(0, MAX_SESSION_SUMMARIES)
+  const costMap = getSessionCostMap(
+    db,
+    range,
+    sessionRows.map((row) => stringFromRow(row, "session_id")),
+  )
+
+  return {
+    sessions: sessionRows.map((row) =>
+      sessionSummaryFromRow(
+        row,
+        costMap.get(stringFromRow(row, "session_id")) ?? [],
+      ),
+    ),
+    truncated: rows.length > MAX_SESSION_SUMMARIES,
+  }
 }
 
 function getDailyModelSummaries(
@@ -1086,6 +1245,24 @@ export async function getTokenUsageEventsPage(input: {
     },
     total,
     total_pages: Math.max(1, Math.ceil(total / pageSize)),
+  }
+}
+
+export async function getTokenUsageSessionsSummary(
+  period: TokenUsagePeriod,
+): Promise<TokenUsageSessionsSummary> {
+  if (!isTokenUsageStorageEnabled()) {
+    return createEmptySessionsSummary(period)
+  }
+
+  await flushTokenUsageEvents()
+  const db = await getDb()
+  const range = getPeriodRangeFromDb(db, period)
+
+  return {
+    period,
+    range: rangePayload(range),
+    ...getSessionSummaries(db, range),
   }
 }
 

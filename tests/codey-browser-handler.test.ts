@@ -80,6 +80,22 @@ describe("createCodeyBrowserHandler", () => {
     )
   })
 
+  it("proxies per-session usage with the internal API key", async () => {
+    let receivedAuthorization = ""
+    let receivedUrl = ""
+    const handler = createHandler((upstreamRequest) => {
+      receivedAuthorization = upstreamRequest.headers.get("authorization") ?? ""
+      receivedUrl = upstreamRequest.url
+      return Response.json({ sessions: [] })
+    })
+    const response = await handler(request("/token-usage/sessions?period=week"))
+    expect(response.status).toBe(200)
+    expect(receivedAuthorization).toBe("Bearer usage-secret")
+    expect(receivedUrl).toBe(
+      "https://linux-gpu.example.test/token-usage/sessions?period=week",
+    )
+  })
+
   it("proxies history with the internal history key", async () => {
     let receivedAuthorization = ""
     const handler = createHandler((upstreamRequest) => {

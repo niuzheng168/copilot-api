@@ -19,6 +19,7 @@ import {
   type TokenUsageDailySummary,
   type TokenUsageEventsPage,
   type TokenUsagePeriod,
+  type TokenUsageSessionsSummary,
   type TokenUsageSummary,
 } from "~/lib/token-usage"
 import {
@@ -61,6 +62,16 @@ async function fetchEventsPage(pageSize = 20): Promise<TokenUsageEventsPage> {
   )
   expect(response.status).toBe(200)
   return (await response.json()) as TokenUsageEventsPage
+}
+
+async function fetchSessions(
+  period: string,
+): Promise<TokenUsageSessionsSummary> {
+  const response = await createTokenUsageApp().request(
+    `/token-usage/sessions?period=${period}`,
+  )
+  expect(response.status).toBe(200)
+  return (await response.json()) as TokenUsageSessionsSummary
 }
 
 function localDate(
@@ -973,5 +984,246 @@ describe("token usage storage", () => {
     expect(daily.days[0]?.totals.total_tokens).toBe(0)
     expect(daily.byModel).toEqual([])
     expect(daily.totals.request_count).toBe(0)
+  })
+})
+
+describe("token usage sessions", () => {
+  test("groups usage by session with totals, models, costs and time span", async () => {
+    const firstAt = localDate(2026, 4, 15, 9)
+    const lastAt = localDate(2026, 4, 15, 11)
+    setSystemTime(firstAt)
+    recordTokenUsageEvent({
+      endpoint: "provider_messages",
+      input_tokens: 1_000,
+      model: "model-b",
+      output_tokens: 500,
+      pricing: { input: 1, output: 2 },
+      pricingCurrency: "USD",
+      providerName: "custom",
+      sessionId: "session-a",
+      source: "provider",
+    })
+    setSystemTime(localDate(2026, 4, 15, 10))
+    recordTokenUsageEvent({
+      endpoint: "provider_messages",
+      input_tokens: 2_000,
+      model: "model-a",
+      output_tokens: 1_000,
+      pricing: { input: 2, output: 4 },
+      pricingCurrency: "CNY",
+      providerName: "custom",
+      sessionId: "session-a",
+      source: "provider",
+    })
+    setSystemTime(lastAt)
+    recordTokenUsageEvent({
+      cache_creation_input_tokens: 20,
+      cache_read_input_tokens: 30,
+      endpoint: "messages",
+      input_tokens: 100,
+      model: "model-a",
+      output_tokens: 50,
+      sessionId: "session-a",
+      source: "copilot",
+      total_nano_aiu: 1_000,
+    })
+    setSystemTime(localDate(2026, 4, 15, 12))
+    recordTokenUsageEvent({
+      endpoint: "responses",
+      input_tokens: 6_000,
+      model: "model-c",
+      sessionId: "session-b",
+      source: "copilot",
+    })
+    recordTokenUsageEvent({
+      endpoint: "responses",
+      input_tokens: 300,
+      model: "model-c",
+      source: "copilot",
+    })
+    recordTokenUsageEvent({
+      endpoint: "chat_completions",
+      input_tokens: 200,
+      model: "model-d",
+      source: "copilot",
+    })
+    setSystemTime(localDate(2026, 4, 15, 13))
+
+    const summary = await fetchSessions("today")
+    expect(summary.period).toBe("today")
+    expect(summary.truncated).toBe(false)
+    expect(summary.sessions.map((session) => session.session_id)).toEqual([
+      "session-b",
+      "session-a",
+      null,
+    ])
+    expect(summary.sessions[1]).toEqual({
+      first_ms: firstAt.getTime(),
+      last_ms: lastAt.getTime(),
+      models: ["model-a", "model-b"],
+      request_count: 3,
+      session_id: "session-a",
+      totals: {
+        cache_creation_input_tokens: 20,
+        cache_read_input_tokens: 30,
+        costs: [
+          { amount: 0.008, currency: "CNY", total_cost_nanos: 8_000_000 },
+          { amount: 0.00200001, currency: "USD", total_cost_nanos: 2_000_010 },
+        ],
+        input_tokens: 3_100,
+        output_tokens: 1_550,
+        request_count: 3,
+        total_nano_aiu: 1_000,
+        total_tokens: 4_700,
+      },
+    })
+    expect(summary.sessions[0]?.totals.costs).toEqual([])
+    expect(summary.sessions[0]?.totals.total_nano_aiu).toBe(null)
+    expect(summary.sessions[2]).toMatchObject({
+      models: ["model-c", "model-d"],
+      request_count: 2,
+      session_id: null,
+      totals: { input_tokens: 500, total_tokens: 500 },
+    })
+
+    const totalsResponse = await createTokenUsageApp().request(
+      "/token-usage?period=today",
+    )
+    const { totals } = (await totalsResponse.json()) as TokenUsageSummary
+    expect(
+      summary.sessions.reduce(
+        (sum, session) => sum + session.totals.total_tokens,
+        0,
+      ),
+    ).toBe(totals.total_tokens)
+  })
+
+  test("filters sessions by period and reports the summary range", async () => {
+    setSystemTime(localDate(2026, 4, 8))
+    recordTokenUsageEvent({
+      endpoint: "responses",
+      input_tokens: 1,
+      model: "gpt-test",
+      sessionId: "old-session",
+      source: "copilot",
+    })
+    setSystemTime(localDate(2026, 4, 12))
+    recordTokenUsageEvent({
+      endpoint: "responses",
+      input_tokens: 2,
+      model: "gpt-test",
+      sessionId: "week-session",
+      source: "copilot",
+    })
+    setSystemTime(localDate(2026, 4, 15, 9))
+    recordTokenUsageEvent({
+      endpoint: "responses",
+      input_tokens: 4,
+      model: "gpt-test",
+      sessionId: "today-session",
+      source: "copilot",
+    })
+    recordTokenUsageEvent({
+      endpoint: "responses",
+      input_tokens: 8,
+      model: "gpt-test",
+      sessionId: "week-session",
+      source: "copilot",
+    })
+    setSystemTime(localDate(2026, 4, 15, 15, 30))
+
+    const app = createTokenUsageApp()
+    const expectations: Array<
+      [string, TokenUsagePeriod, Array<[string | null, number]>]
+    > = [
+      [
+        "day",
+        "today",
+        [
+          ["week-session", 8],
+          ["today-session", 4],
+        ],
+      ],
+      [
+        "week",
+        "last_7_days",
+        [
+          ["week-session", 10],
+          ["today-session", 4],
+        ],
+      ],
+      [
+        "lifetime",
+        "lifetime",
+        [
+          ["week-session", 10],
+          ["today-session", 4],
+          ["old-session", 1],
+        ],
+      ],
+    ]
+
+    for (const [period, expectedPeriod, expectedSessions] of expectations) {
+      const sessions = await fetchSessions(period)
+      const summaryResponse = await app.request(`/token-usage?period=${period}`)
+      const summary = (await summaryResponse.json()) as TokenUsageSummary
+      expect(sessions.period).toBe(expectedPeriod)
+      expect(sessions.range).toEqual(summary.range)
+      expect(
+        sessions.sessions.map((session) => [
+          session.session_id,
+          session.totals.total_tokens,
+        ]),
+      ).toEqual(expectedSessions)
+    }
+  })
+
+  test("caps the list at 1000 sessions and flags truncation", async () => {
+    setSystemTime(localDate(2026, 4, 15))
+    for (let index = 1; index <= 1_000; index++) {
+      recordTokenUsageEvent({
+        endpoint: "responses",
+        input_tokens: index,
+        model: "gpt-test",
+        sessionId: `session-${index}`,
+        source: "copilot",
+        total_nano_aiu: index * 100,
+      })
+    }
+
+    const full = await fetchSessions("today")
+    expect(full.truncated).toBe(false)
+    expect(full.sessions).toHaveLength(1_000)
+
+    recordTokenUsageEvent({
+      endpoint: "responses",
+      input_tokens: 1_001,
+      model: "gpt-test",
+      sessionId: "session-1001",
+      source: "copilot",
+      total_nano_aiu: 100_100,
+    })
+
+    const capped = await fetchSessions("today")
+    expect(capped.truncated).toBe(true)
+    expect(capped.sessions).toHaveLength(1_000)
+    expect(capped.sessions[0]?.session_id).toBe("session-1001")
+    expect(capped.sessions.at(-1)?.session_id).toBe("session-2")
+    expect(capped.sessions.at(-1)?.totals.costs).toEqual([
+      { amount: 0.000000002, currency: "USD", total_cost_nanos: 2 },
+    ])
+  })
+
+  test("returns no sessions for an empty period and falls back invalid period to today", async () => {
+    setSystemTime(localDate(2026, 4, 15))
+    const lifetime = await fetchSessions("lifetime")
+    expect(lifetime.sessions).toEqual([])
+    expect(lifetime.truncated).toBe(false)
+    expect(lifetime.range.start_ms).toBe(lifetime.range.end_ms)
+
+    const fallback = await fetchSessions("invalid")
+    expect(fallback.period).toBe("today")
+    expect(fallback.range.start_ms).toBe(localDate(2026, 4, 15, 0).getTime())
+    expect(fallback.sessions).toEqual([])
   })
 })

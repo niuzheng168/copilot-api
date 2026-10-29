@@ -7,6 +7,7 @@ const USAGE_PATHS = new Set([
   "/token-usage",
   "/token-usage/daily",
   "/token-usage/events",
+  "/token-usage/sessions",
 ])
 const HISTORY_DETAIL_PATTERN =
   /^\/session-history\/(active|archived)\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u

@@ -3,6 +3,7 @@ import { Hono } from "hono"
 import {
   getTokenUsageDailySummary,
   getTokenUsageEventsPage,
+  getTokenUsageSessionsSummary,
   getTokenUsageSummary,
   type TokenUsagePeriod,
 } from "~/lib/token-usage"
@@ -59,4 +60,10 @@ tokenUsageRoute.get("/events", async (c) => {
   )
   const eventsPage = await getTokenUsageEventsPage({ page, pageSize, period })
   return c.json(eventsPage)
+})
+
+tokenUsageRoute.get("/sessions", async (c) => {
+  const period = parsePeriod(c.req.query("period"))
+  const summary = await getTokenUsageSessionsSummary(period)
+  return c.json(summary)
 })
