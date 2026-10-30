@@ -15,6 +15,11 @@ const MAX_BYTES = 1024 * 1024
 export function isCodeyProxyModelAlias(model: string): boolean {
   return model.startsWith(PREFIX)
 }
+
+/** Providers the node settings file's additional proxies become. */
+export function isCodeyProxyProvider(provider: string): boolean {
+  return provider.startsWith(PREFIX)
+}
 const modelId = z
   .string()
   .min(1)

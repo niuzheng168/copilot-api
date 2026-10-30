@@ -77,6 +77,32 @@ describe("buildProviderUpstreamHeaders", () => {
     })
   })
 
+  test("drops the betas Codey's additional proxies refuse, and only for them", () => {
+    const beta =
+      "claude-code-20250219, advisor-tool-2026-03-01,effort-2025-11-24,fallback-credit-2026-06-01"
+    const proxied = buildProviderUpstreamHeaders(
+      createProviderConfig({ name: "codey-extra-claude-proxy" }),
+      new Headers({ "anthropic-beta": beta }),
+    )
+    expect(proxied["anthropic-beta"]).toBe(
+      "claude-code-20250219,effort-2025-11-24",
+    )
+
+    const onlyRefused = buildProviderUpstreamHeaders(
+      createProviderConfig({ name: "codey-extra-claude-proxy" }),
+      new Headers({
+        "anthropic-beta": "advisor-tool-2026-03-01,fallback-credit-2026-06-01",
+      }),
+    )
+    expect(onlyRefused).not.toHaveProperty("anthropic-beta")
+
+    const direct = buildProviderUpstreamHeaders(
+      createProviderConfig(),
+      new Headers({ "anthropic-beta": beta }),
+    )
+    expect(direct["anthropic-beta"]).toBe(beta)
+  })
+
   test("sets an Anthropic API version for a selected models.dev provider", () => {
     const headers = buildProviderUpstreamHeaders(
       createProviderConfig({ modelsDevProviderId: "anthropic-provider" }),

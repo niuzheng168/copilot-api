@@ -5,6 +5,7 @@ import {
   type RequestInit as UndiciRequestInit,
 } from "undici"
 
+import { isCodeyProxyProvider } from "~/lib/codey-settings"
 import {
   getUpstreamTransportConfig,
   type ResolvedProviderConfig,
@@ -25,6 +26,31 @@ const ANTHROPIC_FORWARDABLE_HEADERS = [
   "anthropic-version",
   "anthropic-beta",
 ] as const
+
+/**
+ * Beta features Codey's additional Claude proxies refuse with HTTP 400. Claude
+ * Code asks for the advisor tool when a machine has experiments cached from a
+ * Claude account, and tries fallback credit first, so they stay behind.
+ */
+const CODEY_PROXY_REFUSED_BETAS = [/^advisor-tool-/u, /^fallback-credit-/u]
+
+function forwardedAnthropicBeta(
+  providerConfig: ResolvedProviderConfig,
+  value: string,
+): string | undefined {
+  if (!isCodeyProxyProvider(providerConfig.name)) {
+    return value
+  }
+  const kept = value
+    .split(",")
+    .map((beta) => beta.trim())
+    .filter(
+      (beta) =>
+        beta
+        && !CODEY_PROXY_REFUSED_BETAS.some((refused) => refused.test(beta)),
+    )
+  return kept.length ? kept.join(",") : undefined
+}
 
 const STRIPPED_RESPONSE_HEADERS = [
   "connection",
@@ -84,8 +110,12 @@ export function buildProviderUpstreamHeaders(
 
   for (const headerName of ANTHROPIC_FORWARDABLE_HEADERS) {
     const headerValue = requestHeaders.get(headerName)
-    if (headerValue) {
-      headers[headerName] = headerValue
+    const forwarded =
+      headerName === "anthropic-beta" && headerValue ?
+        forwardedAnthropicBeta(providerConfig, headerValue)
+      : headerValue
+    if (forwarded) {
+      headers[headerName] = forwarded
     }
   }
 
