@@ -8,6 +8,11 @@ import {
   test,
 } from 'bun:test'
 import type { BrowserWindow } from 'electron'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { PATHS } from '../../src/lib/paths'
+import { VIDEO_IMAGE_MAX_BYTES } from '../electron/compress-video-image'
 
 import * as serverAuth from '../electron/server-auth-config'
 import * as settingsStore from '../electron/settings-store'
@@ -16,6 +21,8 @@ import { CodexOAuthError } from '../../src/lib/oauth/codex'
 import { XaiOAuthError } from '../../src/lib/oauth/xai'
 import * as xaiToken from '../../src/lib/xai-token'
 import type {
+  AppConfigDocument,
+  AppConfigSaveResult,
   DesktopSettings,
   ServerKeysConfigUpdate,
   XaiAuthInfo,
@@ -24,6 +31,10 @@ import type {
 type IpcHandler = (event: unknown, ...parameters: unknown[]) => unknown
 const handlers = new Map<string, IpcHandler>()
 const openExternal = mock(() => Promise.resolve())
+let saveDialogResult: { canceled: boolean; filePath?: string } = {
+  canceled: true,
+}
+const showSaveDialog = mock(() => Promise.resolve(saveDialogResult))
 let preloadApi: Window['electronAPI'] | undefined
 type RendererListener = (event: unknown, payload: unknown) => void
 const rendererListeners = new Map<string, Set<RendererListener>>()
@@ -32,8 +43,9 @@ const rendererOff = mock((channel: string, listener: RendererListener) => {
   listeners?.delete(listener)
   if (listeners?.size === 0) rendererListeners.delete(channel)
 })
-const rendererInvoke = mock((_channel: string, ..._args: unknown[]) =>
-  Promise.resolve(),
+const rendererInvoke = mock(
+  (_channel: string, ..._args: unknown[]): Promise<unknown> =>
+    Promise.resolve(),
 )
 let running = true
 let activeAdminApiKey = 'old-admin'
@@ -71,7 +83,20 @@ await mock.module('electron', () => ({
     on: () => {},
   },
   shell: { openExternal },
+  dialog: { showSaveDialog },
   BrowserWindow: class {},
+  nativeImage: {
+    createFromBuffer: () => ({
+      isEmpty: () => false,
+      getSize: () => ({ width: 8, height: 8 }),
+      resize: () => ({
+        isEmpty: () => false,
+        getSize: () => ({ width: 8, height: 8 }),
+        toJPEG: () => Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+      }),
+      toJPEG: () => Buffer.from([0xff, 0xd8, 0xff, 0xd9]),
+    }),
+  },
   app: {
     getAppPath: () => process.cwd(),
     getPath: () => process.cwd(),
@@ -91,6 +116,7 @@ await mock.module('../electron/server-manager', () => ({
   getHost: () => '127.0.0.1',
   getServerBaseUrl: () => 'http://127.0.0.1:4141',
   getLogs: () => [],
+  clearLogs: () => 0,
 }))
 
 const { registerIpcHandlers } = await import('../electron/ipc-handlers')
@@ -109,6 +135,8 @@ async function invoke(
 beforeEach(async () => {
   handlers.clear()
   openExternal.mockClear()
+  showSaveDialog.mockClear()
+  saveDialogResult = { canceled: true }
   rendererListeners.clear()
   rendererOff.mockClear()
   rendererInvoke.mockClear()
@@ -198,6 +226,272 @@ beforeEach(async () => {
 })
 
 afterEach(() => mock.restore())
+
+describe('desktop provider management IPC', () => {
+  const config = {
+    configPath: 'config.json',
+    providers: [
+      { name: 'github-copilot', type: 'github-copilot', enabled: true },
+      { name: 'codex', type: 'openai-responses', enabled: true },
+    ],
+  }
+
+  test.each([
+    ['without GitHub credentials', null, ['codex']],
+    [
+      'with GitHub credentials',
+      'github-test-token',
+      ['github-copilot', 'codex'],
+    ],
+  ] satisfies Array<[string, string | null, string[]]>)(
+    'returns the same provider list on read and save %s',
+    async (_label, token, names) => {
+      spyOn(auth, 'readToken').mockResolvedValue(token)
+      spyOn(providerManagement, 'getProviderManagementConfig').mockReturnValue(
+        config,
+      )
+      spyOn(providerManagement, 'saveProviderManagementConfig').mockReturnValue(
+        config,
+      )
+
+      const expected = {
+        ...config,
+        providers: config.providers.filter((provider) =>
+          names.includes(provider.name),
+        ),
+      }
+      expect(await invoke('config:get-provider-management')).toEqual(expected)
+      expect(await invoke('config:save-provider-management', {})).toEqual(
+        expected,
+      )
+      expect(fetch).toHaveBeenCalledTimes(1)
+    },
+  )
+})
+
+describe('desktop model discovery IPC', () => {
+  test('requests image models for the Dashboard with gateway auth and preserves the catalog', async () => {
+    spyOn(fs.promises, 'readFile').mockResolvedValue(
+      JSON.stringify({ auth: { apiKeys: ['models-key'] } }),
+    )
+    const catalog = {
+      object: 'list',
+      data: [
+        { id: 'codex/gpt-image-2', type: 'image' },
+        { id: 'xai/grok-imagine-image-2.0', type: 'image' },
+      ],
+    }
+    const fetcher = spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      Response.json(catalog),
+    )
+    expect(await invoke('server:fetch-models')).toEqual(catalog)
+    expect(fetcher).toHaveBeenLastCalledWith(
+      'http://127.0.0.1:4141/models',
+      expect.objectContaining({
+        headers: { 'x-api-key': 'models-key' },
+      }),
+    )
+    expect(fetcher.mock.calls.at(-1)?.[1]?.signal).toBeInstanceOf(AbortSignal)
+  })
+})
+
+describe('desktop subscription quota IPC', () => {
+  test('requests CLI server quotas with gateway auth', async () => {
+    spyOn(fs.promises, 'readFile').mockResolvedValue(
+      JSON.stringify({ auth: { apiKeys: ['quota-key'] } }),
+    )
+    const usage = {
+      provider: 'codex',
+      planType: 'business',
+      windows: [],
+      limitReached: false,
+    }
+    const fetcher = spyOn(globalThis, 'fetch').mockImplementation(
+      Object.assign(() => Promise.resolve(Response.json(usage)), {
+        preconnect: () => {},
+      }),
+    )
+    expect(await invoke('server:fetch-subscription-usage', 'codex')).toEqual(
+      usage,
+    )
+    expect(fetch).toHaveBeenCalledWith(
+      'http://127.0.0.1:4141/usage/codex',
+      expect.objectContaining({
+        headers: { 'x-api-key': 'quota-key' },
+      }),
+    )
+    expect(fetcher.mock.calls[0][1]?.signal).toBeInstanceOf(AbortSignal)
+    expect(await invoke('server:fetch-subscription-usage', 'xai')).toEqual(
+      usage,
+    )
+    expect(fetch).toHaveBeenLastCalledWith(
+      'http://127.0.0.1:4141/usage/xai',
+      expect.anything(),
+    )
+    expect(
+      await invoke('server:fetch-subscription-usage', 'opencode-go'),
+    ).toEqual(usage)
+    expect(fetch).toHaveBeenLastCalledWith(
+      'http://127.0.0.1:4141/usage/opencode-go',
+      expect.objectContaining({ headers: { 'x-api-key': 'quota-key' } }),
+    )
+  })
+
+  test('distinguishes unavailable accounts from failed requests and validates the provider', async () => {
+    spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(null, { status: 404 }),
+    )
+    expect(await invoke('server:fetch-subscription-usage', 'codex')).toBeNull()
+    spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response('private-upstream-error', { status: 502 }),
+    )
+    await expect(
+      invoke('server:fetch-subscription-usage', 'xai'),
+    ).rejects.toThrow('Failed to fetch subscription usage')
+    await expect(
+      invoke('server:fetch-subscription-usage', '../admin/config'),
+    ).rejects.toThrow('Unsupported subscription provider')
+    spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('offline'))
+    await expect(
+      invoke('server:fetch-subscription-usage', 'codex'),
+    ).rejects.toThrow('offline')
+  })
+
+  test('exposes typed quota queries through preload', async () => {
+    await import('../electron/preload')
+    if (!preloadApi) throw new Error('Preload bridge was not exposed')
+    await preloadApi.fetchSubscriptionUsage('codex')
+    expect(rendererInvoke).toHaveBeenCalledWith(
+      'server:fetch-subscription-usage',
+      'codex',
+    )
+    await preloadApi.fetchSubscriptionUsage('xai')
+    expect(rendererInvoke).toHaveBeenLastCalledWith(
+      'server:fetch-subscription-usage',
+      'xai',
+    )
+    await preloadApi.fetchSubscriptionUsage('opencode-go')
+    expect(rendererInvoke).toHaveBeenLastCalledWith(
+      'server:fetch-subscription-usage',
+      'opencode-go',
+    )
+  })
+})
+
+describe('desktop media IPC', () => {
+  const imageInput = {
+    mode: 'generate',
+    provider: 'default',
+    model: 'gpt-image-2',
+    prompt: 'A boat',
+    size: 'auto',
+    quality: 'auto',
+    n: 1,
+    images: [],
+  }
+  test('exposes image, video, cancel and save calls through the preload', async () => {
+    await import('../electron/preload')
+    if (!preloadApi) throw new Error('Preload bridge was not exposed')
+    await preloadApi.createImages('image-call', {
+      ...imageInput,
+      mode: 'generate',
+      provider: 'default',
+      size: 'auto',
+      quality: 'auto',
+    })
+    await preloadApi.createVideo('video-call', {
+      prompt: 'A boat',
+      duration: 8,
+      aspectRatio: '16:9',
+      resolution: '720p',
+      generateAudio: true,
+    })
+    await preloadApi.getVideo('poll-call', 'video-job')
+    await preloadApi.cancelMediaRequest('image-call')
+    await preloadApi.saveMedia({
+      kind: 'image',
+      url: 'data:image/png;base64,iVBORw==',
+    })
+    expect(rendererInvoke.mock.calls.map((call) => call[0])).toEqual([
+      'media:create-images',
+      'media:create-video',
+      'media:get-video',
+      'media:cancel',
+      'media:save',
+    ])
+  })
+  test('runs image and video requests through the main-process client', async () => {
+    const fetchMock = spyOn(globalThis, 'fetch')
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ data: [{ b64_json: 'iVBORw==' }] }),
+    )
+    expect(
+      await invoke('media:create-images', 'image-call', imageInput),
+    ).toEqual([{ url: 'data:image/png;base64,iVBORw==' }])
+    fetchMock.mockResolvedValueOnce(Response.json({ request_id: 'video-job' }))
+    expect(
+      await invoke('media:create-video', 'video-call', {
+        prompt: 'A boat',
+        duration: 8,
+        aspectRatio: '16:9',
+        resolution: '720p',
+        generateAudio: true,
+      }),
+    ).toMatchObject({ requestId: 'video-job', status: 'pending' })
+    fetchMock.mockResolvedValueOnce(Response.json({ request_id: 'compressed' }))
+    await invoke('media:create-video', 'large-video', {
+      prompt: 'A boat',
+      duration: 8,
+      aspectRatio: '16:9',
+      resolution: '720p',
+      generateAudio: true,
+      image: {
+        name: 'frame.png',
+        type: 'image/png',
+        bytes: new Uint8Array(VIDEO_IMAGE_MAX_BYTES + 1),
+      },
+    })
+    expect(
+      JSON.parse(fetchMock.mock.calls.at(-1)?.[1]?.body as string),
+    ).toHaveProperty('image.url', 'data:image/jpeg;base64,/9j/2Q==')
+    fetchMock.mockResolvedValueOnce(
+      Response.json({
+        status: 'done',
+        video: { url: 'https://vidgen.x.ai/a.mp4' },
+      }),
+    )
+    expect(
+      await invoke('media:get-video', 'poll-call', 'video-job'),
+    ).toMatchObject({ status: 'done' })
+    await invoke('media:cancel', 'already-finished')
+    running = false
+    await expect(
+      invoke('media:create-images', 'stopped-call', imageInput),
+    ).rejects.toThrow('Start the server')
+  })
+  test('honors cancelled save dialogs and saves base64 images without a network fetch', async () => {
+    const input = { kind: 'image', url: 'data:image/png;base64,iVBORw==' }
+    expect(await invoke('media:save', input)).toBe(false)
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'media-ipc-'))
+    try {
+      saveDialogResult = {
+        canceled: false,
+        filePath: path.join(directory, 'image.png'),
+      }
+      expect(await invoke('media:save', input)).toBe(true)
+      expect(Array.from(fs.readFileSync(saveDialogResult.filePath!))).toEqual([
+        137, 80, 78, 71,
+      ])
+      expect(showSaveDialog).toHaveBeenCalledTimes(2)
+      await expect(
+        invoke('media:save', { kind: 'image', url: 'file:///etc/passwd' }),
+      ).rejects.toThrow()
+      expect(showSaveDialog).toHaveBeenCalledTimes(2)
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('desktop Codex login controls', () => {
   test('exposes cancellation and URL subscription through the preload bridge', async () => {
@@ -887,5 +1181,175 @@ describe('desktop saves automatically refresh the running gateway', () => {
     await expect(
       invoke('settings:save', { ...settings, host: '0.0.0.0' }),
     ).rejects.toThrow('address unavailable')
+  })
+})
+
+describe('desktop token usage sessions', () => {
+  function fetchInputUrl(input: Parameters<typeof fetch>[0]): string {
+    if (typeof input === 'string') return input
+    if (input instanceof URL) return input.toString()
+    return input.url
+  }
+
+  test('requests five sessions per page and normalizes invalid paging', async () => {
+    const payload = {
+      items: [],
+      page: 1,
+      page_size: 5,
+      total: 0,
+      total_pages: 1,
+    }
+    const fetchSessions = Object.assign(
+      (input: Parameters<typeof fetch>[0]) => {
+        if (
+          fetchInputUrl(input)
+          === 'http://127.0.0.1:4141/token-usage/sessions?page=1&page_size=5&period=this_week'
+        ) {
+          return Promise.resolve(Response.json(payload))
+        }
+        return Promise.resolve(new Response(null, { status: 500 }))
+      },
+      { preconnect: () => {} },
+    )
+    spyOn(globalThis, 'fetch').mockImplementation(fetchSessions)
+    await expect(
+      invoke('server:fetch-token-usage-sessions', 'this_week', 0, Number.NaN),
+    ).resolves.toEqual(payload)
+  })
+
+  test('returns null when session usage cannot be loaded', async () => {
+    const fetchSessions = Object.assign(
+      (input: Parameters<typeof fetch>[0]) => {
+        expect(fetchInputUrl(input)).toBe(
+          'http://127.0.0.1:4141/token-usage/sessions?page=2&page_size=5&period=today',
+        )
+        return Promise.resolve(new Response(null, { status: 500 }))
+      },
+      { preconnect: () => {} },
+    )
+    spyOn(globalThis, 'fetch').mockImplementation(fetchSessions)
+    await expect(
+      invoke('server:fetch-token-usage-sessions', 'nope', 2, 5),
+    ).resolves.toBeNull()
+
+    spyOn(globalThis, 'fetch').mockRejectedValue(new Error('offline'))
+    await expect(
+      invoke('server:fetch-token-usage-sessions', 'today', 2, 5),
+    ).resolves.toBeNull()
+  })
+
+  test('exposes session usage through the preload bridge', async () => {
+    await import('../electron/preload')
+    if (!preloadApi) throw new Error('Preload bridge was not exposed')
+    await preloadApi.fetchTokenUsageSessions('today', 2, 5)
+    expect(rendererInvoke).toHaveBeenCalledWith(
+      'server:fetch-token-usage-sessions',
+      'today',
+      2,
+      5,
+    )
+  })
+})
+
+describe('desktop configuration editor bridge', () => {
+  test('returns structured conflict, validation and read errors from the main process', async () => {
+    const originalPath = PATHS.CONFIG_PATH
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'desktop-config-errors-'),
+    )
+    PATHS.CONFIG_PATH = path.join(directory, 'config.json')
+    try {
+      running = false
+      const document = (await invoke(
+        'config:get-document',
+      )) as AppConfigDocument
+      fs.writeFileSync(PATHS.CONFIG_PATH, '{}')
+      expect(
+        await invoke('config:save-document', {
+          revision: document.revision,
+          content: '{}',
+        }),
+      ).toEqual({ error: { code: 'conflict' } })
+      const current = (await invoke('config:get-document')) as AppConfigDocument
+      expect(
+        await invoke('config:save-document', {
+          revision: current.revision,
+          content: '[]',
+        }),
+      ).toEqual({
+        error: { code: 'validation', message: 'Config must be a JSON object.' },
+      })
+      fs.rmSync(PATHS.CONFIG_PATH)
+      fs.mkdirSync(PATHS.CONFIG_PATH)
+      expect(await invoke('config:get-document')).toEqual({
+        error: { code: 'readFailed' },
+      })
+    } finally {
+      PATHS.CONFIG_PATH = originalPath
+      fs.rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  test('passes error codes through the preload as plain data', async () => {
+    await import('../electron/preload')
+    if (!preloadApi) throw new Error('Preload bridge was not exposed')
+    const failure = { error: { code: 'conflict' as const } }
+    rendererInvoke.mockResolvedValueOnce(failure)
+    expect(
+      await preloadApi.saveAppConfig({ revision: 'old', content: '{}' }),
+    ).toEqual(failure)
+  })
+  test('reads, saves offline, and applies the document through main-process handlers', async () => {
+    const originalPath = PATHS.CONFIG_PATH
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'desktop-config-ipc-'),
+    )
+    PATHS.CONFIG_PATH = path.join(directory, 'config.json')
+    try {
+      running = false
+      const document = (await invoke(
+        'config:get-document',
+      )) as AppConfigDocument
+      const saved = (await invoke('config:save-document', {
+        revision: document.revision,
+        content: JSON.stringify({
+          auth: { adminApiKey: 'old-admin' },
+          useMessagesApi: false,
+        }),
+      })) as AppConfigSaveResult
+      expect(saved.saved).toBe(true)
+      expect(saved.applied).toBe(false)
+      expect(saved.configPath).toBe(PATHS.CONFIG_PATH)
+      running = true
+      const applied = (await invoke(
+        'config:apply-document',
+        saved.revision,
+      )) as AppConfigSaveResult
+      expect(applied.applied).toBe(true)
+      expect(JSON.parse(applied.content)).toEqual({
+        auth: { adminApiKey: 'old-admin' },
+        useMessagesApi: false,
+      })
+    } finally {
+      PATHS.CONFIG_PATH = originalPath
+      fs.rmSync(directory, { recursive: true, force: true })
+    }
+  })
+  test('exposes document read, save and apply through the typed preload bridge', async () => {
+    await import('../electron/preload')
+    if (!preloadApi) throw new Error('Preload bridge was not exposed')
+    const update = { revision: 'revision', content: '{}' }
+    await preloadApi.getAppConfig()
+    await preloadApi.saveAppConfig(update)
+    await preloadApi.applyAppConfig('revision')
+    expect(rendererInvoke).toHaveBeenCalledWith('config:get-document')
+    expect(rendererInvoke).toHaveBeenCalledWith('config:save-document', update)
+    expect(rendererInvoke).toHaveBeenCalledWith(
+      'config:apply-document',
+      'revision',
+    )
+    expect(handlers.has('config:get-document')).toBe(true)
+    expect(handlers.has('config:save-document')).toBe(true)
+    expect(handlers.has('config:apply-document')).toBe(true)
   })
 })

@@ -1,11 +1,24 @@
 import { AsyncLocalStorage } from "node:async_hooks"
+import type { RequestEventObserver } from "./types/gateway-plugins"
+
+export interface RequestTiming {
+  id: string
+  firstTokenMs: number | null
+  durationMs: number | null
+  outcome: "completed" | "cancelled" | "error" | null
+  hasUsage: boolean
+  recordFirstToken: () => void
+}
 
 export interface RequestContext {
   traceId: string
   startTime: number
   userAgent: string
   sessionAffinity: string | undefined
+  rootSessionId?: string
   parentSessionId: string | undefined
+  pluginRequest?: RequestEventObserver
+  requestTiming?: RequestTiming
 }
 
 const TRACE_ID_MAX_LENGTH = 64
@@ -17,6 +30,25 @@ export const requestContext = {
   getStore: () => asyncLocalStorage.getStore(),
   run: <T>(context: RequestContext, callback: () => T) =>
     asyncLocalStorage.run(context, callback),
+}
+
+// Observe the final target at upstream dispatch, after mapping and overrides.
+export function formatPluginActualModel(
+  model: string,
+  provider?: string | null,
+): string {
+  return !model || !provider || provider === "github-copilot" ?
+      model
+    : `${provider}/${model}`
+}
+
+export function setPluginRequestActualModel(
+  model: string,
+  provider?: string,
+): void {
+  requestContext
+    .getStore()
+    ?.pluginRequest?.setActualModel(formatPluginActualModel(model, provider))
 }
 
 export function generateTraceId(): string {

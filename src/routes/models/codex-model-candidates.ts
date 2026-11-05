@@ -1,27 +1,25 @@
-import { builtinProviderModelRegistry } from "~/lib/builtin-provider-models"
 import {
   resolveEffectiveProviderType,
   type CodexReasoningEffort,
-  type ModelConfig,
   type ProviderType,
   type ResolvedProviderConfig,
 } from "~/lib/config"
 import { createHandlerLogger } from "~/lib/logger"
-import { getModelsDevModelMaxOutputTokens } from "~/lib/models-dev-cache"
 import { toClientModelId } from "~/lib/models"
+import { isProviderModelVisible } from "~/lib/provider-model-catalog"
+import { getProviderAgentModels } from "~/lib/provider-management"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
 import type { Model } from "~/lib/types/models"
 import type { SyntheticCodexModelCandidate } from "~/routes/models/codex-models-types"
 import {
   deduplicateModels,
   getCopilotModelRecords,
-  getFirstPositiveNumber,
   getModelsById,
   getProviderModelRecords,
-  getRecordField,
   getStringField,
-  isRecord,
+  isImageOnlyModel,
 } from "~/routes/models/model-discovery"
+import { getModelMetadata } from "~/routes/models/model-metadata"
 
 const logger = createHandlerLogger("models-handler")
 const RESPONSES_ENDPOINTS = new Set(["/responses", "ws:/responses"])
@@ -79,34 +77,15 @@ function getCopilotCodexCandidates(): Array<SyntheticCodexModelCandidate> {
 function isCopilotCodexCandidate(model: Model): boolean {
   const endpoints = model.supported_endpoints ?? []
   return (
-    endpoints.some(
+    !isImageOnlyModel("github-copilot", model.id, model)
+    && endpoints.some(
       (endpoint) =>
         endpoint === MESSAGES_ENDPOINT
         || endpoint === CHAT_COMPLETIONS_ENDPOINT
         || RESPONSES_ENDPOINTS.has(endpoint),
-    ) && model.capabilities.supports.tool_calls !== false
+    )
+    && model.capabilities.supports.tool_calls !== false
   )
-}
-
-function describeCopilotAdapter(model: Model): string {
-  const supportsResponses = model.supported_endpoints?.some((endpoint) =>
-    RESPONSES_ENDPOINTS.has(endpoint),
-  )
-  // Codex clients only use the native Responses API for gpt-* models; other
-  // models fall back to the Messages route even when they advertise native
-  // /responses support (see shouldFallbackToMessages).
-  if (model.id.startsWith("gpt") && supportsResponses) {
-    return `${model.name} through the Copilot Responses API.`
-  }
-  // Mirrors the Messages route dispatch order: native Messages first, then
-  // the Messages-to-Responses translation, then Messages-to-Chat.
-  if (model.supported_endpoints?.includes(MESSAGES_ENDPOINT)) {
-    return `${model.name} through the Copilot Messages adapter.`
-  }
-  if (supportsResponses) {
-    return `${model.name} through the Copilot Messages-to-Responses adapter.`
-  }
-  return `${model.name} through the Copilot Messages-to-Chat adapter.`
 }
 
 function createCopilotCodexCandidate(
@@ -119,7 +98,7 @@ function createCopilotCodexCandidate(
     slug: toClientModelId(model.id),
     catalogSlug: model.id,
     displayName: model.name,
-    description: describeCopilotAdapter(model),
+    description: model.name,
     contextWindow: positiveNumber(
       model.capabilities.limits.max_prompt_tokens,
       256_000,
@@ -145,22 +124,24 @@ async function getProviderCodexCandidates(
     const providerConfig = await resolveProviderConfig(provider)
     if (!providerConfig || providerConfig.name === "codex") return []
 
-    const remoteModels = await getProviderModelRecords(
+    const providerModels = await getProviderModelRecords(
       providerConfig,
       requestHeaders,
     )
-    const remoteById = getModelsById(remoteModels)
+    const modelsById = getModelsById(providerModels)
     const modelIds = new Set([
-      ...remoteById.keys(),
-      ...((
-        providerConfig.name === "xai" && providerConfig.authType === "oauth2"
-      ) ?
-        []
-      : Object.keys(providerConfig.models ?? {})),
+      ...modelsById.keys(),
+      ...Object.keys(providerConfig.models ?? {}),
+      ...(getProviderAgentModels(providerConfig) ?? []),
     ])
 
     const candidates: Array<SyntheticCodexModelCandidate> = []
     for (const modelId of modelIds) {
+      if (!isProviderModelVisible(provider, modelId, providerConfig)) continue
+      const remoteModel = modelsById.get(modelId)
+      if (isImageOnlyModel(provider, modelId, remoteModel, providerConfig)) {
+        continue
+      }
       const effectiveType = resolveEffectiveProviderType(
         providerConfig,
         modelId,
@@ -169,13 +150,11 @@ async function getProviderCodexCandidates(
       if (!usesMessagesFallback && effectiveType !== "openai-responses") {
         continue
       }
-      const modelConfig = providerConfig.models?.[modelId]
       candidates.push(
         createProviderCodexCandidate(
           providerConfig,
           modelId,
-          remoteById.get(modelId),
-          modelConfig,
+          remoteModel,
           effectiveType,
         ),
       )
@@ -188,56 +167,28 @@ async function getProviderCodexCandidates(
 }
 
 function isMessagesFallbackProviderType(type: ProviderType): boolean {
-  return type === "anthropic" || type === "openai-compatible"
-}
-
-function describeProviderAdapter(type: ProviderType): string {
-  if (type === "anthropic") return "Messages"
-  if (type === "openai-responses") return "Messages-to-Responses"
-  return "Messages-to-Chat"
+  return (
+    type === "anthropic" || type === "openai-compatible" || type === "google"
+  )
 }
 
 function createProviderCodexCandidate(
   providerConfig: ResolvedProviderConfig,
   modelId: string,
   remoteModel: Record<string, unknown> | undefined,
-  modelConfig: ModelConfig | undefined,
   effectiveType: ProviderType,
 ): SyntheticCodexModelCandidate {
-  const builtinModelConfig = builtinProviderModelRegistry.getModelConfig(
+  const metadata = getModelMetadata(
     providerConfig.name,
     modelId,
+    remoteModel ?? {},
+    providerConfig,
   )
-  const configuredReasoningEfforts = normalizeReasoningEfforts(
-    modelConfig?.reasoningEfforts,
-  )
-  const remoteReasoningEfforts = normalizeRemoteReasoningEfforts(remoteModel)
-  const builtinReasoningEfforts = normalizeReasoningEfforts(
-    builtinModelConfig?.reasoningEfforts,
-  )
-  const reasoningEfforts =
-    configuredReasoningEfforts.length > 0 ? configuredReasoningEfforts
-    : remoteReasoningEfforts.length > 0 ? remoteReasoningEfforts
-    : builtinReasoningEfforts
-  const configuredModalities = normalizeInputModalities(
-    modelConfig?.inputModalities,
-  )
-  // OpenRouter nests the modalities under `architecture`, e.g.
-  // ["file", "image", "text"] for vision models:
-  // https://openrouter.ai/docs/api/api-reference/models/list-all-models-and-their-properties
-  const remoteModalities = normalizeInputModalities(
-    remoteModel?.input_modalities
-      ?? remoteModel?.modalities
-      ?? getRecordField(remoteModel, "architecture")?.input_modalities,
-  )
-  const builtinModalities = normalizeInputModalities(
-    builtinModelConfig?.inputModalities,
-  )
+  const reasoningEfforts = normalizeReasoningEfforts(metadata.reasoningEfforts)
   const displayName =
     getStringField(remoteModel ?? {}, "display_name")
     ?? getStringField(remoteModel ?? {}, "name")
     ?? modelId
-  const adapterName = describeProviderAdapter(effectiveType)
   // Codex clients only drive gpt-* models through the native Responses API;
   // other Responses-capable models fall back to the Messages adapter (see
   // shouldFallbackToMessages), so only gpt-* models require upstream catalog
@@ -251,56 +202,16 @@ function createProviderCodexCandidate(
     catalogMatchRequired: requiresCatalogMatch,
     providerName: providerConfig.name,
     displayName: `${displayName} (${providerConfig.name})`,
-    description: `${displayName} through the ${providerConfig.name} ${adapterName} adapter.`,
-    contextWindow: positiveNumber(
-      modelConfig?.contextWindow
-        ?? getFirstPositiveNumber(remoteModel, [
-          "context_window",
-          "context_length",
-          "max_context_length",
-          "max_model_len",
-        ])
-        ?? builtinModelConfig?.contextWindow,
-      256_000,
-    ),
-    maxOutputTokens: positiveNumber(
-      modelConfig?.maxOutputTokens
-        ?? getFirstPositiveNumber(remoteModel, ["max_output_tokens"])
-        ?? getModelsDevModelMaxOutputTokens(
-          providerConfig.modelsDevProviderId || providerConfig.name,
-          modelId,
-        )
-        ?? builtinModelConfig?.maxOutputTokens,
-      32_000,
-    ),
-    inputModalities: resolveInputModalities(
-      providerConfig.name,
-      configuredModalities,
-      remoteModalities,
-      builtinModalities,
-    ),
+    description: displayName,
+    contextWindow: metadata.contextWindow ?? 256_000,
+    maxOutputTokens: metadata.maxOutputTokens ?? 32_000,
+    inputModalities: normalizeInputModalities(metadata.inputModalities),
     reasoningEfforts,
     defaultReasoningEffort: selectDefaultReasoningEffort(
       reasoningEfforts,
-      modelConfig?.defaultReasoningEffort
-        ?? builtinModelConfig?.defaultReasoningEffort,
+      metadata.defaultReasoningEffort,
     ),
   }
-}
-
-function normalizeRemoteReasoningEfforts(
-  model: Record<string, unknown> | undefined,
-): Array<CodexReasoningEffort> {
-  if (!model) return []
-  const value = model.reasoning_efforts ?? model.supported_reasoning_levels
-  if (!Array.isArray(value)) return []
-  return normalizeReasoningEfforts(
-    value.map((entry: unknown) =>
-      isRecord(entry) && typeof entry.effort === "string" ?
-        entry.effort
-      : entry,
-    ),
-  )
 }
 
 function normalizeReasoningEfforts(
@@ -318,9 +229,10 @@ function normalizeReasoningEfforts(
   ]
 }
 
-function normalizeInputModalities(value: unknown): Array<"text" | "image"> {
-  if (!Array.isArray(value)) return []
-  return [
+function normalizeInputModalities(
+  value: Array<string>,
+): Array<"text" | "image"> {
+  const modalities = [
     ...new Set(
       value.filter(
         (modality): modality is "text" | "image" =>
@@ -328,28 +240,7 @@ function normalizeInputModalities(value: unknown): Array<"text" | "image"> {
       ),
     ),
   ]
-}
-
-function fallbackModalities(
-  remoteModalities: Array<"text" | "image">,
-  builtinModalities: Array<"text" | "image">,
-): Array<"text" | "image"> {
-  if (remoteModalities.length > 0) return remoteModalities
-  return builtinModalities.length > 0 ? builtinModalities : ["text"]
-}
-
-function resolveInputModalities(
-  providerName: string,
-  configuredModalities: Array<"text" | "image">,
-  remoteModalities: Array<"text" | "image">,
-  builtinModalities: Array<"text" | "image">,
-): Array<"text" | "image"> {
-  if (configuredModalities.length > 0) return configuredModalities
-  const modalities = fallbackModalities(remoteModalities, builtinModalities)
-  if (providerName === "kimi") {
-    return [...new Set<"text" | "image">([...modalities, "image"])]
-  }
-  return modalities
+  return modalities.length > 0 ? modalities : ["text"]
 }
 
 function selectDefaultReasoningEffort(

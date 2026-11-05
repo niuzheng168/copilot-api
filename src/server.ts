@@ -9,6 +9,8 @@ import {
   getConfiguredAdminApiKeys,
 } from "./lib/request-auth"
 import { traceIdMiddleware } from "./lib/trace"
+import type { GatewayPlugins } from "./lib/gateway-plugins"
+import { requestEventsMiddleware } from "./lib/request-events"
 import { alphaSearchRoutes } from "./routes/alpha-search/route"
 import { completionRoutes } from "./routes/chat-completions/route"
 import { configRoutes } from "./routes/admin/config/route"
@@ -25,9 +27,12 @@ import { responsesRoutes } from "./routes/responses/route"
 import { sessionHistoryRoutes } from "./routes/session-history/route"
 import { tokenUsageRoute } from "./routes/token-usage/route"
 import { usageRoute } from "./routes/usage/route"
+import { videoRoutes } from "./routes/videos/route"
 export interface CreateServerOptions {
   networkExposed?: boolean
   getApiKeys?: () => Array<string>
+  port?: number
+  plugins?: GatewayPlugins
 }
 
 function resolveSameOriginCorsOrigin(
@@ -75,6 +80,11 @@ export function createServer(options: CreateServerOptions = {}): Hono {
     }),
   )
 
+  server.use(
+    "*",
+    requestEventsMiddleware(options.plugins, options.port ?? 4141),
+  )
+
   server.get("/", (c) => c.text("Server running"))
   // An in-flight request keeps its chosen route while the owner edits the file.
   // Admin requests stay outside this scope so a bad file cannot disable repair.
@@ -112,6 +122,7 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   server.route("/responses", responsesRoutes)
   server.route("/alpha/search", alphaSearchRoutes)
   server.route("/images", imageRoutes)
+  server.route("/videos", videoRoutes)
 
   // Compatibility with tools that expect v1/ prefix
   server.route("/v1/chat/completions", completionRoutes)
@@ -120,6 +131,7 @@ export function createServer(options: CreateServerOptions = {}): Hono {
   server.route("/v1/responses", responsesRoutes)
   server.route("/v1/alpha/search", alphaSearchRoutes)
   server.route("/v1/images", imageRoutes)
+  server.route("/v1/videos", videoRoutes)
 
   // Anthropic compatible endpoints
   server.route("/v1/messages", messageRoutes)

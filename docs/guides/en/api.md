@@ -28,7 +28,7 @@ curl http://localhost:4141/admin/config/model-mappings \
 
 ## API Endpoints
 
-The server exposes several OpenAI- and Anthropic-compatible endpoints. Requests can target GitHub Copilot, the built-in `codex` provider, or configured providers depending on the selected model and `provider/model` alias. Every `/v1/...` endpoint below also supports a provider-scoped path in the form `/:provider/v1/...`; those variants are omitted from the tables.
+The server exposes several OpenAI- and Anthropic-compatible endpoints. Requests can target GitHub Copilot, the built-in `codex` provider, or configured providers depending on the selected model and `provider/model` alias. Provider-scoped paths use the form `/:provider/v1/...` where supported; video endpoints are available only at the top level.
 
 ### OpenAI Compatible Endpoints
 
@@ -38,20 +38,75 @@ These endpoints mimic the OpenAI API structure.
 | --------------------------- | ------ | ---------------------------------------------------------------- |
 | `POST /v1/responses`        | `POST` | OpenAI Most advanced interface for generating model responses. Supports `Content-Encoding: zstd` request bodies and `provider/model` aliases for `openai-responses` providers. Zstd request decompression is limited to Responses routes, including provider-scoped aliases. |
 | `POST /v1/chat/completions` | `POST` | Creates a model response for the given chat conversation. Supports `provider/model` aliases for `openai-compatible` providers and can be used without Copilot when the target provider is configured. |
-| `GET /v1/models`            | `GET`  | Lists Copilot models plus enabled provider models using `provider/model-id` IDs. Requests from Codex clients (`User-Agent` beginning with `codex`) are forwarded to the Codex Models upstream. |
+| `GET /v1/models`            | `GET`  | Lists Copilot models plus enabled provider models using `provider/model-id` IDs. Requests from Codex clients (`User-Agent` beginning with `codex`) receive the merged Codex-format catalog, excluding image-only models. |
 | `POST /v1/embeddings`       | `POST` | Creates an embedding vector representing the input text.         |
+
+### Model Discovery Sources
+
+`GET /models`, `GET /v1/models`, and `GET /:provider/v1/models` read `xai`, `openrouter`, `deepseek`, `kimi`, `dashscope`, and `opencode-go` models from the models.dev cache without querying those providers' model endpoints. Kimi defaults to `kimi-code-plan-cn` and DashScope to `alibaba-cn`; other official URLs select their matching catalogs. Explicit `modelsDevProviderId` takes priority.
+
+Chat models missing from the catalog receive no additional built-in entries. A provider-scoped request with no valid cached models returns `503` (`service_unavailable`); aggregation skips empty catalogs. Capabilities, limits, and USD prices come from the catalog, with explicit model settings taking priority.
+
+The ordinary aggregated OpenAI-format `GET /models` and `GET /v1/models` catalogs include built-in GitHub Copilot, Codex, and xAI image models by default for available providers and do not apply `agentsModels`. The desktop Dashboard's Available Models and the web viewer's Models tab use these ordinary model endpoints with no extra query parameter.
+
+Claude, Codex, and DeepSeek client catalogs always exclude image-only models, even when `agentsModels` explicitly selects them. Chat models that accept image input or produce both text and images remain subject to the normal selection rules. OpenCode discovery continues to include image-only models when their providers are available and `agentsModels` allows them; explicit lists must include the raw upstream image ID, such as `gpt-image-2` under `codex`.
+
+All models.dev lists exclude deprecated models and those released before `2026-05-01`, including explicit display selections. Models without a valid `release_date` remain listed.
+
+The Codex model catalog, Copilot model cache, and other custom providers retain their existing remote discovery behavior.
 
 ### Codex Backend Endpoints
 
-These endpoints implement Codex backend APIs. Top-level image requests require an active Codex login; alpha search can use either the Codex backend or a Responses web-search adapter.
+Top-level image routes apply model mappings first. A missing or blank model, or the bare `gpt-image-2` name, selects the first available provider in this order: **Codex → GitHub Copilot → xAI**, using that provider's default image model. Availability checks the enabled provider and its credentials without querying model catalogs; if none is available, the gateway returns `404`.
+
+Explicit `provider/model` aliases stay on that provider and preserve the upstream model name, including names absent from the built-in catalog. An unavailable explicit target returns its error instead of selecting another provider. Other bare model names target Codex unchanged; their names do not select GitHub Copilot or xAI. Use a provider alias, model mapping, or provider-scoped path to specify those targets. Provider-scoped paths preserve supplied model names. Built-in scoped paths fill their provider's default only when the model is omitted or blank and strip a matching `provider/` prefix. Custom providers receive native Images JSON or multipart requests. The final model is used for usage accounting.
+
+JSON image requests must be UTF-8 encoded objects. Invalid JSON returns `400` (`invalid_request_error`) on both top-level and provider-scoped routes instead of falling back to Codex. Validation preserves large-request streaming and stops forwarding if an error is discovered during upload. Multipart image edits remain supported.
+
+Image requests routed to Codex require an active Codex login; other image routes use their provider's credentials. Alpha search can use either the Codex backend or a Responses web-search adapter.
 
 | Endpoint                                                       | Method | Description                                                     |
 | -------------------------------------------------------------- | ------ | --------------------------------------------------------------- |
 | `POST /v1/alpha/search`                | `POST` | Routes Codex alpha-search requests to the Codex backend, or handles supported commands locally and through Responses web search. |
-| `POST /v1/images/generations` | `POST` | Forwards a JSON image generation request to the Codex Images upstream. When the request omits `Content-Type`, the gateway defaults it to `application/json`. Configured model mappings apply to the request `model`; a mapping that resolves to a `provider/model` alias forwards the request to that provider's images endpoint when the provider is configured. |
-| `POST /v1/images/edits` | `POST` | Forwards an image edit request to the Codex Images upstream. Send this request as `multipart/form-data` and let the HTTP client generate the `boundary`. The gateway streams uploaded files to temporary disk files while receiving them and forwards them from disk, so large uploads are not held in memory. Multipart requests are limited to 128 MiB total, 64 MiB per file, and 16 files; requests over a limit return `413`. Model mappings and `provider/model` alias routing apply to this endpoint as well. |
+| `POST /v1/images/generations` | `POST` | Routes a JSON image generation request by its model mapping or provider alias. Missing `Content-Type` defaults to `application/json`. Only missing, blank, or bare `gpt-image-2` models use automatic provider selection; other model names are preserved for upstream validation. |
+| `POST /v1/images/edits` | `POST` | Accepts JSON image references or `multipart/form-data` uploads. JSON requests retain their existing behavior, including `images: [{ image_url }]`, `images: [{ file_id }]`, and an optional `mask` reference. Multipart uploads accept `image`, `image[]`, and repeated image fields in their original order, plus an optional `mask`. Files are staged to disk, then converted to base64 data URLs and JSON for Codex, GitHub Copilot, or xAI. Model mappings and `provider/model` aliases apply. `/codex/v1/images/edits`, `/github-copilot/v1/images/edits`, and `/xai/v1/images/edits` also accept multipart; other provider-scoped multipart edits are staged to disk and forwarded as multipart with usage recorded against `model`. |
+
+Use `model: "github-copilot/gpt-image-2.5-flare"` on either image endpoint to select GitHub Copilot when available, or configure a model mapping to this alias. The gateway removes `github-copilot/` from the upstream model and forwards OpenAI-compatible image parameters, JSON image references, and responses, including streaming events. Multipart edits are converted to the same JSON format. Provider-scoped `/github-copilot/v1/images/generations` and `/github-copilot/v1/images/edits` accept the raw model ID and stay on Copilot; disabled Copilot returns `403`, and a missing GitHub login returns `401`. Copilot image requests use the active GitHub login token and existing device ID. The built-in image catalog supplies this model even when Copilot's models endpoint omits it. Token usage comes from the standard OpenAI-compatible `usage` field. Only costs use `copilot_usage.total_nano_aiu`, converted at the existing Copilot AIU rate.
+
+Multipart uploads are limited to 128 MiB total, 64 MiB per file, and 16 files; exceeding a limit returns `413`, and malformed multipart returns `400`. Verbose logs include only the `model`, `prompt`, `size`, `quality`, and `n` fields; individual fields are truncated after 8192 characters. Temporary files are removed after JSON conversion or on failure/cancellation. Base64 expands image data by about one third, and the generated JSON is buffered before forwarding. xAI retains its 5-image limit and rejects masks, file IDs, and streaming.
+
+When an image model resolves to `xai/model`, the common route translates OpenAI image parameters for the xAI Imagine API. OpenAI `size` maps to `aspect_ratio` and `resolution`. For `grok-imagine-image-2.0`, `high` and `hd` quality map to `medium`; other models omit `quality`. xAI supports up to five image references and rejects masks, file IDs, and streaming. OAuth uses the subscription base URL; API-key requests use the configured provider base URL.
+
+The default xAI response format is `b64_json`. URL-only output is downloaded from the xAI output CDN with a 32 MiB limit; failure returns `502`. Explicit `response_format: "url"` skips downloading. Provider-scoped xAI JSON retains its native behavior, and multipart edits use the xAI conversion.
 
 For requests routed to the Codex backend, the gateway replaces client authorization and account headers with the active Codex login and preserves compatible request metadata. Responses-backed alpha search instead follows the selected Copilot or provider route.
+
+### xAI Video Endpoints
+
+| Endpoint | Method | Description |
+| --- | --- | --- |
+| `/v1/videos/generations` | `POST` | Submit a native asynchronous video request. Send `model: "xai/grok-imagine-video-1.5"` or a model mapping that resolves to it. Returns the upstream `request_id`. |
+| `/v1/videos/{request_id}` | `GET` | Query the xAI job status and video URL using the same account and upstream address as submission. |
+
+Both endpoints also work without `/v1` and use regular gateway authentication. The enabled `xai` provider supplies API-key or OAuth credentials. There is no default model; an absent or unsupported `model` returns `400`, and an unavailable provider returns `404`. Other native generation fields are passed through for upstream validation, including image and reference inputs. Native response bodies, status codes, and metadata are preserved.
+
+Submit a generation request:
+
+```sh
+curl http://localhost:4141/v1/videos/generations \
+  -H 'Authorization: Bearer your_gateway_key' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"xai/grok-imagine-video-1.5","prompt":"A paper boat on a lake","duration":5}'
+```
+
+The response contains an upstream `request_id`. Poll for the result using that ID:
+
+```sh
+curl http://localhost:4141/v1/videos/YOUR_REQUEST_ID \
+  -H 'Authorization: Bearer your_gateway_key'
+```
+
+The gateway does not wait for generation, retry submissions, or store jobs. Keep the same xAI account and base URL while querying. Clients handle native statuses such as `pending`, `done`, and `failed`, and access the returned `video.url` directly. Default xAI video URLs are temporary. See the [xAI video documentation](https://docs.x.ai/developers/model-capabilities/video/generation).
 
 ### Anthropic Compatible Endpoints
 
@@ -59,16 +114,24 @@ These endpoints are designed to be compatible with the Anthropic Messages API.
 
 | Endpoint                         | Method | Description                                                  |
 | -------------------------------- | ------ | ------------------------------------------------------------ |
-| `POST /v1/messages`              | `POST` | Creates a model response for a given conversation. Supports `provider/model` aliases for configured providers, including translation through `openai-compatible` providers. |
+| `POST /v1/messages`              | `POST` | Creates a model response for a given conversation. Supports `provider/model` aliases for configured providers, including translation through `openai-compatible` and native Google Gemini (`google`) providers. |
 | `POST /v1/messages/count_tokens` | `POST` | Calculates the number of tokens for a given set of messages. Supports `provider/model` aliases for configured providers. |
 
 ### Usage Monitoring Endpoints
 
-New endpoints for monitoring your Copilot usage and quotas.
+Endpoints for monitoring subscription usage and quotas.
 
 | Endpoint     | Method | Description                                                  |
 | ------------ | ------ | ------------------------------------------------------------ |
 | `GET /usage` | `GET`  | Get detailed Copilot usage statistics and quota information. |
+| `GET /usage/github-copilot` | `GET` | Get normalized Premium, Chat, and Completions subscription quotas. |
+| `GET /usage/codex` | `GET` | Get the selected Codex subscription's windows, credits, and Business member credit limit. |
+| `GET /usage/xai` | `GET` | Get the selected xAI subscription's Grok Build allowance and prepaid balance. |
+| `GET /usage/opencode-go` | `GET` | Get OpenCode Go rolling 5-hour, weekly, and monthly usage percentages and reset times. |
+
+OpenCode Go uses the configured provider API key and base URL to query `GET /v1/usage`; legacy `https://opencode.ai/zen/go` URLs use the existing normalization to `https://opencode.ai/inference/go`. Monetary caps and plan tiers are not inferred from percentages. A workspace without a Go allowance returns 404, matching other unavailable subscriptions.
+
+Subscription endpoints use the server's enabled provider and selected account. They return normalized `provider`, `planType`, `windows`, `credits`, and limit status fields, with `resetAt` in Unix seconds. Copilot calendar reset dates use `resetDate`; individual windows may report `unlimited`. Unavailable subscriptions return 404; upstream or credential failures return 502. The desktop and web Subscriptions tabs query these endpoints independently. Upstream credentials stay on the server.
 
 ### Local Codex Session History Endpoints
 

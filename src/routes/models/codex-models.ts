@@ -1,6 +1,7 @@
 import type { Context } from "hono"
 
 import {
+  getConfig,
   getModelMappings,
   getRawProviderConfig,
   listEnabledProviders,
@@ -24,7 +25,7 @@ import type {
   CodexReasoningEffort,
   SyntheticCodexModelCandidate,
 } from "~/routes/models/codex-models-types"
-import { isRecord } from "~/routes/models/model-discovery"
+import { isImageOnlyModel, isRecord } from "~/routes/models/model-discovery"
 import fallbackCodexCatalogJson from "~/routes/models/models.json"
 import { forwardCodexModels } from "~/services/codex/get-models"
 import { createProviderProxyResponse } from "~/services/providers/provider-proxy"
@@ -81,20 +82,10 @@ export function isCodexUserAgent(userAgent: string | undefined): boolean {
   return CODEX_USER_AGENT_PATTERN.test(userAgent?.trim() ?? "")
 }
 
-export function isDeepSeekModelId(modelId: string): boolean {
-  return modelId.toLowerCase().includes("deepseek")
-}
-
-export function shouldInjectMessagesToolCallTips(
-  userAgent: string | undefined,
-  targetModel: string,
-): boolean {
-  return isCodexUserAgent(userAgent) && !isDeepSeekModelId(targetModel)
-}
-
 /**
  * Proxies a models request to the fixed Codex upstream models endpoint.
  * Returns a 404 JSON response when the codex provider is unavailable.
+ * Falls back to the bundled catalog when the upstream request or body times out.
  * Pass `resolvedProviderConfig` when the caller already resolved the codex
  * provider to avoid a second resolve.
  */
@@ -116,12 +107,23 @@ export async function handleCodexModelsProxy(
     )
   }
 
-  const upstreamResponse = await forwardCodexModels(
-    c.req.url,
-    c.req.raw.headers,
-  )
-  if (!upstreamResponse.ok) return createProviderProxyResponse(upstreamResponse)
-  const catalog: unknown = await upstreamResponse.json().catch(() => null)
+  let catalog: unknown
+  try {
+    const upstreamResponse = await forwardCodexModels(
+      c.req.url,
+      c.req.raw.headers,
+    )
+    if (!upstreamResponse.ok)
+      return createProviderProxyResponse(upstreamResponse)
+    catalog = await upstreamResponse.json().catch((error: unknown) => {
+      if (isCodexCatalogTimeout(error)) throw error
+      return null
+    })
+  } catch (error) {
+    if (!isCodexCatalogTimeout(error)) throw error
+    logger.warn("models.codex.catalog_timeout", { error })
+    catalog = { models: FALLBACK_CODEX_MODELS }
+  }
   if (!isCodexModelsResponse(catalog)) {
     return c.json(
       { error: { message: "Invalid Codex model catalog", type: "api_error" } },
@@ -133,8 +135,10 @@ export async function handleCodexModelsProxy(
     c,
     {
       ...catalog,
-      models: catalog.models.filter((model) =>
-        isProviderAgentModelVisible(providerConfig, model.slug),
+      models: catalog.models.filter(
+        (model) =>
+          !isImageOnlyModel("codex", model.slug, model, providerConfig)
+          && isProviderAgentModelVisible(providerConfig, model.slug),
       ),
     },
     new Set(getProviderAgentModels(providerConfig)),
@@ -175,12 +179,16 @@ export async function handleMergedCodexModels(
     }),
   ])
   const upstreamCatalog = upstreamCatalogResult?.catalog
-  const upstreamModels = upstreamCatalog?.models ?? FALLBACK_CODEX_MODELS
+  const codexConfig = getRawProviderConfig("codex")
+  const upstreamModels = (
+    upstreamCatalog?.models ?? FALLBACK_CODEX_MODELS
+  ).filter(
+    (model) => !isImageOnlyModel("codex", model.slug, model, codexConfig),
+  )
   const template = selectTemplate(upstreamModels)
   const catalogModelsBySlug = new Map(
     upstreamModels.map((model) => [model.slug, model]),
   )
-  const codexConfig = getRawProviderConfig("codex")
   const copilotConfig = getRawProviderConfig("github-copilot")
   const visibleUpstreamModels = upstreamModels.filter(
     (model) =>
@@ -286,6 +294,16 @@ function createCodexCatalogResponse(
   explicitSlugs: ReadonlySet<string>,
   fallback: CodexModel["model_messages"],
 ): Response {
+  if (getConfig().codexMultiAgentV1 === true) {
+    response = {
+      ...response,
+      models: response.models.map((model) =>
+        model.multi_agent_version === "v2" ?
+          { ...model, multi_agent_version: "v1" }
+        : model,
+      ),
+    }
+  }
   const body = serializeCodexModelCatalog(response, {
     headers: c.req.raw.headers,
     modern: isModernCodexClient(c.req.url, c.req.raw.headers),
@@ -314,19 +332,18 @@ function createCatalogAlias(
   slug: string,
   providerName: string | undefined,
 ): CodexModel {
-  const alias = { ...model, slug }
-  const prefix = providerName?.trim()
-  if (
-    !prefix
-    || typeof alias.display_name !== "string"
-    || alias.display_name.startsWith(`${prefix} `)
-  ) {
-    return alias
-  }
+  const provider = providerName?.trim()
+  const shouldSuffix =
+    provider
+    && typeof model.display_name === "string"
+    && !model.display_name.endsWith(` (${provider})`)
 
   return {
-    ...alias,
-    display_name: `${prefix} ${alias.display_name}`,
+    ...model,
+    slug,
+    ...(shouldSuffix && {
+      display_name: `${model.display_name} (${provider})`,
+    }),
   }
 }
 
@@ -345,7 +362,6 @@ export function createSyntheticCodexModel(
     : reasoningEfforts[0]
   const supportsReasoning = reasoningEfforts.some((effort) => effort !== "none")
   const inputModalities = [...new Set(candidate.inputModalities)]
-  const isDeepSeekModel = isDeepSeekModelId(candidate.slug)
 
   return {
     ...template,
@@ -361,12 +377,15 @@ export function createSyntheticCodexModel(
     default_verbosity: "medium",
     apply_patch_tool_type: "freeform",
     web_search_tool_type: "text_and_image",
-    supports_search_tool: false,
-    use_responses_lite: isDeepSeekModel ? false : true,
-    tool_mode: isDeepSeekModel ? null : "code_mode_only",
-    multi_agent_version: "v2",
+    // Also enables deferred Apps/MCP tool discovery in Codex Code Mode.
+    supports_search_tool: true,
+    use_responses_lite: true,
+    // Gateway adapters use request-level effort, regardless of template capabilities.
+    supports_reasoning_effort_updates: false,
+    tool_mode: "code_mode_only",
+    multi_agent_version: getConfig().codexMultiAgentV1 === true ? "v1" : "v2",
     multi_agent_reasoning_effort: null,
-    shell_type: isDeepSeekModel ? "shell_command" : template.shell_type,
+    shell_type: template.shell_type,
     experimental_supported_tools: [],
     input_modalities: inputModalities,
     supports_image_detail_original: false,
@@ -401,6 +420,13 @@ export function createSyntheticCodexModel(
         template.base_instructions
       : FALLBACK_BASE_INSTRUCTIONS,
   }
+}
+
+function isCodexCatalogTimeout(error: unknown): boolean {
+  return (
+    error instanceof Error
+    && (error.name === "TimeoutError" || error.name === "AbortError")
+  )
 }
 
 async function tryGetCodexCatalog(

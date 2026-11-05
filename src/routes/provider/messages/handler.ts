@@ -26,16 +26,20 @@ import {
   getClaudeAutoModel,
   resolveProviderConfigForModel,
 } from "~/lib/config"
-import { builtinProviderModelRegistry } from "~/lib/builtin-provider-models"
+import { getProviderModelConfig } from "~/lib/provider-model-catalog"
 import { fromClaudeDiscoveryModelId } from "~/lib/claude-models"
 import { logCodexRateLimitsEvent } from "~/lib/codex-rate-limit"
 import {
   applyDashScopePreserveThinkingDefault,
   applyOpenAICompatibleContextCache,
   isDashScopeAliyunProvider,
-  normalizeDashScopeAssistantTextContent,
 } from "~/lib/dashscope"
 import { HTTPError } from "~/lib/error"
+import {
+  recordAnthropicFirstToken,
+  recordChatCompletionFirstToken,
+  recordResponsesFirstToken,
+} from "~/lib/first-token"
 import { createHandlerLogger, debugJson, debugLazy } from "~/lib/logger"
 import { getProviderModelPdfSupport } from "~/lib/model-pdf-support"
 import { resolveProviderConfig } from "~/lib/provider-resolver"
@@ -51,15 +55,16 @@ import {
   type UsageTokens,
 } from "~/lib/token-usage"
 import { isResponsesStream, parseUserIdMetadata } from "~/lib/utils"
+import { setPluginRequestModel } from "~/lib/request-events"
 import {
   translateToAnthropic,
   translateToOpenAI,
-} from "~/routes/messages/non-stream-translation"
+} from "~/routes/messages/completions-translation"
 import {
   flushPendingAnthropicStreamEvents,
   translateChunkToAnthropicEvents,
   translateErrorToAnthropicErrorEvent,
-} from "~/routes/messages/stream-translation"
+} from "~/routes/messages/completions-stream-translation"
 import {
   buildErrorEvent,
   createResponsesStreamState,
@@ -103,6 +108,7 @@ import {
   normalizeProviderResponsesReasoningEffort,
 } from "~/routes/provider/utils"
 import consola from "consola"
+import { handleGoogleProviderMessages } from "./google-handler"
 
 const logger = createHandlerLogger("provider-messages-handler")
 
@@ -115,6 +121,7 @@ export async function handleProviderMessages(
 ): Promise<Response> {
   const provider = c.req.param("provider")
   const payload = await c.req.json<AnthropicMessagesPayload>()
+  setPluginRequestModel(payload.model)
   payload.model = fromClaudeDiscoveryModelId(payload.model)
   applyClaudeNoToolsEffort(payload, c.req.header("user-agent"))
 
@@ -168,6 +175,16 @@ export async function handleProviderMessagesForProvider(
 
     applyModelDefaults(payload, modelConfig)
     appendClaudeContinuationMessage(payload)
+
+    if (effectiveType === "google") {
+      stripWebSearchServerTool(payload)
+      return await handleGoogleProviderMessages(
+        c,
+        payload,
+        providerConfig,
+        usageEndpoint,
+      )
+    }
 
     if (effectiveType === "openai-responses") {
       if (hasWebSearchServerTool(payload)) {
@@ -680,10 +697,6 @@ const createOpenAICompatiblePayload = (
     openAIPayload.parallel_tool_calls = true
   }
 
-  if (isDashScopeProvider) {
-    normalizeDashScopeAssistantTextContent(openAIPayload.messages)
-  }
-
   const contextCacheEnabled = modelConfig?.contextCache ?? isDashScopeProvider
   if (contextCacheEnabled) {
     applyOpenAICompatibleContextCache(openAIPayload)
@@ -729,9 +742,10 @@ const normalizeOpenAICompatibleReasoningContent = (
   // history messages instead of the default "reasoning_content" field
   const reasoningField =
     options.modelConfig?.reasoningField
-    ?? builtinProviderModelRegistry.getModelConfig(
+    ?? getProviderModelConfig(
       options.providerConfig.name,
       payload.model,
+      options.providerConfig,
     )?.reasoningField
     ?? "reasoning_content"
 
@@ -938,6 +952,7 @@ const streamOpenAICompatibleProviderMessages = ({
         }
 
         const parsed = parseOpenAICompatibleStreamChunk(chunk.data)
+        recordChatCompletionFirstToken(parsed)
         if (!parsed) {
           continue
         }
@@ -1053,6 +1068,7 @@ const streamResponsesProviderMessages = ({
         chunk.data,
         providerConfig,
       )
+      recordResponsesFirstToken(parsed)
       if (!parsed) {
         continue
       }
@@ -1138,6 +1154,7 @@ const parseProviderStreamEvent = (
 } | null => {
   try {
     const parsed = JSON.parse(data) as AnthropicStreamEventData
+    recordAnthropicFirstToken(parsed)
     if (parsed.type === "message_start") {
       return {
         data: JSON.stringify(parsed),

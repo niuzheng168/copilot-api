@@ -1,9 +1,10 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 
 import {
   getTokenUsageDailySummary,
   getTokenUsageEventsPage,
   getTokenUsageSessionsSummary,
+  getTokenUsageSessionsPage,
   getTokenUsageSummary,
   type TokenUsagePeriod,
 } from "~/lib/token-usage"
@@ -51,19 +52,25 @@ tokenUsageRoute.get("/daily", async (c) => {
   return c.json(summary)
 })
 
-tokenUsageRoute.get("/events", async (c) => {
-  const period = parsePeriod(c.req.query("period"))
-  const page = parsePositiveInt(c.req.query("page"), 1)
-  const pageSize = parsePositiveInt(
-    c.req.query("page_size"),
-    DEFAULT_EVENTS_PAGE_SIZE,
-  )
-  const eventsPage = await getTokenUsageEventsPage({ page, pageSize, period })
-  return c.json(eventsPage)
-})
+function parsePageQuery(c: Context) {
+  return {
+    period: parsePeriod(c.req.query("period")),
+    page: parsePositiveInt(c.req.query("page"), 1),
+    pageSize: parsePositiveInt(
+      c.req.query("page_size"),
+      DEFAULT_EVENTS_PAGE_SIZE,
+    ),
+  }
+}
 
-tokenUsageRoute.get("/sessions", async (c) => {
-  const period = parsePeriod(c.req.query("period"))
-  const summary = await getTokenUsageSessionsSummary(period)
-  return c.json(summary)
-})
+tokenUsageRoute.get("/events", async (c) =>
+  c.json(await getTokenUsageEventsPage(parsePageQuery(c))),
+)
+
+tokenUsageRoute.get("/sessions", async (c) =>
+  c.json(
+    c.req.query("page") || c.req.query("page_size") ?
+      await getTokenUsageSessionsPage(parsePageQuery(c))
+    : await getTokenUsageSessionsSummary(parsePeriod(c.req.query("period"))),
+  ),
+)

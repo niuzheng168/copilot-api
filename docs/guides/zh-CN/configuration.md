@@ -15,10 +15,7 @@
       "adminApiKey": "<startup 自动生成>"
     },
     "providers": {},
-    "modelMappings": {
-      "codex-auto-review": "codex/codex-auto-review",
-      "gpt-reserve": "codex/gpt-reserve"
-    },
+    "modelMappings": {},
     "smallModels": {
       "codex": "gpt-6-luna",
       "copilot": "gpt-6-luna"
@@ -27,13 +24,15 @@
       "messages": true,
       "responses": false
     },
-    "opencodeModelContextWindow": 300000,
+    "opencodeModelContextWindow": 400000,
     "modelResponsesApiCompactThresholds": {
       "gpt-5.4": 217600,
       "gpt-5.5": 217600
     },
     "useMessagesApi": true,
     "useResponsesApiWebSocket": true,
+    "codexMultiAgentV1": false,
+    "noEncryptedOutputModels": [],
     "upstreamTransport": {
       "headersTimeoutMs": 300000,
       "streamInactivityTimeoutMs": 300000,
@@ -51,44 +50,57 @@
 - **auth.apiKeys：** 用于普通非 admin 路由的 API key。支持多个 key 轮换使用。请求可通过 `x-api-key: <key>` 或 `Authorization: Bearer <key>` 进行认证。若为空或省略，仅回环监听会禁用普通路由认证；非回环监听会拒绝启动。
 - **auth.adminApiKey：** 仅用于 `/admin/*` 路由的单个 admin key。若未配置，服务会在启动时自动生成一个随机 key，并回写到 `config.json`。它同样使用 `x-api-key` 或 `Authorization: Bearer` 这两种头，但普通 `auth.apiKeys` 不能访问 `/admin/*`。
 - **auth.sessionHistoryApiKey：** 仅用于本地 Codex 会话历史路由的专用 key。该值为空或省略时，这些路由保持不可用，即使普通代理路由允许未认证请求也是如此。
-- **modelMappings：** 用于顶层 `POST /v1/messages`、`POST /v1/messages/count_tokens`、`POST /v1/responses` 和 `POST /v1/chat/completions` 请求的精确 `sourceModel -> targetModel` 重写映射，这几类接口共用同一份规则。默认映射为 `codex-auto-review -> codex/codex-auto-review` 和 `gpt-reserve -> codex/gpt-reserve`；Codey 托管部署还可从托管模型策略中合入兼容别名。省略该字段、保留为 `{}` 或配置其他模型时，都会补齐缺少的默认映射。同名项以用户配置为准，启动和保存映射时会将合并结果写回 `config.json`。如需取消某条默认重写，可将其映射到自身，例如 `"gpt-reserve": "gpt-reserve"`。`source` 和 `target` 都必须是非空字符串。`target` 可以是普通模型 ID，也可以是 `provider/model` 形式的别名，例如 `dashscope/qwen3.6-plus`；重写发生在 provider alias 解析之前。这些映射不再按接口区分。`GET/POST /admin/config/model-mappings` 管理接口读写的也只有这个字段。
+- **modelMappings：** 用于顶层 `POST /v1/messages`、`POST /v1/messages/count_tokens`、`POST /v1/responses`、`POST /v1/chat/completions`、`POST /v1/images/generations` 和 `POST /v1/images/edits` 请求的精确 `sourceModel -> targetModel` 重写映射，这几类接口共用同一份规则。默认映射为 `codex-auto-review -> codex/codex-auto-review` 和 `gpt-reserve -> codex/gpt-reserve`；省略该字段、保留为 `{}` 或配置其他模型时，都会补齐缺少的默认映射。同名项以用户配置为准，启动和保存映射时会将合并结果写回 `config.json`。如需取消某条默认重写，可将其映射到自身，例如 `"gpt-reserve": "gpt-reserve"`。`source` 和 `target` 都必须是非空字符串。`target` 可以是普通模型 ID，也可以是 `provider/model` 形式的别名，例如 `dashscope/qwen3.6-plus`；重写发生在 provider alias 解析之前。这些映射不再按接口区分。`GET/POST /admin/config/model-mappings` 管理接口读写的也只有这个字段。
+
+  图片请求可映射客户端实际发送的模型，例如：
+
+  ```json
+  {
+    "modelMappings": {
+      "gpt-image-2": "xai/grok-imagine-image-2.0"
+    }
+  }
+  ```
+
+  同一映射作用于图片生成和编辑；需要不同目标时，客户端使用不同模型别名。请求未传模型时仍自动选择 provider。旧 `imageGenerationModel`、`imageEditModel` 字段不再生效，请改用模型映射或显式 provider/model 请求。
 - **extraPrompts：** `model -> prompt` 的映射。把 Anthropic 风格请求翻译为 Responses API 时，会将其附加到第一条 system prompt 后面。你可以借此为不同模型注入护栏或指引。对于 GPT-5.3+ 模型（如 `gpt-5.3-codex`、`gpt-5.4`、`gpt-5.5`），未显式配置时会自动使用内置的 commentary prompt。内置 prompt 会启用带阶段感知的 commentary，让模型在工具调用或更深层推理前先发出简短的用户可见进度说明。
-- **providers：** 全局上游 provider 映射。每个 provider key（例如 `dashscope`）都会变成一个路由前缀（`/dashscope/v1/messages`）。支持 `type: "anthropic"`、`type: "openai-compatible"` 和 `type: "openai-responses"`。顶层客户端也可以在 `/v1/messages`、`/v1/messages/count_tokens`、`/v1/responses` 和 `/v1/chat/completions` 中使用 `model: "dashscope/model-id"`；AI gateway 会在转发上游前移除 `dashscope/` 前缀。`anthropic` 和 `openai-compatible` provider 的 `/v1/responses` 会通过 Responses Lite → Messages 适配；其中 `openai-compatible` provider 再复用 Messages → Chat 翻译。Codex 客户端（`User-Agent` 以 `codex` 开头）在 `openai-responses` provider 上请求非 `gpt-*` 模型时同样走该适配路径。`GET /v1/models` 会聚合已启用 provider 的模型，并以 `provider/model-id` 形式返回；Codex UA 的顶层模型列表还会把这些可适配模型合并为 `use_responses_lite` 模型（DeepSeek 模型除外，它们使用 `use_responses_lite: false` 和 `tool_mode: null`）。单个 provider 的原始模型列表仍可使用 `GET /dashscope/v1/models`。
+- **providers：** 全局上游 provider 映射。每个 provider key（例如 `dashscope`）都会变成一个路由前缀（`/dashscope/v1/messages`）。支持 `type: "anthropic"`、`type: "openai-compatible"`、`type: "openai-responses"` 和 `type: "google"`。顶层客户端也可以在 `/v1/messages`、`/v1/messages/count_tokens`、`/v1/responses` 和 `/v1/chat/completions` 中使用 `model: "dashscope/model-id"`；AI gateway 会在转发上游前移除 `dashscope/` 前缀。`anthropic`、`openai-compatible` 和 `google` provider 的 `/v1/responses` 会通过 Responses Lite → Messages 适配；其中 `openai-compatible` provider 再复用 Messages → Chat 翻译。Codex 客户端（`User-Agent` 以 `codex` 开头）在 `openai-responses` provider 上请求非 `gpt-*` 模型时同样走该适配路径。`GET /v1/models` 会聚合已启用 provider 的模型，并以 `provider/model-id` 形式返回；Codex UA 的顶层模型列表还会把这些可适配模型合并为 `use_responses_lite` 模型。单个 provider 的原始模型列表仍可使用 `GET /dashscope/v1/models`。
   - `enabled`：可选，若省略则默认为 `true`。
-  - `agentsModels`：可选，填写 Codex 和 Claude Code 网关发现列表展示的上游原始模型 ID；省略表示自动发现，`[]` 表示不展示该 provider 的模型。无需添加 `my-claude-` 或网关 provider 前缀。显式名单覆盖 Codex 默认排除规则，不限制模型调用或其他客户端的列表。
+  - `agentsModels`：可选，填写 Codex、Claude Code、DeepSeek 和 OpenCode 网关发现列表展示的上游原始模型 ID；省略表示自动发现，`[]` 表示不向这些客户端展示该 provider 的模型。无需添加 `my-claude-`、`[1m]` 或网关 provider 前缀。显式名单覆盖 Codex 默认排除规则，但 Codex、Claude 和 DeepSeek 始终排除仅输出图片的模型，显式选择也不会展示。OpenCode 仍可发现仅输出图片的模型；使用显式名单时需加入原始模型 ID，例如在 `codex` 下加入 `gpt-image-2`。该配置不限制模型调用，也不影响桌面端 Dashboard 和网页端使用的普通聚合目录。
     旧 `codexModels` 名单会在启动或保存配置时迁移为 `agentsModels`。若同时存在两个字段，以 `agentsModels` 为准（包括空数组），旧字段会从磁盘配置中移除。
-  - `baseUrl`：手动填写 provider 时使用其 API 基础 URL，不要带结尾的 endpoint。Anthropic provider 不要带 `/v1/messages`；OpenAI 兼容 provider 不要带 `/v1/chat/completions`；OpenAI Responses provider 不要带 `/v1/responses`。
-  - `modelsDevProviderId`：可选，通过自定义授权选择 models.dev provider 时写入。此时 `baseUrl` 为 models.dev 提供的 API URL（也可编辑），网关直接追加 `/messages`、`/chat/completions` 或 `/responses`。缓存目录中的模型级协议和 USD 价格元数据在可用时生效；仅当 `baseUrl` 与目录中的 provider API URL 一致时，才应用模型级 API URL 覆盖。显式配置的 `models.<id>.pricing` 优先。手动填写的 provider 仍使用 `baseUrl` 加 `/v1/<endpoint>`。
+  - `baseUrl`：手动填写 provider 时使用其 API 基础 URL，不要带结尾的 endpoint。Anthropic provider 不要带 `/v1/messages`；OpenAI 兼容 provider 不要带 `/v1/chat/completions`；OpenAI Responses provider 不要带 `/v1/responses`。Google provider 可使用 `https://generativelanguage.googleapis.com`，或以 `/v1beta`、`/v1`、`/v1alpha` 结尾的基础地址；未指定版本时默认追加 `/v1beta`。
+  - `modelsDevProviderId`：可选，通过自定义授权选择 models.dev provider 时写入。此时 `baseUrl` 为 models.dev 提供的 API URL（也可编辑），网关直接追加 `/messages`、`/chat/completions` 或 `/responses`。缓存目录中的模型级协议和 USD 价格元数据在可用时生效；仅当 `baseUrl` 与目录中的 provider API URL 一致时，才应用模型级 API URL 覆盖。显式配置的 `models.<id>.pricing` 优先。手动填写的非 Google provider 仍使用 `baseUrl` 加 `/v1/<endpoint>`。Google provider 使用原生 `/models/{model}:generateContent` 或 `:streamGenerateContent` 端点。
   - `apiKey`：作为上游凭据值使用；除 `authType` 为 `azure-entra` 外，普通 provider 必须配置。
-  - `authType`：可选，控制上游认证方式。普通 provider 支持 `x-api-key`、`authorization` 和 `azure-entra`。Anthropic provider 默认 `x-api-key`；OpenAI 兼容和 OpenAI Responses provider 默认 `authorization`。`authorization` 会发送 `Authorization: Bearer <apiKey>`。`azure-entra` 使用 Azure Identity 的 `DefaultAzureCredential` 和 `https://cognitiveservices.azure.com/.default` scope 获取并发送 Bearer token，不需要配置 `apiKey`。Azure OpenAI v1 endpoint 可配置为 `{ "type": "openai-compatible", "baseUrl": "https://<resource-name>.openai.azure.com/openai", "authType": "azure-entra" }`。本地可先执行 `az login`，在 Azure 中可使用托管身份，也可设置标准的 `AZURE_TENANT_ID`、`AZURE_CLIENT_ID` 和 `AZURE_CLIENT_SECRET` 环境变量。`oauth2` 仅保留给内置 `codex` provider，并由 `auth login --provider codex` 自动写入。
+  - `authType`：可选，控制上游认证方式。普通 provider 支持 `x-api-key`、`x-goog-api-key`、`authorization` 和 `azure-entra`。Google provider 默认 `x-goog-api-key`；Anthropic provider 默认 `x-api-key`；OpenAI 兼容和 OpenAI Responses provider 默认 `authorization`。`authorization` 会发送 `Authorization: Bearer <apiKey>`。`azure-entra` 使用 Azure Identity 的 `DefaultAzureCredential` 和 `https://cognitiveservices.azure.com/.default` scope 获取并发送 Bearer token，不需要配置 `apiKey`。Azure OpenAI v1 endpoint 可配置为 `{ "type": "openai-compatible", "baseUrl": "https://<resource-name>.openai.azure.com/openai", "authType": "azure-entra" }`。本地可先执行 `az login`，在 Azure 中可使用托管身份，也可设置标准的 `AZURE_TENANT_ID`、`AZURE_CLIENT_ID` 和 `AZURE_CLIENT_SECRET` 环境变量。`oauth2` 仅保留给内置 `codex` provider，并由 `auth login --provider codex` 自动写入。
   - `accountId`：仅用于内置 `codex` provider，记录当前选中的 Codex 账号。CLI 或桌面端切换账号时自动更新。
-  - `pricingCurrency`：可选，provider 维度的 token 费用币种，例如 `USD` 或 `CNY`。快捷 provider 默认 DashScope、DeepSeek 为 `CNY`，Codex、Kimi、OpenCode Go、OpenRouter 为 `USD`。费用按币种分别汇总，不做汇率换算。
+  - `pricingCurrency`：可选，显式配置 token 单价的币种，例如 `USD` 或 `CNY`。快捷 provider 默认 DashScope、DeepSeek 为 `CNY`，Codex、Kimi、OpenCode Go、OpenRouter 为 `USD`。models.dev 目录价格始终按 USD 使用。费用按币种分别汇总，不做汇率换算。
   - `models`：可选，按模型 ID 配置的映射。每个键为请求中的模型名，值支持：
     - `temperature`：可选，当请求未指定时使用的默认温度。
     - `topP`：可选，当请求未指定时使用的默认 `top_p`。
     - `topK`：可选，当请求未指定时使用的默认 `top_k`。
     - `extraBody`：可选，按模型合入上游请求体的动态字段；请求体显式同名字段优先。OpenAI 兼容 provider 可用它配置 `enable_thinking`、`preserve_thinking`、`reasoning_effort` 等字段。`thinking_budget` 是 OpenAI 兼容 provider 的特殊覆盖项：配置在 `extraBody` 后，会在 Anthropic `thinking.budget_tokens` 翻译之后强制写入，并覆盖请求派生出的预算值。对于 provider name 为 `dashscope` 或 `baseUrl` 包含 `aliyuncs.com` 的 provider，请求派生的 `thinking_budget`（来自 Anthropic `thinking.budget_tokens`）会转发给上游；其他 OpenAI 兼容 provider 会移除请求派生的 `thinking_budget`，但 `extraBody` 中的 `thinking_budget` 仍然生效。对于 DashScope provider，当 `preserve_thinking` 未在 `extraBody` 或请求体中显式设置时，默认为 `true`。
-    - `pricing`：可选，按模型配置 token 单价，币种使用 provider 的 `pricingCurrency`，单位为每 100 万 tokens。支持 `input`、`output`、`cachedInput`（隐式缓存读）、`explicitCachedInput`（显式缓存读）和 `cacheCreationInput`。如需按输入 token 总量分档，可用带 `maxInputTokens` 的 `tiers`。分时计费的 provider 可再配置 `offPeak`（字段与顶层相同）声明闲时单价，并用 `peakWindows` 声明忙时时段：每项包含 `startMinuteUtc`（含）和 `endMinuteUtc`（不含），取值为 UTC 当日分钟数，可选用 `weekdays` 以 ISO 星期号（1 表示周一，7 表示周日）限定生效日，省略表示每天生效。未配置 `peakWindows` 时 `offPeak` 不生效，始终按忙时价计费。内置目录已按此方式为 DeepSeek（周一至周五 UTC 01:00-04:00、06:00-10:00 为忙时，其余含周末为闲时）和 DashScope DeepSeek（UTC 14:00-24:00 为闲时）配置峰谷价，OpenCode Go 的价格采用 models.dev 当前公布的数值。
+    - `pricing`：可选，按模型配置 token 单价，币种使用 provider 的 `pricingCurrency`，单位为每 100 万 tokens。支持 `input`、`output`、`cachedInput`（隐式缓存读）、`explicitCachedInput`（显式缓存读）和 `cacheCreationInput`。如需按输入 token 总量分档，可用带 `maxInputTokens` 的 `tiers`。分时计费可配置 `offPeak` 声明闲时单价，并用 `peakWindows` 声明忙时时段：每项包含 UTC 当日分钟数 `startMinuteUtc`（含）、`endMinuteUtc`（不含），可选 `weekdays` 为 ISO 星期号（1 表示周一，7 表示周日）。未配置 `peakWindows` 时不使用闲时价格。未配置单价时使用匹配目录的 models.dev 价格。
     - `contextCache`：可选，provider name 为 `dashscope` 或 `baseUrl` 包含 `aliyuncs.com` 时默认 `true`，其他 OpenAI 兼容 provider 默认 `false`。用于启用阿里云百炼/DashScope 的显式缓存（explicit context cache），会按其 Context Cache 格式在最多 4 个 content block 上注入 `cache_control: { "type": "ephemeral" }`。缓存断点策略与 opencode 主链路保持一致：前 2 条 system 消息 + 最后 2 条非 system 消息。标记字符串 content 时会把 `system` / `user` / `assistant` / `tool` 消息转换为 text content part 数组；已有数组 content 则标记最后一个 part。如果模型本身已经支持隐式缓存，或上游不支持该显式缓存扩展字段，可在模型配置中设为 `false`。支持相同显式缓存扩展的非 DashScope provider 可设为 `true`。同时适用于 `/v1/messages` 和 `/v1/chat/completions` 路由。
-    - `supportPdf`：可选，覆盖 OpenCode 模型发现和 Messages 到 Chat Completions 转换时的 PDF/document 支持能力。未配置时，识别匹配的 models.dev 模型 `modalities.input` 中的 `pdf`（遵循 `modelsDevProviderId`）、Copilot 实时模型的 `application/pdf` 媒体类型，以及 `codex`/`xai` provider 的默认支持；其余情况为 `false`。设为 `true` 时发送 file part，设为 `false` 时即使目录支持 PDF 也会转成提示文本。
+    - `supportPdf`：可选，覆盖 OpenCode 模型发现和 Messages 到 Chat Completions 转换时的 PDF/document 支持能力。未配置时，识别匹配的 models.dev 模型 `modalities.input` 中的 `pdf`（遵循 `modelsDevProviderId`）、Copilot 实时模型的 `application/pdf` 媒体类型，以及 `codex` provider 的默认支持；其余情况为 `false`。设为 `true` 时发送 file part，设为 `false` 时即使目录支持 PDF 也会转成提示文本。
     - `toolContentSupportType`：可选，配置该模型的 tool result content 支持能力，值为 `array`、`image`、`pdf` 的数组。provider 侧未配置时默认只发送 string tool content。PDF 支持已启用但这里不包含 `pdf` 时，tool result 里的 file part 会被转成 user role 消息。Copilot 主链路同样默认只发送 string tool content，因为部分 Copilot 模型也不支持数组或图片形式的 tool content。
-    - `type`：可选，按模型覆盖 provider 的协议类型。支持 `anthropic`、`openai-compatible` 和 `openai-responses`。设置后，provider 的 `/v1/messages` 路由会使用该模型的 type 替代 provider 级别的 type 进行请求路由、认证头解析和上游端点选择。适用于 OpenCode Go 等上游对不同模型同时支持 OpenAI 兼容和 Anthropic Messages API 的 provider。覆盖 type 时，认证头按覆盖后 type 的默认值解析（Anthropic 默认 `x-api-key`；OpenAI 兼容/Responses 默认 `authorization`）。配置了 `azure-entra` 的 provider 在覆盖 type 时会保留 Entra bearer 凭证，而不会回退到覆盖后 type 的默认值。
-    - `contextWindow`：可选，模型合并到 Codex UA 模型列表时声明的上下文窗口 token 上限；例如 `1000000` 表示 1M token 上下文。用户未配置时依次使用上游元数据、非 GPT 模型的内置目录和 `256000`。
-    - `maxOutputTokens`：可选，Codex UA 模型列表中声明的最大输出 token 数。用户未配置时依次使用上游元数据、models.dev 缓存中的 `limit.output`、内置模型目录和 `32000`。经 Messages 适配的 Responses 请求未传 `max_output_tokens` 或传 null 时，依次使用此配置、models.dev 缓存中的 `limit.output`、provider 内置上限和 `32000`；Copilot 请求使用模型声明的输出上限。目录匹配优先使用 `modelsDevProviderId`，未配置时使用 provider 名称。客户端显式传入的值优先。Codex CLI 不会把目录里的这个字段带到 Responses 请求，因此 Messages 适配层会在本地解析上限。
-    - `inputModalities`：可选，Codex 支持的输入类型；模型同时支持文本和图片时配置为 `["text", "image"]`。用户未配置时优先使用上游元数据，再使用非 GPT 模型的内置目录。GPT 模型不注入这些内置能力默认值，继续使用原生 Codex catalog 或上游元数据。
-    - `reasoningEfforts`：可选，Codex 支持的推理档位。配置和上游元数据均未提供时，会先使用非 GPT 模型的内置目录，再回退到 `["high", "xhigh", "max", "ultra"]`。已知模型能力时，Provider Responses 请求中的不支持档位会被归一化为支持的档位。
-    - `defaultReasoningEffort`：可选，Codex 默认推理档位；内置模型元数据可以提供已知默认值，否则可用档位包含 `max` 时默认取 `max`，再回退到配置的第一个档位。合成 Codex 模型始终启用并行工具调用。
-    - `reasoningField`：可选，OpenAI-compatible `/v1/messages` 转发 assistant 思考文本时使用的字段，支持 `reasoning` 与 `reasoning_content`，默认 `reasoning_content`；OpenRouter 风格模型设为 `reasoning`，OpenCode Go 的 Hy 系列模型会根据 models.dev 的 family 元数据使用 `reasoning` 字段。
+    - `type`：可选，按模型覆盖 provider 的协议类型。支持 `anthropic`、`openai-compatible`、`openai-responses` 和 `google`。设置后，provider 的 `/v1/messages` 路由会使用该模型的 type 替代 provider 级别的 type 进行请求路由、认证头解析和上游端点选择。适用于 OpenCode Go 等上游对不同模型同时支持 OpenAI 兼容和 Anthropic Messages API 的 provider。覆盖 type 时，认证头按覆盖后 type 的默认值解析（Anthropic 默认 `x-api-key`；OpenAI 兼容/Responses 默认 `authorization`）。配置了 `azure-entra` 的 provider 在覆盖 type 时会保留 Entra bearer 凭证，而不会回退到覆盖后 type 的默认值。
+    - `contextWindow`：可选，模型合并到 Codex UA 模型列表时声明的上下文窗口 token 上限；例如 `1000000` 表示 1M token 上下文。用户未配置时依次使用发现元数据、models.dev 目录和 `256000`。
+    - `maxOutputTokens`：可选，Codex UA 模型列表中声明的最大输出 token 数。用户未配置时依次使用发现元数据、models.dev 的 `limit.output` 和 `32000`。经 Messages 适配的 Responses 请求未传 `max_output_tokens` 或传 null 时，使用此配置、目录上限或 `32000`；Copilot 请求使用模型声明的输出上限。目录匹配优先使用 `modelsDevProviderId`，否则按 provider 名称和官方地址选择。客户端显式传入的值优先。
+    - `inputModalities`：可选，Codex 支持的输入类型；模型同时支持文本和图片时配置为 `["text", "image"]`。用户未配置时使用发现元数据或 models.dev 目录。GPT 模型继续使用原生 Codex catalog 或发现元数据。
+    - `reasoningEfforts`：可选，Codex 支持的推理档位。配置和发现元数据均未提供时，使用 models.dev 目录，再回退到 `["high", "xhigh", "max", "ultra"]`。已知模型能力时，Provider Responses 请求中的不支持档位会被归一化为支持的档位。
+    - `defaultReasoningEffort`：可选，Codex 默认推理档位；未配置时优先取可用的 `max`，否则取第一个支持的档位。合成 Codex 模型始终启用并行工具调用。
+    - `reasoningField`：可选，OpenAI-compatible `/v1/messages` 转发 assistant 思考文本时使用的字段，支持 `reasoning` 与 `reasoning_content`，默认 `reasoning_content`。OpenRouter 风格模型设为 `reasoning`。OpenCode Go 中 `release_date` 早于 2026-11-01 的 Hy 模型使用 `reasoning`；`hy4` 等较新模型使用默认的 `reasoning_content`。显式的 `interleaved.field: "reasoning_content"` 元数据优先于按日期判断的回退规则。
 - **smallModels：** 按 provider 指定 Codex 客户端 `/v1/responses` 标题请求的模型。`codex`、`copilot` 默认使用 `gpt-6-luna`；其他 provider 仅在配置同名键时切换（如 `smallModels.dashscope`）。模型须受对应 provider 支持；设为空字符串可禁用切换。标题提示词须出现在最后两个 input 项之一的 user `input_text` 中。`copilot` 也用于非 token-based 计费账户的 Claude Code 无工具预热；旧 `smallModel` 不再生效。
-- **opencodeModelContextWindow：** OpenCode 模型目录（携带 OpenCode User-Agent 的 `GET /v1/models`）中 `limit.context` 和已有 `limit.input` 的 token 上限，默认 `300000`。两个字段分别在超过上限时截断，较小值保持不变，未提供的 input 上限不会补填。不修改 `limit.output`、上游实际限制或其他客户端的模型目录。正数会向下取整；缺失、无效、零或负数回退到默认值。启动合并配置时会将归一化后的值写入 `config.json`。
+- **opencodeModelContextWindow：** OpenCode 模型目录（携带 OpenCode User-Agent 的 `GET /v1/models`）中 `limit.context` 和已有 `limit.input` 的 token 上限，默认 `400000`。两个字段分别在超过上限时截断，较小值保持不变，未提供的 input 上限不会补填。不修改 `limit.output`、上游实际限制或其他客户端的模型目录。正数会向下取整；缺失、无效、零或负数回退到默认值。归一化仅在读取时生效，不回写此配置值。
 - **contextManagement：** 控制代理是否为 Responses API 附加 `context_management` 压缩指令。`messages` 作用于被翻译成 Responses API 的 Anthropic 风格 `/v1/messages` 请求，包括 `openai-responses` provider 的 Messages 路由，默认值为 `true`。`responses` 作用于 native `/v1/responses` 流量，包括 `provider/model` 别名和内置 `codex` provider，默认值为 `false`。只有在确认客户端支持 context management compaction 后，才建议在 Responses API 下启用 `responses`。启用后，请求体会带上 `context_management`，并在后续轮次中仅保留最新的压缩承载内容。代理仅为 `gpt-*` 模型添加 context management 并压缩历史；这两个配置开关对 Grok 等非 GPT 模型不生效。**注意：** 对于 GPT-5.6 及以上模型（如 `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`），context management 功能同样会被强制禁用，因为开启后会破坏这些模型的 prompt 缓存命中。这些强制覆盖优先于 `contextManagement` 和 `modelResponsesApiCompactThresholds` 配置。
  - **modelResponsesApiCompactThresholds：** 按模型覆盖 Responses API 的 `compact_threshold`，仅在代理自动附加 `context_management` 时使用。它的优先级高于 `resolveResponsesCompactThreshold` 基于 `max_prompt_tokens * ratio` 的兜底阈值。默认将 `gpt-5.4` 和 `gpt-5.5` 设为 `217600`（`272000 * 0.8`）。未列出的模型继续使用原有兜底逻辑。
+- **noEncryptedOutputModels：** 不支持 Responses 输出加密内容的 Copilot 模型 ID 名单。仅对名单内的模型移除请求 `include` 中的 `output.encrypted_content`；默认 `[]`，省略或留空时所有模型均原样透传该字段。按模型映射后的最终上游模型 ID 精确匹配，HTTP 和 WebSocket 请求均生效。其他 include 项（包括 `reasoning.encrypted_content`）保持不变。仅作用于 GitHub Copilot，不影响内置 `codex` 或第三方 provider。
 - **modelReasoningEfforts：** `/v1/messages` 请求的模型级默认推理强度。仅当请求没有传入 `output_config.effort` 时，该配置才会生效。
   - **优先级：** 请求中的 `output_config.effort` > `modelReasoningEfforts[model]` > 内置默认值（GPT-5.3+ 模型为 `xhigh`，其他模型为 `high`）。
   - **转发字段：** 走 Copilot 原生 Messages API 时，最终值写入 `output_config.effort`；转换为 Responses API 时，最终值写入 `reasoning.effort`。
   - **配置可选值：** `none`、`minimal`、`low`、`medium`、`high`、`xhigh`、`max`。
 - **useMessagesApi：** 当为 `true` 时，声明了 Copilot 原生 `/v1/messages` 端点的模型会使用 Messages API。如果所选模型未声明 Messages 端点或关闭了该配置，网关会在模型声明了 Responses 端点时使用 Responses，否则在模型支持时回退到 Chat Completions。设为 `false` 可跳过原生 Messages 路由。默认值为 `true`。
-- **useResponsesApiWebSocket：** 当为 `true` 时，Copilot Responses 请求会对声明了 `ws:/responses` 的模型使用 WebSocket；仅声明 `/responses` 的模型使用 HTTP。内置 `codex` provider 的流式 Responses 请求只要启用了该配置就会使用 WebSocket，非流式 Codex 请求始终使用 HTTP。重放加密 `reasoning` 或 `compaction` 历史的请求会自动改走 HTTP，以便网关在任何流事件发给客户端之前恢复失效的加密载荷。若 Copilot 返回可恢复的 `invalid_request_body`，网关会移除这些不透明载荷并重试一次；`invalid-encrypted-content.json` 只保存它们的 SHA-256 指纹，不会写入加密内容本身。设为 `false` 后，Copilot 会在所选模型声明了 `/responses` 时使用 HTTP，Codex 的流式 Responses 请求也会改走 HTTP。WebSocket 失败后不会自动通过 HTTP 重试。默认值为 `true`。如果代理、VPN 或网络会阻断或干扰 WebSocket 流量，请关闭该配置或切换网络。使用 GitHub Copilot provider 时遇到 `Encrypted function output content could not be decrypted or decoded`，同样把该配置设为 `false`，详见[故障排查](troubleshooting.md#troubleshooting)。
+- **useResponsesApiWebSocket：** 当为 `true` 时，Copilot Responses 请求会对声明了 `ws:/responses` 的模型使用 WebSocket；仅声明 `/responses` 的模型使用 HTTP。内置 `codex` provider 的流式 Responses 请求只要启用了该配置就会使用 WebSocket，非流式 Codex 请求始终使用 HTTP。独立部署在字段缺失时默认启用，Codey 托管部署默认关闭。重放加密 `reasoning` 或 `compaction` 历史的请求会自动改走 HTTP，以便网关在任何流事件发给客户端之前恢复失效的加密载荷。若 Copilot 返回可恢复的 `invalid_request_body`，网关会移除这些不透明载荷并重试一次；`invalid-encrypted-content.json` 只保存它们的 SHA-256 指纹，不会写入加密内容本身。设为 `false` 后，Copilot 会在所选模型声明了 `/responses` 时使用 HTTP，Codex 的流式 Responses 请求也会改走 HTTP。WebSocket 失败后不会自动通过 HTTP 重试。如果代理、VPN 或网络会阻断或干扰 WebSocket 流量，请关闭该配置或切换网络。使用 GitHub Copilot provider 时遇到 `Encrypted function output content could not be decrypted or decoded`，同样把该配置设为 `false`，详见[故障排查](troubleshooting.md#troubleshooting)。
 - **upstreamTransport：** 上游 chat completions、responses、messages 三类请求共用的生命周期与缓冲区正整数限制。无效值、零或负数会回退到上面列出的默认值。`headersTimeoutMs` 从连接建立开始计算，到收到 HTTP 响应头为止，并不是整个生成过程的总时限。每收到一个 HTTP body chunk 或 WebSocket message 都会重置 `streamInactivityTimeoutMs`，因此持续活跃的长推理任务不会被短总时限中断。`websocketOpenTimeoutMs` 限制 WebSocket 握手时间；`websocketPoolIdleTimeoutMs` 只控制已正常完成且可复用的空闲连接。WebSocket 队列同时受字节数和消息数上限约束；超过任一上限时会终止该 stream 并使 socket 失效，而不会丢弃或重排事件。
 - **useResponsesApiWebSearch：** 当为 `true` 时，服务端会保留 Responses API 中 `type: "web_search"` 的工具并透传到上游。设为 `false` 则会从 `/responses` payload 中移除这些工具。默认值为 `true`。
 - **alphaSearchCodexPriority：** 默认值为 `true`。顶层 alpha-search 请求优先使用 Codex alpha-search 端点，因为它不会消耗 provider 配额。若 Codex 不可用，或该配置设为 `false`，使用非 `codex/model` 的 `provider/model` 别名的请求会调用目标 provider 的 `/v1/responses` 端点，没有 provider 前缀的请求使用 GitHub Copilot Responses web search。该适配器会识别当前所有 Codex search command；不受支持的 `image_query` 和 `screenshot` 会返回成功且明确要求不要重试的 tool output。
@@ -98,12 +110,64 @@
 - **claudeTokenMultiplier：** 用于 Claude `/v1/messages/count_tokens` 请求在本地走 GPT tokenizer 估算时的乘数。默认值为 `1.15`。如果你的客户端仍然过晚触发上下文压缩，可以适当调大。这个配置只会在代理本地估算 Claude token 时生效；如果已经配置 `anthropicApiKey` 且 Anthropic token counting 调用成功，则会直接返回 Anthropic 的精确计数，不会使用这个乘数。
 - **anthropicApiKey：** 用于把 Claude `/v1/messages/count_tokens` 请求转发到 Anthropic 真实 token counting 端点的 API key，这样会返回精确计数，而不是 GPT tokenizer 估算值。也可通过环境变量 `ANTHROPIC_API_KEY` 设置。若未配置，或上游调用失败，则回退到由 `claudeTokenMultiplier` 控制的本地 GPT tokenizer 估算。
 
-**Codex 目录：** 普通 JSON 响应不超过 1 MiB，不限制模型数量。显式 provider 名单优先；候选超过 20 个时，未配置 `agentsModels` 的来源应用默认排除名单。完整本地导出绕过大小及默认排除限制，仍遵守启停状态和显式名单。
+**Codex 目录：** 普通 JSON 响应不超过 1 MiB，不限制模型数量。显式 provider 名单优先；候选超过 20 个时，未配置 `agentsModels` 的来源应用默认排除名单。完整本地导出绕过大小及默认排除限制，仍遵守启停状态、显式名单和仅输出图片模型的过滤规则。
 
-**Provider 管理：** 桌面端“模型映射”前的“Provider 管理”标签页可启停已配置的 provider、编辑“Coding Agent 展示模型”名单，服务停止时也可使用；授权页也保留管理入口。CLI 命令为 `copilot-api provider enable <name>` 和 `copilot-api provider disable <name>`，支持 `--api-home`。`enabled` 控制所有客户端的 Provider 路由，`agentsModels` 筛选 Codex 模型目录和 Claude Code 网关发现列表。停用保留凭据和模型配置；Copilot 继续使用独立授权方式。
+**Provider 管理：** 桌面端“高级配置”前的“Provider 管理”标签页可启停已配置的 provider、编辑“Coding Agent 展示模型”名单，服务停止时也可使用；授权页也保留管理入口。CLI 命令为 `copilot-api provider enable <name>` 和 `copilot-api provider disable <name>`，支持 `--api-home`。`enabled` 控制所有客户端的 Provider 路由，`agentsModels` 按上述图片模型规则筛选 Codex、Claude Code、DeepSeek 和 OpenCode 的发现列表。停用保留凭据和模型配置；Copilot 继续使用独立授权方式。
 
 ![Provider 管理界面](../../screenshots/provider-management.png)
 
 编辑此文件后即可自定义 prompts，或替换为你自己的快速模型。修改完成后请重启服务（或重新执行命令），让缓存中的配置刷新生效。
 
 内置 GitHub Copilot 也支持统一管理：`providers["github-copilot"]` 只需配置 `enabled`，可选 `agentsModels`，无需 URL、API Key 或协议类型。旧配置没有这一项时默认启用，继续使用已有 GitHub 登录凭据。使用 `copilot-api provider disable github-copilot` / `copilot-api provider enable github-copilot`，或在 Providers 页面切换后保存并重启网关。禁用会跳过 Copilot 初始化，从所有客户端的模型列表移除其模型并拒绝 Copilot 请求，其他启用的 provider 可继续使用。
+
+
+### Codex 多 Agent 兼容性
+
+`codexMultiAgentV1` 默认 `false`：合成的 Codex 模型声明 `multi_agent_version: "v2"`。设为 `true` 后声明 `"v1"`，同时将上游模型及其别名中的 V2 声明改为 V1。上游原有的 V1 或未启用能力保持不变。只有布尔值 `true` 启用 V1，缺失或非法值均回退为 V2。
+
+V1 使用明文任务和消息参数，可改善不支持加密多 Agent 消息的上游兼容性。此开关不会删除请求中的加密内容。可在桌面端 **高级配置 → 请求设置 → Codex 多 Agent V1** 中开启，或编辑 `config.json` 后重启网关。
+
+应用网关配置后，刷新远程模型目录（如果使用本地 `model_catalog.json`，请重新生成），然后**新建 Codex 会话**。Codex 一旦确定会话的多 Agent 版本，后续刷新目录不会切换该版本。恢复旧会话时优先使用历史中记录的版本。此开关不会转换已有加密历史，也不能修复旧会话中已经保存的加密参数。
+
+Codex CLI 显式 feature 配置可能优先于已记录的会话版本和模型目录元数据。
+
+### 桌面端配置编辑器
+
+打开**高级配置**，可以通过分组表单或完整 JSON 编辑 `config.json`。两种模式共用一份草稿，切换主标签页时保留未保存的修改。页面显示的实际文件路径遵循当前 `--api-home` / `COPILOT_API_HOME` 设置。
+
+- **恢复默认值**会删除与当前默认值不同的显式覆盖。已经等于默认值的显式配置显示为**默认值**，没有单独的重置入口，**本组恢复默认**也会保留该键。本组恢复默认会保留密钥，密钥需要单独明确移除。数字框清空表示继承默认值；若已保存的值本身就是该默认值，则继续保留显式键。空字符串仍遵循各字段已有的禁用或默认路由语义，自定义 Claude 自动模型清空表示禁用该替换。
+- JSON 默认脱敏且只读，开启**显示敏感值并编辑**后才能完整编辑；变更预览也会隐藏密钥。
+- 保存时校验已知字段、保留扩展字段，并检查文件是否被外部修改。没有未保存更改时，返回此页面会读取最新文件。发生冲突后可选择**加载最新并保留草稿**，独立修改会合并，同一字段被双方修改时需要明确选择草稿值或磁盘值后再保存；也可选择**重新加载并放弃更改**。
+- 服务本身能归一化处理、且本次未修改的旧值（如空 API Key 条目、无效上下文上限）只显示提示，不阻止修改其他字段；新输入的无效值仍会拦截。保存会将整个 JSON 文件统一为两个空格缩进，并在末尾补一个换行。
+- 服务运行时，**保存并应用**会刷新配置；刷新失败与保存成功分别显示，可通过**重试应用**再次刷新。服务停止时仍可保存，下次启动生效。
+- 供应商和 API Key 保留现有管理入口；运行环境、代理、外观等桌面设置继续保存在 `desktop-config.json`。
+
+![桌面端配置编辑器](../../screenshots/desktop-config-editor.png)
+
+## Google Gemini 上游
+
+通过 `copilot-api auth login --provider custom`（从 models.dev 选择 Google，或手动选择 `type: google`）、桌面端自定义 provider 表单，或 `config.json` 配置 Google API Key：
+
+```json
+{
+  "providers": {
+    "google": {
+      "type": "google",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+      "apiKey": "YOUR_GEMINI_API_KEY"
+    }
+  }
+}
+```
+
+向 `/google/v1/messages` 发送 Anthropic Messages 请求，使用 `model: "gemini-3.8-flash"`；也可以向 `/v1/messages` 发送 `model: "google/gemini-3.8-flash"`。网关会转换文本、system、base64 图片/PDF、工具调用及结果、结构化输出、采样参数和 thinking 设置。普通响应和 SSE 都返回 Anthropic Messages 格式。Google 原生模型列表会转换为网关的模型发现格式，`/v1/responses` 也可复用现有 Messages 适配。Google provider 不提供 `/v1/chat/completions`；`count_tokens` 继续使用本地估算。
+
+Google 思考签名保存在 Anthropic thinking block 的不透明 `signature` 中，包括关联文本或工具调用的仅签名 block。客户端在后续工具结果请求中需要保留这些 assistant 历史 block。用量统计包含缓存读取输入和思考输出 token。Anthropic `cache_control` 不会发往 Google；已有 Gemini 3.8 Flash 缓存可通过 `models.<id>.extraBody.cachedContent` 指定。Gemini 4 Argon 仅支持隐式缓存。Google 特有默认参数可放入 `extraBody.generationConfig`，请求转换得到的同名字段优先。
+
+适配维护范围为 Gemini 3.8 Flash 和 Gemini 4.0+ 文本模型。当前官方模型 ID 为 [`gemini-3.8-flash`](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash) 和 [`gemini-4-argon`](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon)。两者统一使用 `thinkingLevel: LOW / MEDIUM / HIGH`，不发送 `MINIMAL` 或原生 `thinkingBudget`。后续 Gemini 主版本、次版本沿用相同的等级转换；未识别的模型 ID 保留上游思考默认行为。
+
+即使 Responses 客户端只传 `reasoning.effort`（适配为 `output_config.effort`），思考参数转换也会生效。优先级为显式 `thinking: disabled`、显式 Anthropic `thinking.budget_tokens`、effort。`disabled` 会隐藏思考摘要并选择 `LOW`，不会真正关闭模型推理。effort 的 `low`/`medium` 分别映射到 `LOW`/`MEDIUM`，`high`/`xhigh`/`max` 映射到 `HIGH`。
+
+Anthropic 预算换算是网关策略：不超过 2,048 token 的预算映射到 `LOW`，不超过 8,192 映射到 `MEDIUM`，更高预算映射到 `HIGH`；`-1` 保留上游动态默认行为。这些等级不保证实际 token 数。参见 [Google 思考控制文档](https://ai.google.dev/gemini-api/docs/generate-content/thinking)。
+
+多模态工具结果使用稳定、唯一的 `inlineData.displayName`，以及 function response 中与之匹配的 `$ref`。参见 [Google 多模态函数响应](https://ai.google.dev/gemini-api/docs/generate-content/function-calling#multimodal)。

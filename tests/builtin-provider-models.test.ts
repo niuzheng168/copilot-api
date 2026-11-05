@@ -4,10 +4,6 @@ import {
   builtinProviderModelRegistry,
   BuiltinProviderModelRegistry,
 } from "~/lib/builtin-provider-models"
-import {
-  dashscopePeakWindows,
-  deepseekPeakWindows,
-} from "~/lib/token-usage/pricing"
 import { installModelsDevCatalog } from "~/lib/models-dev-cache"
 
 import { modelsDevCatalogFixture } from "./fixtures/models-dev-catalog"
@@ -17,7 +13,7 @@ beforeAll(() => {
 })
 
 describe("builtin provider model registry", () => {
-  test.each(["codex", "xai", " CODEX ", " XAI "])(
+  test.each(["codex", " CODEX "])(
     "provides PDF defaults for %s without adding model IDs",
     (provider) => {
       expect(
@@ -41,37 +37,27 @@ describe("builtin provider model registry", () => {
     ).toBeUndefined()
   })
 
-  test("registers only Grok 4.7 for xAI with its model capabilities", () => {
-    expect(builtinProviderModelRegistry.getModelIds("xai")).toEqual([
-      "grok-4.7",
-    ])
-    expect(
-      builtinProviderModelRegistry.getModelConfig("xai", "grok-4.7"),
-    ).toMatchObject({
-      contextWindow: 500_000,
-      maxOutputTokens: 500_000,
-      inputModalities: ["text", "image"],
-      reasoningEfforts: ["low", "medium", "high", "xhigh"],
-      defaultReasoningEffort: "high",
-    })
-  })
+  test.each(["xai", "openrouter", "deepseek", "kimi", "dashscope"])(
+    "does not embed model information for %s",
+    (provider) => {
+      expect(builtinProviderModelRegistry.getModelIds(provider)).toEqual([])
+      expect(
+        builtinProviderModelRegistry.getProviderDefaults(provider),
+      ).toBeUndefined()
+    },
+  )
   test("normalizes provider and model names when resolving model config", () => {
     expect(builtinProviderModelRegistry).toBeInstanceOf(
       BuiltinProviderModelRegistry,
     )
     expect(
-      builtinProviderModelRegistry.getModelConfig(
-        " DeepSeek ",
-        " DEEPSEEK-V4-PRO ",
-      ),
+      builtinProviderModelRegistry.getModelConfig(" Codex ", " GPT-6.1-SOL "),
     ).toMatchObject({
-      contextWindow: 1_000_000,
-      inputModalities: ["text"],
-      maxOutputTokens: 64_000,
       pricing: {
-        cachedInput: 0.3,
-        input: 9,
-        output: 27,
+        cacheCreationInput: 2.5,
+        cachedInput: 0.1,
+        input: 2,
+        output: 10,
       },
     })
   })
@@ -128,10 +114,23 @@ describe("builtin provider model registry", () => {
     })
   })
 
-  test("preserves the Grok high reasoning default from its family metadata", () => {
-    expect(
-      builtinProviderModelRegistry.getModelConfig("opencode-go", "grok-4.7"),
-    ).toMatchObject({ defaultReasoningEffort: "high" })
+  test("reads Grok reasoning efforts without inferring a family default", () => {
+    const config = builtinProviderModelRegistry.getModelConfig(
+      "opencode-go",
+      "grok-4.7",
+    )
+    expect(config?.reasoningEfforts).toEqual(["low", "medium", "high", "xhigh"])
+    expect(config?.defaultReasoningEffort).toBeUndefined()
+  })
+
+  test("does not apply long-context pricing tiers to built-in Codex models", () => {
+    for (const model of builtinProviderModelRegistry.getModelIds("codex")) {
+      const pricing = builtinProviderModelRegistry.getModelConfig(
+        "codex",
+        model,
+      )?.pricing
+      expect(pricing?.tiers).toBeUndefined()
+    }
   })
 
   test("keeps GPT entries pricing-only", () => {
@@ -139,21 +138,10 @@ describe("builtin provider model registry", () => {
       builtinProviderModelRegistry.getModelConfig("codex", "gpt-5.6-sol"),
     ).toEqual({
       pricing: {
-        tiers: [
-          {
-            cacheCreationInput: 5,
-            cachedInput: 0.4,
-            input: 4,
-            maxInputTokens: 272_000,
-            output: 20,
-          },
-          {
-            cacheCreationInput: 10,
-            cachedInput: 0.8,
-            input: 8,
-            output: 30,
-          },
-        ],
+        cacheCreationInput: 5,
+        cachedInput: 0.4,
+        input: 4,
+        output: 20,
       },
     })
 
@@ -161,21 +149,21 @@ describe("builtin provider model registry", () => {
       builtinProviderModelRegistry.getModelConfig("codex", "gpt-6.1-sol"),
     ).toEqual({
       pricing: {
-        tiers: [
-          {
-            cacheCreationInput: 2.5,
-            cachedInput: 0.1,
-            input: 2,
-            maxInputTokens: 272_000,
-            output: 10,
-          },
-          {
-            cacheCreationInput: 5,
-            cachedInput: 0.2,
-            input: 4,
-            output: 15,
-          },
-        ],
+        cacheCreationInput: 2.5,
+        cachedInput: 0.1,
+        input: 2,
+        output: 10,
+      },
+    })
+
+    expect(
+      builtinProviderModelRegistry.getModelConfig("codex", "gpt-6.1-terra"),
+    ).toEqual({
+      pricing: {
+        cacheCreationInput: 1.25,
+        cachedInput: 0.05,
+        input: 1,
+        output: 5,
       },
     })
   })
@@ -185,7 +173,12 @@ describe("builtin provider model registry", () => {
       "codex",
       "gpt-6-luna",
     )
-    expect(luna?.pricing?.tiers).toHaveLength(2)
+    expect(luna?.pricing).toEqual({
+      cacheCreationInput: 0.125,
+      cachedInput: 0.01,
+      input: 0.1,
+      output: 0.5,
+    })
     for (const modelId of ["codex-auto-review", "gpt-reserve"]) {
       expect(builtinProviderModelRegistry.getModelIds("codex")).toContain(
         modelId,
@@ -196,8 +189,13 @@ describe("builtin provider model registry", () => {
     }
   })
 
-  test("removes selected older Codex models while retaining GPT-5.5 pricing", () => {
-    for (const modelId of ["gpt-5.3-codex", "gpt-5.4", "gpt-5.4-mini"]) {
+  test("removes selected older Codex models", () => {
+    for (const modelId of [
+      "gpt-5.3-codex",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.5",
+    ]) {
       expect(builtinProviderModelRegistry.getModelIds("codex")).not.toContain(
         modelId,
       )
@@ -205,16 +203,6 @@ describe("builtin provider model registry", () => {
         builtinProviderModelRegistry.getModelConfig("codex", modelId),
       ).toBeUndefined()
     }
-    expect(
-      builtinProviderModelRegistry.getModelConfig("codex", "gpt-5.5"),
-    ).toEqual({
-      pricing: {
-        tiers: [
-          { cachedInput: 0.5, input: 5, maxInputTokens: 272_000, output: 30 },
-          { cachedInput: 1, input: 10, output: 45 },
-        ],
-      },
-    })
   })
 
   test("returns empty results for unknown providers and models", () => {
@@ -222,73 +210,6 @@ describe("builtin provider model registry", () => {
     expect(
       builtinProviderModelRegistry.getModelConfig("deepseek", "unknown"),
     ).toBeUndefined()
-  })
-
-  test("defines DeepSeek peak and off-peak pricing with the DeepSeek windows", () => {
-    expect(
-      builtinProviderModelRegistry.getModelConfig("deepseek", "deepseek-flash"),
-    ).toEqual({
-      contextWindow: 1_000_000,
-      inputModalities: ["text", "image"],
-      maxOutputTokens: 384_000,
-      pricing: {
-        cachedInput: 0.04,
-        input: 2,
-        offPeak: {
-          cachedInput: 0.02,
-          input: 1,
-          output: 4,
-        },
-        output: 8,
-        peakWindows: deepseekPeakWindows,
-      },
-      reasoningEfforts: ["low", "high", "max"],
-    })
-
-    expect(
-      builtinProviderModelRegistry.getModelConfig(
-        "deepseek",
-        "deepseek-v4-pro",
-      ),
-    ).toMatchObject({
-      pricing: {
-        cachedInput: 0.3,
-        input: 9,
-        offPeak: {
-          cachedInput: 0.15,
-          input: 4.5,
-          output: 13.5,
-        },
-        output: 27,
-        peakWindows: deepseekPeakWindows,
-      },
-    })
-  })
-
-  test("defines the DashScope DeepSeek V4.1 Flash model with DashScope windows", () => {
-    expect(
-      builtinProviderModelRegistry.getModelConfig(
-        "dashscope",
-        "deepseek-v4.1-flash",
-      ),
-    ).toEqual({
-      contextWindow: 1_000_000,
-      inputModalities: ["text", "image"],
-      maxOutputTokens: 393_216,
-      defaultReasoningEffort: "high",
-      pricing: {
-        cachedInput: 0.2,
-        input: 2,
-        offPeak: {
-          cachedInput: 0.1,
-          input: 1,
-          output: 4,
-        },
-        output: 8,
-        peakWindows: dashscopePeakWindows,
-      },
-      reasoningEfforts: ["low", "high", "max"],
-    })
   })
 
   test("uses models.dev prices for OpenCode Go DeepSeek models", () => {

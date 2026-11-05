@@ -9,7 +9,7 @@ const usage: TokenUsageCostInput = {
   cache_creation_input_tokens: 10,
   cache_read_input_tokens: 40,
   input_tokens: 100,
-  model: "gpt-6.1-sol",
+  model: "gpt-6-astra",
   output_tokens: 20,
   providerName: "codex",
   source: "provider",
@@ -17,8 +17,10 @@ const usage: TokenUsageCostInput = {
 
 describe("Codex service tier price estimates", () => {
   for (const { model, standardCost } of [
+    { model: "gpt-6-astra", standardCost: 2_165_000 },
     { model: "gpt-6-sol", standardCost: 433_000 },
     { model: "gpt-6.1-sol", standardCost: 429_000 },
+    { model: "gpt-6.1-terra", standardCost: 214_500 },
     { model: "gpt-6-luna", standardCost: 21_650 },
     { model: "codex-auto-review", standardCost: 21_650 },
     { model: "gpt-reserve", standardCost: 21_650 },
@@ -45,7 +47,7 @@ describe("Codex service tier price estimates", () => {
     }
   }
 
-  test("applies the tier multiplier after long-context pricing", () => {
+  test("does not apply long-context surcharges to ChatGPT-signed-in Codex", () => {
     expect(
       resolveTokenUsageCost({
         ...usage,
@@ -55,7 +57,7 @@ describe("Codex service tier price estimates", () => {
     ).toEqual({
       currency: "USD",
       source: "builtin",
-      total_cost_nanos: 6_530_172_000,
+      total_cost_nanos: 16_327_050_000,
     })
   })
 
@@ -63,11 +65,11 @@ describe("Codex service tier price estimates", () => {
     expect(
       resolveTokenUsageCost({
         ...usage,
-        model: " GPT-6.1-SOL ",
+        model: " GPT-6-ASTRA ",
         providerName: " CODEX ",
         serviceTier: " FAST ",
       })?.total_cost_nanos,
-    ).toBe(858_000)
+    ).toBe(4_330_000)
   })
 
   for (const tier of [undefined, null, "auto", "flex", "unknown", ""]) {
@@ -75,7 +77,7 @@ describe("Codex service tier price estimates", () => {
       expect(
         resolveTokenUsageCost({ ...usage, serviceTier: tier })
           ?.total_cost_nanos,
-      ).toBe(429_000)
+      ).toBe(2_165_000)
     })
   }
 
@@ -125,7 +127,7 @@ describe("Codex service tier price estimates", () => {
     ).toBe(100_000)
   })
 
-  test("applies GPT-5.6 Sol Fast rates after the long-context boundary", () => {
+  test("keeps GPT-5.6 Sol Fast rates flat after the 272K boundary", () => {
     expect(
       resolveTokenUsageCost({
         ...usage,
@@ -136,7 +138,7 @@ describe("Codex service tier price estimates", () => {
     ).toEqual({
       currency: "USD",
       source: "builtin",
-      total_cost_nanos: 4_353_480_000,
+      total_cost_nanos: 2_176_940_000,
     })
   })
 })

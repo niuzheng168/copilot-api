@@ -1,4 +1,7 @@
-import { builtinProviderModelRegistry } from '../../src/lib/builtin-provider-models'
+import {
+  builtinProviderModelRegistry,
+  getBuiltinProviderImageModelRecords,
+} from '../../src/lib/builtin-provider-models'
 import {
   readEditableConfigFromDisk,
   type AppConfig,
@@ -8,11 +11,20 @@ import {
   loadCachedModelsDevCatalog,
 } from '../../src/lib/models-dev-cache'
 import type { ProviderModelOptions } from '../../src/lib/types/provider-management'
+import {
+  isProviderModelVisible,
+  resolveProviderModelsDevId,
+} from '../../src/lib/provider-model-catalog'
 
 export function buildProviderModelOptions(
   config: AppConfig,
   sources = {
-    builtin: (name: string) => builtinProviderModelRegistry.getModelIds(name),
+    builtin: (name: string) => [
+      ...builtinProviderModelRegistry.getModelIds(name),
+      ...getBuiltinProviderImageModelRecords(name)
+        .map((model) => model.id)
+        .filter((id): id is string => typeof id === 'string'),
+    ],
     catalog: getModelsDevProviderModelIds,
   },
 ): ProviderModelOptions {
@@ -23,19 +35,31 @@ export function buildProviderModelOptions(
   return Object.fromEntries(
     Object.entries(providers)
       .filter(([name]) => name !== 'copilot')
-      .map(([name, provider]) => [
-        name,
-        provider.authType === 'oauth2' && name === 'xai' ?
-          sources.builtin(name)
-        : [
+      .map(([name, provider]) => {
+        const configured = [
+          ...Object.keys(provider.models ?? {}),
+          ...(provider.agentsModels ?? []),
+        ]
+        // Copilot chat models come from the account; image defaults are local.
+        if (name === 'github-copilot') {
+          return [
+            name,
+            [...new Set([...configured, ...sources.builtin(name)])].sort(),
+          ]
+        }
+        return [
+          name,
+          [
             ...new Set([
-              ...Object.keys(provider.models ?? {}),
-              ...(provider.agentsModels ?? []),
+              ...configured,
               ...sources.builtin(name),
-              ...sources.catalog(provider.modelsDevProviderId ?? name),
+              ...sources.catalog(resolveProviderModelsDevId(name, provider)),
             ]),
-          ].sort(),
-      ]),
+          ]
+            .filter((id) => isProviderModelVisible(name, id, provider))
+            .sort(),
+        ]
+      }),
   )
 }
 

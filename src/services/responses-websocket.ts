@@ -279,8 +279,11 @@ const createPooledWebSocketEntry = <TPayload, TChunk>(
         removePooledWebSocketEntry(request.poolKey, entry)
       })
     })
-    .catch(() => {
+    .catch((error: unknown) => {
       removePooledWebSocketEntry(request.poolKey, entry)
+      if (!request.signal?.aborted) {
+        consola.warn("", error)
+      }
     })
 
   return entry
@@ -437,7 +440,13 @@ const openWebSocket = async ({
 
     const proxy = typeof Bun === "undefined" ? undefined : getProxyUrl(url)
     const init = { headers, ...(proxy ? { proxy } : {}) }
-    const websocket = new WebSocket(url, init)
+    // Desktop bundles inline undici, bypassing Bun's native module replacement.
+    // Select Bun's native client explicitly so compression and proxy work there.
+    const WebSocketClient =
+      typeof Bun === "undefined" ? WebSocket : (
+        (globalThis.WebSocket as unknown as typeof WebSocket)
+      )
+    const websocket = new WebSocketClient(url, init)
     let settled = false
     const timer = setTimeout(() => {
       fail(new ResponsesWebSocketOpenTimeoutError(openTimeoutMs))

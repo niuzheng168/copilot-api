@@ -8,6 +8,11 @@ import type { SubagentMarker } from "~/lib/subagent"
 import type { Model } from "~/lib/types/models"
 
 import { getRawProviderConfig } from "~/lib/config"
+import {
+  recordAnthropicFirstToken,
+  recordChatCompletionFirstToken,
+  recordResponsesFirstToken,
+} from "~/lib/first-token"
 import { GITHUB_COPILOT_PROVIDER } from "~/lib/github-copilot-provider"
 import { debugJson, debugJsonTail, debugLazy } from "~/lib/logger"
 import { getProviderModelPdfSupport } from "~/lib/model-pdf-support"
@@ -62,13 +67,13 @@ import {
 import {
   translateToAnthropic,
   translateToOpenAI,
-} from "./non-stream-translation"
+} from "./completions-translation"
 import { prepareMessagesApiPayload } from "./preprocess"
 import {
   flushPendingAnthropicStreamEvents,
   translateChunkToAnthropicEvents,
   translateErrorToAnthropicErrorEvent,
-} from "./stream-translation"
+} from "./completions-stream-translation"
 
 const COPILOT_CONTEXT_CACHE_SYSTEM_MARKER_LIMIT = 2
 const COPILOT_CONTEXT_CACHE_NON_SYSTEM_MARKER_LIMIT = 1
@@ -188,6 +193,7 @@ export const handleWithChatCompletions = async (
         }
 
         const chunk = JSON.parse(rawEvent.data) as ChatCompletionChunk
+        recordChatCompletionFirstToken(chunk)
         if (chunk.usage || chunk.copilot_usage) {
           usage = {
             ...normalizeOpenAIUsage(chunk.usage),
@@ -242,10 +248,8 @@ export const handleWithResponsesApi = async (
 ) => {
   const { logger, selectedModel, ...requestOptions } = options
 
-  const responsesPayload = translateAnthropicMessagesToResponsesPayload(
-    anthropicPayload,
-    requestOptions.subagentMarker?.agent_id,
-  )
+  const responsesPayload =
+    translateAnthropicMessagesToResponsesPayload(anthropicPayload)
   const recordUsage = createCopilotUsageRecorder({
     endpoint: options.usageEndpoint ?? "responses",
     fallbackSessionId: requestOptions.sessionId,
@@ -310,6 +314,7 @@ export const handleWithResponsesApi = async (
         debugLazy(logger, () => ["Responses raw stream event:", data])
 
         const responseEvent = JSON.parse(data) as ResponseStreamEvent
+        recordResponsesFirstToken(responseEvent)
         if (
           responseEvent.type === "response.completed"
           || responseEvent.type === "response.failed"
@@ -432,6 +437,7 @@ export const handleWithMessagesApi = async (
           }
           debugLazy(logger, () => ["Messages raw stream event:", data])
           const parsedEvent = parseAnthropicStreamEvent(data)
+          recordAnthropicFirstToken(parsedEvent)
           if (parsedEvent?.type === "message_start") {
             usage = mergeAnthropicUsage(usage, {
               ...normalizeAnthropicUsage(parsedEvent.message.usage),

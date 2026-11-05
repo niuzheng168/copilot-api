@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 
 import Header from '../components/Header'
+import ServerLogPanel from '../components/ServerLogPanel'
+import SubscriptionsPage from './SubscriptionsPage'
 import {
   TokenUsageCostMetric,
   TokenUsageMetric,
@@ -8,25 +10,20 @@ import {
 } from '../components/TokenUsageMetric'
 import { useLanguage } from '../contexts/LanguageContext'
 import {
-  getCopilotQuotaPercentRemaining,
-  getCopilotQuotaRemaining,
-  getNonEmptyUsageText,
-  getPremiumUsedText,
-  hasCopilotQuotaValue,
-  shouldShowCopilotQuotaUsage,
-  shouldShowCopilotUsageSummary,
-  type CopilotQuotaDetailLike,
-} from '../lib/copilot-usage-display'
-import {
   formatCacheHitRate,
+  formatLatency,
+  formatOutputSpeed,
   formatTokenCost,
   formatTokenCosts,
 } from '../lib/token-usage-format'
+import { getProviderTypeLabel } from '../lib/provider-type-labels'
 import { buildServerBaseUrl } from '../lib/server-url'
-import ModelMappingsPage from './ModelMappingsPage'
+import AdvancedConfigPage from './AdvancedConfigPage'
+import MediaStudioPage from './MediaStudioPage'
 import ProviderManagementPanel from '../components/ProviderManagementPanel'
 import type {
   DesktopAuthMode,
+  ProviderManagementConfig,
   ServerAuthInfo,
   ServerStatus,
   TokenUsageDailySummary,
@@ -34,6 +31,8 @@ import type {
   TokenUsageEventsPage,
   TokenUsageModelSummary,
   TokenUsagePeriod,
+  TokenUsageSessionSummary,
+  TokenUsageSessionsPage,
   TokenUsageSummary,
   TokenUsageTotals,
 } from '../types/ipc'
@@ -43,20 +42,8 @@ interface DashboardPageProps {
   defaultPort: number
   defaultHost: string
   initialServerStatus?: ServerStatus
-  onChangeAuth: () => void
-}
-
-type QuotaDetail = CopilotQuotaDetailLike
-
-interface UsageInfo {
-  copilot_plan?: string
-  quota_reset_date?: string
-  quota_snapshots?: {
-    chat?: QuotaDetail
-    completions?: QuotaDetail
-    premium_interactions?: QuotaDetail
-  }
-  [key: string]: unknown
+  initialTab?: 'dashboard' | 'providers'
+  onChangeAuth: (returnTab: 'dashboard' | 'providers') => void
 }
 
 interface Model {
@@ -66,13 +53,43 @@ interface Model {
 
 type TranslateFn = ReturnType<typeof useLanguage>['t']
 type DashboardTab =
-  'dashboard' | 'tokenUsage' | 'providers' | 'advancedConfig' | 'logs'
+  | 'dashboard'
+  | 'tokenUsage'
+  | 'subscriptions'
+  | 'providers'
+  | 'advancedConfig'
+  | 'studio'
+  | 'logs'
+
+/**
+ * Tabs whose panel works without a running service and replaces the start form.
+ * The tab reset, the start form and tab enablement all derive from these two
+ * lists so a new tab cannot become visible-but-unclickable.
+ */
+const TABS_WITHOUT_START_FORM: ReadonlyArray<DashboardTab> = [
+  'providers',
+  'advancedConfig',
+  'studio',
+]
+const TABS_REACHABLE_WHILE_STOPPED: ReadonlyArray<DashboardTab> = [
+  'dashboard',
+  ...TABS_WITHOUT_START_FORM,
+]
 
 const numberFormatter = new Intl.NumberFormat()
 const TOKEN_USAGE_EVENTS_PAGE_SIZE = 10
+const TOKEN_USAGE_SESSIONS_PAGE_SIZE = 5
 const ALL_METRICS_VALUE = '__all__'
 const ALL_MODELS_VALUE = '__all__'
 const MAX_LIFETIME_TREND_POINTS = 180
+const TOKEN_USAGE_PERIODS: TokenUsagePeriod[] = [
+  'today',
+  'this_week',
+  'last_7_days',
+  'this_month',
+  'last_30_days',
+  'lifetime',
+]
 const EMPTY_TOKEN_USAGE_TOTALS: TokenUsageTotals = {
   cache_creation_input_tokens: 0,
   cache_read_input_tokens: 0,
@@ -161,7 +178,7 @@ const IconTokenUsage = () => (
   </svg>
 )
 
-const IconMappings = () => (
+const IconAdvancedConfig = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
     width="16"
@@ -173,10 +190,10 @@ const IconMappings = () => (
     strokeLinecap="round"
     strokeLinejoin="round"
   >
-    <path d="M4 7h11" />
-    <path d="m12 4 3 3-3 3" />
-    <path d="M20 17H9" />
-    <path d="m12 14-3 3 3 3" />
+    <path d="M20 7h-9" />
+    <path d="M14 17H5" />
+    <circle cx="17" cy="17" r="3" />
+    <circle cx="7" cy="7" r="3" />
   </svg>
 )
 
@@ -214,17 +231,6 @@ const IconLogs = () => (
   </svg>
 )
 
-function getQuotaBarColor(pct: number, isUsed: boolean): string {
-  if (isUsed) {
-    if (pct >= 80) return 'bg-red-500'
-    if (pct >= 50) return 'bg-orange-400'
-    return 'bg-accent-strong'
-  }
-  if (pct >= 50) return 'bg-blue-500'
-  if (pct >= 20) return 'bg-orange-400'
-  return 'bg-red-500'
-}
-
 function maskSecret(value: string): string {
   if (value.length <= 8) return '*'.repeat(Math.max(value.length, 4))
   return `${value.slice(0, 4)}********${value.slice(-4)}`
@@ -254,20 +260,33 @@ function formatRefreshTime(value: number | null): string {
   return `${padDatePart(date.getHours())}:${padDatePart(date.getMinutes())}:${padDatePart(date.getSeconds())}`
 }
 
+function getTokenUsagePeriodLabel(
+  t: TranslateFn,
+  period: TokenUsagePeriod,
+): string {
+  return {
+    today: t('dashboard.tokenUsagePeriodToday'),
+    this_week: t('dashboard.tokenUsagePeriodThisWeek'),
+    last_7_days: t('dashboard.tokenUsagePeriodLast7Days'),
+    this_month: t('dashboard.tokenUsagePeriodThisMonth'),
+    last_30_days: t('dashboard.tokenUsagePeriodLast30Days'),
+    lifetime: t('dashboard.tokenUsagePeriodLifetime'),
+  }[period]
+}
+
 function formatCellText(value: string | null | undefined): string {
   const text = value?.trim()
   return text ? text : '—'
 }
 
 export default function DashboardPage({
-  authMode: initialAuthMode,
   defaultPort,
   defaultHost,
   initialServerStatus,
+  initialTab = 'dashboard',
   onChangeAuth,
 }: DashboardPageProps) {
   const { t } = useLanguage()
-  const [authMode, setAuthMode] = useState(initialAuthMode)
   const [started, setStarted] = useState(initialServerStatus?.running ?? false)
   const [port, setPort] = useState<string>(
     String(initialServerStatus?.port ?? defaultPort),
@@ -283,18 +302,51 @@ export default function DashboardPage({
   )
   const [stopping, setStopping] = useState(false)
   const [restarting, setRestarting] = useState(false)
+  const [logPanelSession, setLogPanelSession] = useState(0)
 
-  const [tab, setTab] = useState<DashboardTab>('dashboard')
-  const [usage, setUsage] = useState<UsageInfo | null>(null)
+  const [tab, setTab] = useState<DashboardTab>(initialTab)
+  const [advancedConfigOpened, setAdvancedConfigOpened] = useState(false)
+  const [studioOpened, setStudioOpened] = useState(false)
+  const [subscriptionsOpened, setSubscriptionsOpened] = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
+  useEffect(() => {
+    if (tab === 'advancedConfig') setAdvancedConfigOpened(true)
+    if (tab === 'studio') setStudioOpened(true)
+    if (tab === 'subscriptions') setSubscriptionsOpened(true)
+  }, [tab])
+  useEffect(() => {
+    let active = true
+    void window.electronAPI
+      .getSettings()
+      .then((saved) => {
+        if (active) setShowCreate(saved.showCreate === true)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+  useEffect(() => {
+    if (!showCreate) {
+      if (tab === 'studio') setTab('dashboard')
+      setStudioOpened(false)
+    }
+  }, [showCreate, tab])
+  const [quotaRefreshKey, setQuotaRefreshKey] = useState(0)
   const [tokenUsage, setTokenUsage] = useState<TokenUsageSummary | null>(null)
   const [tokenUsageDaily, setTokenUsageDaily] =
     useState<TokenUsageDailySummary | null>(null)
   const [tokenUsageEvents, setTokenUsageEvents] =
     useState<TokenUsageEventsPage | null>(null)
   const [tokenUsageEventsPage, setTokenUsageEventsPage] = useState(1)
+  const [tokenUsageSessions, setTokenUsageSessions] =
+    useState<TokenUsageSessionsPage | null>(null)
+  const [tokenUsageSessionsPage, setTokenUsageSessionsPage] = useState(1)
   const [tokenUsagePeriod, setTokenUsagePeriod] =
     useState<TokenUsagePeriod>('today')
   const [models, setModels] = useState<Model[]>([])
+  const [providerConfig, setProviderConfig] =
+    useState<ProviderManagementConfig | null>(null)
   const [serverAuthInfo, setServerAuthInfo] = useState<ServerAuthInfo>({
     enabled: false,
   })
@@ -303,19 +355,32 @@ export default function DashboardPage({
     number | null
   >(null)
   const [tokenUsageLoading, setTokenUsageLoading] = useState(false)
+  const [tokenUsageSettled, setTokenUsageSettled] = useState(false)
+  const [providerConfigSettled, setProviderConfigSettled] = useState(false)
   const [tokenUsageEventsLoading, setTokenUsageEventsLoading] = useState(false)
+  const [tokenUsageSessionsLoading, setTokenUsageSessionsLoading] =
+    useState(false)
+  const [tokenUsageSessionsError, setTokenUsageSessionsError] = useState(false)
   const [serverError, setServerError] = useState('')
   const [copied, setCopied] = useState<string>('')
 
-  const [logs, setLogs] = useState<string[]>([])
-  const logEndRef = useRef<HTMLDivElement>(null)
   const intentionalStop = useRef(false)
+  const wasRestarting = useRef(false)
+  // Keep the live log subscription open while restarting, then load the new
+  // process's history when the restart finishes.
   useEffect(() => {
-    if (!started && tab !== 'dashboard' && tab !== 'providers')
+    if (wasRestarting.current && !restarting) {
+      setLogPanelSession((session) => session + 1)
+    }
+    wasRestarting.current = restarting
+  }, [restarting])
+  useEffect(() => {
+    if (!started && !TABS_REACHABLE_WHILE_STOPPED.includes(tab))
       setTab('dashboard')
   }, [started, tab])
   const tokenUsageRequestId = useRef(0)
   const tokenUsageEventsRequestId = useRef(0)
+  const tokenUsageSessionsRequestId = useRef(0)
 
   const portNum = parseInt(port, 10)
   const normalizedHost = host.trim()
@@ -372,38 +437,12 @@ export default function DashboardPage({
               )),
           )
           setStarted(false)
-          void window.electronAPI
-            .getLogs()
-            .then(setLogs)
-            .catch(() => {})
         }
         intentionalStop.current = false
       }
     })
     return unsubscribe
   }, [])
-
-  useEffect(() => {
-    void window.electronAPI
-      .getLogs()
-      .then(setLogs)
-      .catch(() => {})
-  }, [])
-
-  // Subscribe to live logs.
-  useEffect(() => {
-    const unsubscribe = window.electronAPI.onServerLog((log) => {
-      setLogs((prev) => [...prev, log])
-    })
-    return unsubscribe
-  }, [])
-
-  // Auto-scroll the log view.
-  useEffect(() => {
-    if (tab === 'logs' || (!started && (startError || serverError))) {
-      logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [logs, tab, started, startError, serverError])
 
   // Fetch dashboard and token usage data after the server starts.
   useEffect(() => {
@@ -412,6 +451,13 @@ export default function DashboardPage({
       void fetchTokenUsageData(tokenUsagePeriod, tokenUsageEventsPage)
     }
   }, [started, restarting])
+
+  // The provider list can change on the Providers tab, so read it again
+  // whenever the dashboard is shown.
+  useEffect(() => {
+    if (started && !restarting && tab === 'dashboard')
+      void fetchProviderConfig()
+  }, [started, restarting, tab])
 
   useEffect(() => {
     if (!started) {
@@ -430,7 +476,6 @@ export default function DashboardPage({
 
   const refreshAuthMode = async () => {
     const status = await window.electronAPI.getAuthStatus()
-    setAuthMode(status.mode)
     return status.mode
   }
 
@@ -442,7 +487,6 @@ export default function DashboardPage({
     setStarting(true)
     setStartError('')
     setServerError('')
-    setLogs([])
     try {
       const status = await window.electronAPI.startServer(
         portNum,
@@ -453,17 +497,9 @@ export default function DashboardPage({
         setStarted(true)
       } else {
         setStartError(status.error ?? t('dashboard.serverUnexpectedStop'))
-        void window.electronAPI
-          .getLogs()
-          .then(setLogs)
-          .catch(() => {})
       }
     } catch (err) {
       setStartError((err as Error).message)
-      void window.electronAPI
-        .getLogs()
-        .then(setLogs)
-        .catch(() => {})
     } finally {
       setStarting(false)
     }
@@ -475,13 +511,17 @@ export default function DashboardPage({
     await window.electronAPI.stopServer()
     setStopping(false)
     setStarted(false)
-    setUsage(null)
     setTokenUsage(null)
     setTokenUsageDaily(null)
     setTokenUsageEvents(null)
     setTokenUsageEventsPage(1)
+    setTokenUsageSessions(null)
+    setTokenUsageSessionsPage(1)
+    setTokenUsageSessionsError(false)
     setTokenUsageLoading(false)
+    setTokenUsageSettled(false)
     setTokenUsageEventsLoading(false)
+    setTokenUsageSessionsLoading(false)
     setModels([])
     setLastDashboardRefreshAt(null)
     setServerError('')
@@ -497,7 +537,6 @@ export default function DashboardPage({
     setRestarting(true)
     setStartError('')
     setServerError('')
-    setLogs([])
     try {
       await window.electronAPI.stopServer()
       const status = await window.electronAPI.startServer(
@@ -511,35 +550,31 @@ export default function DashboardPage({
         setStarted(true)
       } else {
         setStarted(false)
-        setUsage(null)
         setTokenUsage(null)
         setTokenUsageDaily(null)
         setTokenUsageEvents(null)
         setTokenUsageEventsPage(1)
+        setTokenUsageSessions(null)
+        setTokenUsageSessionsPage(1)
+        setTokenUsageSessionsError(false)
         setTokenUsageLoading(false)
+        setTokenUsageSettled(false)
         setTokenUsageEventsLoading(false)
+        setTokenUsageSessionsLoading(false)
         setModels([])
         setLastDashboardRefreshAt(null)
         setStartError(status.error ?? t('dashboard.serverUnexpectedStop'))
-        void window.electronAPI
-          .getLogs()
-          .then(setLogs)
-          .catch(() => {})
       }
     } catch (err) {
       setStarted(false)
       setStartError((err as Error).message)
-      void window.electronAPI
-        .getLogs()
-        .then(setLogs)
-        .catch(() => {})
     } finally {
       setRestarting(false)
     }
   }
 
   const handleChangeAuth = () => {
-    onChangeAuth()
+    onChangeAuth(tab === 'providers' ? 'providers' : 'dashboard')
   }
 
   // The listening host is configured in the settings modal, so reload the
@@ -549,6 +584,7 @@ export default function DashboardPage({
       .getSettings()
       .then((saved) => {
         if (saved.host !== undefined) setHost(saved.host)
+        setShowCreate(saved.showCreate === true)
       })
       .catch(() => {})
   }
@@ -557,21 +593,6 @@ export default function DashboardPage({
     setLoading(true)
     try {
       // Proxy HTTP requests through IPC so the main process bypasses renderer CORS.
-      if ((await refreshAuthMode()) === 'copilot') {
-        const [usageData, modelsData] = await Promise.all([
-          window.electronAPI.fetchUsage(),
-          window.electronAPI.fetchModels(),
-        ])
-        if (usageData) setUsage(usageData as UsageInfo)
-        if (modelsData) {
-          const d = modelsData as { data: Model[] }
-          setModels(d.data ?? [])
-        }
-        setLastDashboardRefreshAt(Date.now())
-        return
-      }
-
-      setUsage(null)
       const modelsData = await window.electronAPI.fetchModels()
       if (modelsData) {
         const d = modelsData as { data: Model[] }
@@ -582,6 +603,16 @@ export default function DashboardPage({
       // The server may still be initializing.
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchProviderConfig = async () => {
+    try {
+      setProviderConfig(await window.electronAPI.getProviderManagementConfig())
+    } catch {
+      // Keep the previous list when the config file cannot be read.
+    } finally {
+      setProviderConfigSettled(true)
     }
   }
 
@@ -616,6 +647,7 @@ export default function DashboardPage({
   const fetchTokenUsageData = async (
     period: TokenUsagePeriod = tokenUsagePeriod,
     page: number = tokenUsageEventsPage,
+    sessionsPage: number = tokenUsageSessionsPage,
   ) => {
     const requestId = ++tokenUsageRequestId.current
     const eventsRequestId = ++tokenUsageEventsRequestId.current
@@ -631,6 +663,7 @@ export default function DashboardPage({
             page,
             TOKEN_USAGE_EVENTS_PAGE_SIZE,
           ),
+          fetchTokenUsageSessions(period, sessionsPage),
         ])
       if (requestId === tokenUsageRequestId.current && tokenUsageData) {
         setTokenUsage(tokenUsageData as TokenUsageSummary)
@@ -649,6 +682,7 @@ export default function DashboardPage({
     } finally {
       if (requestId === tokenUsageRequestId.current) {
         setTokenUsageLoading(false)
+        setTokenUsageSettled(true)
       }
       if (eventsRequestId === tokenUsageEventsRequestId.current) {
         setTokenUsageEventsLoading(false)
@@ -656,10 +690,49 @@ export default function DashboardPage({
     }
   }
 
+  const fetchTokenUsageSessions = async (
+    period: TokenUsagePeriod,
+    page: number,
+  ) => {
+    const requestId = ++tokenUsageSessionsRequestId.current
+    setTokenUsageSessionsLoading(true)
+    setTokenUsageSessionsError(false)
+    try {
+      const tokenUsageSessionsData =
+        await window.electronAPI.fetchTokenUsageSessions(
+          period,
+          page,
+          TOKEN_USAGE_SESSIONS_PAGE_SIZE,
+        )
+      if (requestId === tokenUsageSessionsRequestId.current) {
+        setTokenUsageSessions(
+          tokenUsageSessionsData ?
+            (tokenUsageSessionsData as TokenUsageSessionsPage)
+          : null,
+        )
+        setTokenUsageSessionsError(!tokenUsageSessionsData)
+      }
+    } catch {
+      if (requestId === tokenUsageSessionsRequestId.current) {
+        setTokenUsageSessions(null)
+        setTokenUsageSessionsError(true)
+      }
+    } finally {
+      if (requestId === tokenUsageSessionsRequestId.current) {
+        setTokenUsageSessionsLoading(false)
+      }
+    }
+  }
+
   const handleTokenUsagePeriodChange = (nextPeriod: TokenUsagePeriod) => {
     setTokenUsagePeriod(nextPeriod)
     setTokenUsageEventsPage(1)
-    if (started && !restarting) void fetchTokenUsageData(nextPeriod, 1)
+    tokenUsageSessionsRequestId.current += 1
+    setTokenUsageSessions(null)
+    setTokenUsageSessionsPage(1)
+    setTokenUsageSessionsLoading(false)
+    setTokenUsageSessionsError(false)
+    if (started && !restarting) void fetchTokenUsageData(nextPeriod, 1, 1)
   }
 
   const handleTokenUsageEventsPageChange = (nextPage: number) => {
@@ -668,19 +741,25 @@ export default function DashboardPage({
       void fetchTokenUsageEvents(tokenUsagePeriod, nextPage)
   }
 
+  const handleTokenUsageSessionsPageChange = (nextPage: number) => {
+    setTokenUsageSessionsPage(nextPage)
+    if (started && !restarting)
+      void fetchTokenUsageSessions(tokenUsagePeriod, nextPage)
+  }
+
   const handleRefreshActiveTab = () => {
     if (tab === 'dashboard') {
       void fetchData()
+      void fetchProviderConfig()
+      return
+    }
+    if (tab === 'subscriptions') {
+      setQuotaRefreshKey((value) => value + 1)
       return
     }
     if (tab === 'tokenUsage') {
       void fetchTokenUsageData()
-      return
     }
-    void window.electronAPI
-      .getLogs()
-      .then(setLogs)
-      .catch(() => {})
   }
 
   const handleCopy = (text: string, key: string) => {
@@ -693,24 +772,30 @@ export default function DashboardPage({
       .catch(() => {})
   }
 
-  const premiumQ = usage?.quota_snapshots?.premium_interactions
-  const chatQ = usage?.quota_snapshots?.chat
-  const completionsQ = usage?.quota_snapshots?.completions
-  const isCopilotAuthMode = authMode === 'copilot'
-  const shouldShowUsagePlaceholders =
-    isCopilotAuthMode && loading && usage === null
-  const copilotPlan = getNonEmptyUsageText(usage?.copilot_plan)
-  const quotaResetDate = getNonEmptyUsageText(usage?.quota_reset_date)
+  const providers = providerConfig?.providers ?? []
   const shouldShowFailureLogs = !started && Boolean(startError || serverError)
-  const shouldShowUsageSummary =
-    isCopilotAuthMode
-    && (shouldShowUsagePlaceholders || shouldShowCopilotUsageSummary(usage))
-  const shouldShowQuotaUsage =
-    isCopilotAuthMode
-    && (shouldShowUsagePlaceholders || shouldShowCopilotQuotaUsage(usage))
+  const enabledProviderCount = providers.filter((item) => item.enabled).length
+  const shouldShowProviderOverview =
+    providerConfig !== null || !providerConfigSettled
+  const showUsageSkeleton =
+    !tokenUsage && (!tokenUsageSettled || tokenUsageLoading)
+  const sortedProviders = [...providers].sort(
+    (left, right) => Number(right.enabled) - Number(left.enabled),
+  )
+  const usageTotals = tokenUsage?.totals ?? EMPTY_TOKEN_USAGE_TOTALS
+  const topUsageModel = tokenUsage?.byModel.reduce<
+    TokenUsageModelSummary | undefined
+  >(
+    (top, model) =>
+      top === undefined || model.request_count > top.request_count ?
+        model
+      : top,
+    undefined,
+  )
   const isActiveTabRefreshing =
     tab === 'dashboard' ? loading
-    : tab === 'tokenUsage' ? tokenUsageLoading || tokenUsageEventsLoading
+    : tab === 'tokenUsage' ?
+      tokenUsageLoading || tokenUsageEventsLoading || tokenUsageSessionsLoading
     : false
   const serverAuthHeaderName = serverAuthInfo.headerName ?? ''
   const serverAuthHeaderValue = serverAuthInfo.headerValue ?? ''
@@ -723,7 +808,6 @@ export default function DashboardPage({
       `${serverAuthHeaderName}: ${maskSecret(serverAuthHeaderValue)}`
     : ''
 
-  const premiumUsed = getPremiumUsedText(premiumQ)
   const dashboardOverviewItems: Array<{
     label: string
     loading?: boolean
@@ -770,19 +854,46 @@ export default function DashboardPage({
       label: t('dashboard.tabTokenUsage'),
     },
     {
+      icon: (
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M5 19a9 9 0 1 1 14 0" />
+          <path d="m12 13 4-5" />
+          <path d="M8 20h8" />
+        </svg>
+      ),
+      key: 'subscriptions',
+      label: t('dashboard.tabSubscriptions'),
+    },
+    {
       icon: <IconProviders />,
       key: 'providers',
       label: t('providers.title'),
     },
+    { icon: <IconLaunch />, key: 'studio', label: t('studio.title') },
     {
-      icon: <IconMappings />,
+      icon: <IconAdvancedConfig />,
       key: 'advancedConfig',
       label: t('header.advancedConfig'),
     },
     { icon: <IconLogs />, key: 'logs', label: t('dashboard.tabLogs') },
   ]
+  const visibleTabs = dashboardTabs.filter(
+    (tabItem) => showCreate || tabItem.key !== 'studio',
+  )
   const showRefreshButton =
-    started && tab !== 'providers' && tab !== 'advancedConfig' && tab !== 'logs'
+    started
+    && (tab === 'dashboard' || tab === 'tokenUsage' || tab === 'subscriptions')
+  const showStartForm = !started && !TABS_WITHOUT_START_FORM.includes(tab)
 
   return (
     <div className="flex flex-col h-screen bg-canvas">
@@ -803,21 +914,19 @@ export default function DashboardPage({
         </div>
       )}
 
-      {/* Providers remain configurable while the server is stopped. */}
+      {/* Providers, config and the create studio stay reachable while stopped. */}
       <div className="flex items-center justify-between gap-3 px-4 h-[52px] bg-surface border-b border-line-soft shrink-0">
         <div
           role="tablist"
           className="flex min-w-0 h-full items-stretch gap-1 overflow-x-auto sm:gap-3"
         >
-          {dashboardTabs.map((tabItem) => (
+          {visibleTabs.map((tabItem) => (
             <button
               key={tabItem.key}
               role="tab"
               aria-selected={tab === tabItem.key}
               disabled={
-                !started
-                && tabItem.key !== 'dashboard'
-                && tabItem.key !== 'providers'
+                !started && !TABS_REACHABLE_WHILE_STOPPED.includes(tabItem.key)
               }
               onClick={() => setTab(tabItem.key)}
               className={`inline-flex items-center gap-1.5 px-2 sm:px-3 text-[13px] whitespace-nowrap border-b-2 transition-colors disabled:cursor-not-allowed disabled:opacity-35 ${
@@ -840,6 +949,8 @@ export default function DashboardPage({
             <IconRefresh spinning={isActiveTabRefreshing} />
             {isActiveTabRefreshing ?
               t('dashboard.refreshing')
+            : tab === 'subscriptions' ?
+              t('dashboard.quotaRefreshAll')
             : t('dashboard.refresh')}
           </button>
         )}
@@ -848,13 +959,13 @@ export default function DashboardPage({
       {/* Content area */}
       <div
         className={
-          tab === 'providers' ?
+          tab === 'providers' || tab === 'studio' ?
             'min-h-0 flex-1 overflow-hidden'
           : 'min-h-0 flex-1 overflow-auto'
         }
       >
         {/* Empty state: start form */}
-        {!started && tab !== 'providers' && (
+        {showStartForm && (
           <div className="h-full flex flex-col items-center justify-center gap-4 px-6">
             <div className="w-11 h-11 bg-sunken rounded-xl flex items-center justify-center text-ink-soft dark:bg-[#4f94f8] dark:text-white">
               <IconLaunch />
@@ -900,35 +1011,14 @@ export default function DashboardPage({
                 : t('dashboard.startServer')}
               </button>
             </div>
-            {shouldShowFailureLogs && (
-              <div className="w-full max-w-2xl bg-black rounded-xl p-4 flex flex-col overflow-hidden min-h-0">
-                <div className="flex items-center justify-between mb-3 shrink-0">
-                  <span className="text-[13px] font-semibold text-ink-faint uppercase tracking-wide">
-                    {t('dashboard.serverLog')}
-                  </span>
-                </div>
-                <div className="max-h-60 overflow-y-auto font-mono text-[13px] text-green-400 space-y-0.5 leading-relaxed">
-                  {logs.length === 0 ?
-                    <span className="text-ink-soft">
-                      {t('dashboard.noLogs')}
-                    </span>
-                  : logs.map((line, i) => (
-                      <div key={i} className="whitespace-pre-wrap break-all">
-                        {line.trimEnd()}
-                      </div>
-                    ))
-                  }
-                  <div ref={logEndRef} />
-                </div>
-              </div>
-            )}
+            {shouldShowFailureLogs && <ServerLogPanel variant="failure" />}
           </div>
         )}
 
         {/* Dashboard tab */}
         {started && tab === 'dashboard' && (
-          <div className="p-4">
-            <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <div className="flex h-full min-h-0 flex-col p-4">
+            <div className="mb-2 grid shrink-0 grid-cols-2 gap-2 md:grid-cols-4">
               {dashboardOverviewItems.map((item) => (
                 <div
                   key={item.label}
@@ -955,56 +1045,182 @@ export default function DashboardPage({
                 </div>
               ))}
             </div>
-            <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
-              <div className="flex min-w-0 flex-col gap-3">
-                {/* Metric cards */}
-                {shouldShowUsageSummary && (
-                  <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                    {(shouldShowUsagePlaceholders || copilotPlan) && (
-                      <div className="bg-surface border border-line rounded-xl p-3">
-                        <div
-                          className={`text-[13px] font-bold text-ink ${loading ? 'animate-pulse text-ink-faint' : ''}`}
+            <div className="grid min-h-0 flex-1 items-start gap-3 md:grid-cols-[minmax(0,1fr)_340px] md:grid-rows-[minmax(0,1fr)]">
+              <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto md:h-full">
+                {/* Usage snapshot */}
+                <div className="shrink-0 bg-surface border border-line rounded-xl p-3">
+                  <div className="flex min-w-0 shrink-0 flex-nowrap items-center gap-x-2">
+                    <h3 className="text-[13px] font-semibold text-ink-faint uppercase tracking-wide">
+                      {t('dashboard.usageSnapshot')}
+                    </h3>
+                    {topUsageModel && (
+                      <div className="flex min-w-0 shrink items-baseline gap-1.5 overflow-hidden text-[12px] text-ink-faint">
+                        <span className="shrink-0">
+                          {t('dashboard.usageSnapshotTopModel')}
+                        </span>
+                        <span
+                          className="max-w-[220px] truncate font-medium text-ink"
+                          title={topUsageModel.model}
                         >
-                          {loading ? '…' : copilotPlan}
-                        </div>
-                        <div className="text-[13px] text-ink-faint mt-0.5">
-                          Copilot Plan
-                        </div>
+                          {topUsageModel.model}
+                        </span>
+                        <span className="shrink-0">
+                          ·{' '}
+                          {t('dashboard.usageSnapshotModelRequests', {
+                            n: formatTokenCount(topUsageModel.request_count),
+                          })}
+                        </span>
                       </div>
                     )}
-                    {(shouldShowUsagePlaceholders || premiumUsed) && (
-                      <div className="bg-green-50 dark:bg-green-500/15 border border-green-200 dark:border-green-500/30 rounded-xl p-3">
+                    <span className="ml-auto shrink-0 text-[12px] text-ink-faint">
+                      {getTokenUsagePeriodLabel(
+                        t,
+                        tokenUsage?.period ?? tokenUsagePeriod,
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setTab('tokenUsage')}
+                      className="shrink-0 text-[13px] text-accent transition-opacity hover:opacity-70"
+                    >
+                      {t('dashboard.tabTokenUsage')} →
+                    </button>
+                  </div>
+                  <div
+                    className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4"
+                    aria-label={
+                      showUsageSkeleton ? t('dashboard.loading') : undefined
+                    }
+                  >
+                    {showUsageSkeleton ?
+                      Array.from({ length: 4 }, (_, index) => (
                         <div
-                          className={`text-[13px] font-bold text-green-600 dark:text-green-400 ${loading ? 'animate-pulse' : ''}`}
+                          key={index}
+                          className="animate-pulse rounded-lg border border-line bg-sunken px-2.5 py-2"
                         >
-                          {loading ? '…' : premiumUsed}
+                          <div className="h-4" />
+                          <div className="mt-1 h-4" />
                         </div>
-                        <div className="text-[13px] text-green-400 mt-0.5">
-                          {t('dashboard.premiumUsed')}
+                      ))
+                    : tokenUsage ?
+                      <>
+                        <TokenUsageMetric
+                          label={t('dashboard.tokenUsageRequests')}
+                          value={formatTokenCount(usageTotals.request_count)}
+                          loading={false}
+                          tone="violet"
+                        />
+                        <TokenUsageMetric
+                          label={t('dashboard.tokenUsageTotalTokens')}
+                          value={formatTokenCount(calcTokenTotal(usageTotals))}
+                          loading={false}
+                          tone="slate"
+                        />
+                        <TokenUsageMetric
+                          label={t('dashboard.tokenUsageCacheHitRate')}
+                          value={formatCacheHitRate(usageTotals)}
+                          loading={false}
+                          tone="blue"
+                        />
+                        <TokenUsageCostMetric
+                          label={t('dashboard.tokenUsageCost')}
+                          value={formatTokenCosts(usageTotals.costs).join(' ')}
+                          loading={false}
+                        />
+                      </>
+                    : <div className="col-span-2 px-2.5 py-2 text-[13px] text-ink-faint sm:col-span-4">
+                        <div className="flex h-4 items-center">
+                          {t('dashboard.noTokenUsage')}
                         </div>
+                        <div className="mt-1 h-4" />
                       </div>
-                    )}
-                    {(shouldShowUsagePlaceholders || quotaResetDate) && (
-                      <div className="bg-surface border border-line rounded-xl p-3">
-                        <div
-                          className={`text-[13px] font-bold text-ink ${loading ? 'animate-pulse text-ink-faint' : ''}`}
+                    }
+                  </div>
+                </div>
+
+                {/* Provider overview */}
+                {shouldShowProviderOverview && (
+                  <div className="shrink-0 bg-surface border border-line rounded-xl p-3">
+                    <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+                      <h3 className="text-[13px] font-semibold text-ink-faint uppercase tracking-wide">
+                        {t('dashboard.providerOverview')}
+                      </h3>
+                      <div className="flex shrink-0 items-center gap-2 text-[13px]">
+                        {providerConfig !== null && (
+                          <span className="text-ink-faint">
+                            {t('dashboard.providerOverviewSummary', {
+                              enabled: enabledProviderCount,
+                              total: providers.length,
+                            })}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => setTab('providers')}
+                          className="text-accent transition-opacity hover:opacity-70"
                         >
-                          {loading ? '…' : quotaResetDate}
-                        </div>
-                        <div className="text-[13px] text-ink-faint mt-0.5">
-                          {t('dashboard.quotaReset')}
-                        </div>
+                          {t('dashboard.providerOverviewManage')}
+                        </button>
                       </div>
-                    )}
+                    </div>
+                    <div
+                      className="h-[140px] space-y-1 overflow-y-auto"
+                      aria-label={
+                        providerConfig === null ?
+                          t('dashboard.loading')
+                        : undefined
+                      }
+                    >
+                      {providerConfig === null ?
+                        Array.from({ length: 3 }, (_, index) => (
+                          <div
+                            key={index}
+                            className="h-8 animate-pulse rounded-lg bg-sunken"
+                          />
+                        ))
+                      : sortedProviders.map((provider) => (
+                          <div
+                            key={provider.name}
+                            className="flex h-8 items-center gap-2 px-2.5 py-1.5 bg-sunken rounded-lg"
+                          >
+                            <span
+                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                provider.enabled ? 'bg-green-500' : 'bg-line'
+                              }`}
+                            />
+                            <span className="text-[13px] font-medium text-ink truncate">
+                              {provider.name}
+                            </span>
+                            <span className="text-[13px] text-ink-faint truncate">
+                              {getProviderTypeLabel(provider.type)}
+                            </span>
+                            {(provider.agentsModels?.length
+                              || !provider.enabled) && (
+                              <div className="ml-auto flex shrink-0 items-center gap-2 text-[13px] text-ink-faint">
+                                {provider.agentsModels?.length ?
+                                  <span>
+                                    {t('dashboard.providerOverviewModels', {
+                                      n: provider.agentsModels.length,
+                                    })}
+                                  </span>
+                                : null}
+                                {!provider.enabled && (
+                                  <span>{t('providers.disabled')}</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      }
+                    </div>
                   </div>
                 )}
 
                 {/* Service endpoints */}
-                <div className="bg-surface border border-line rounded-xl p-3">
-                  <h3 className="text-[13px] font-semibold text-ink-faint uppercase tracking-wide mb-2">
+                <div className="shrink-0 bg-surface border border-line rounded-xl px-2.5 py-[15px]">
+                  <h3 className="text-[13px] font-semibold text-ink-faint uppercase tracking-wide mb-1.5">
                     {t('dashboard.serviceAddress')}
                   </h3>
-                  <div className="space-y-1.5">
+                  <div className="space-y-1">
                     {[
                       {
                         label: 'OpenAI',
@@ -1021,7 +1237,7 @@ export default function DashboardPage({
                     ].map(({ label, url, key, color }) => (
                       <div
                         key={key}
-                        className="flex items-center gap-2 px-2.5 py-1.5 bg-sunken rounded-lg"
+                        className="flex items-center gap-2 px-2.5 py-1 bg-sunken rounded-lg"
                       >
                         <span
                           className={`text-[13px] font-semibold text-white ${color} rounded px-1.5 py-0.5 shrink-0`}
@@ -1043,11 +1259,11 @@ export default function DashboardPage({
                   {serverAuthInfo.enabled
                     && serverAuthInfo.headerName
                     && serverAuthInfo.headerValue && (
-                      <div className="mt-3 pt-3 border-t border-line-soft">
-                        <h4 className="text-[13px] font-semibold text-ink-faint uppercase tracking-wide mb-1.5">
+                      <div className="mt-2 pt-2 border-t border-line-soft">
+                        <h4 className="text-[13px] font-semibold text-ink-faint uppercase tracking-wide mb-1">
                           {t('dashboard.authHeader')}
                         </h4>
-                        <div className="flex items-start gap-2 px-2.5 py-1.5 bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-lg">
+                        <div className="flex items-start gap-2 px-2.5 py-1 bg-amber-50 dark:bg-amber-500/15 border border-amber-200 dark:border-amber-500/30 rounded-lg">
                           <span className="text-[13px] font-mono text-amber-900 dark:text-amber-400 break-all flex-1">
                             {maskedServerAuthHeader}
                           </span>
@@ -1065,51 +1281,11 @@ export default function DashboardPage({
                       </div>
                     )}
                 </div>
-
-                {/* Quota usage */}
-                {shouldShowQuotaUsage && (
-                  <div className="bg-surface border border-line rounded-xl p-3">
-                    <div className="mb-2">
-                      <h3 className="text-[13px] font-semibold text-ink-faint uppercase tracking-wide">
-                        {t('dashboard.quotaUsage')}
-                      </h3>
-                    </div>
-                    <div className="space-y-2.5">
-                      {(shouldShowUsagePlaceholders
-                        || hasCopilotQuotaValue(premiumQ)) && (
-                        <QuotaBar
-                          label="Premium"
-                          quota={premiumQ}
-                          loading={loading}
-                          mode="used"
-                        />
-                      )}
-                      {(shouldShowUsagePlaceholders
-                        || hasCopilotQuotaValue(chatQ)) && (
-                        <QuotaBar
-                          label="Chat"
-                          quota={chatQ}
-                          loading={loading}
-                          mode="remaining"
-                        />
-                      )}
-                      {(shouldShowUsagePlaceholders
-                        || hasCopilotQuotaValue(completionsQ)) && (
-                        <QuotaBar
-                          label="Completions"
-                          quota={completionsQ}
-                          loading={loading}
-                          mode="remaining"
-                        />
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
 
-              {/* Available models */}
-              <div className="min-w-0">
-                <div className="bg-surface border border-line rounded-xl p-3 xl:max-h-[calc(100vh-250px)] xl:min-h-[340px] flex flex-col overflow-hidden">
+              <div className="flex min-h-0 min-w-0 flex-col gap-3 md:h-full">
+                {/* Available models */}
+                <div className="bg-surface border border-line rounded-xl p-3 flex max-h-[340px] flex-col overflow-hidden md:max-h-none md:min-h-0 md:flex-1">
                   <div className="flex items-center justify-between gap-2 mb-2 shrink-0">
                     <h3 className="text-[13px] font-semibold text-ink-faint uppercase tracking-wide">
                       {t('dashboard.availableModels')}
@@ -1146,6 +1322,17 @@ export default function DashboardPage({
           </div>
         )}
 
+        {(subscriptionsOpened || (started && tab === 'subscriptions')) && (
+          <div
+            className={started && tab === 'subscriptions' ? 'h-full' : 'hidden'}
+          >
+            <SubscriptionsPage
+              refreshKey={quotaRefreshKey}
+              onManageProviders={() => setTab('providers')}
+            />
+          </div>
+        )}
+
         {/* Token usage tab */}
         {started && tab === 'tokenUsage' && (
           <div className="p-4">
@@ -1155,7 +1342,11 @@ export default function DashboardPage({
               eventsLoading={tokenUsageEventsLoading}
               loading={tokenUsageLoading}
               onEventsPageChange={handleTokenUsageEventsPageChange}
+              onSessionsPageChange={handleTokenUsageSessionsPageChange}
               period={tokenUsagePeriod}
+              sessionsError={tokenUsageSessionsError}
+              sessionsLoading={tokenUsageSessionsLoading}
+              sessionsPage={tokenUsageSessions}
               tokenUsage={tokenUsage}
               onPeriodChange={handleTokenUsagePeriodChange}
               t={t}
@@ -1164,42 +1355,33 @@ export default function DashboardPage({
         )}
 
         {tab === 'providers' && (
-          <ProviderManagementPanel serverRunning={started && !stopping} />
+          <ProviderManagementPanel
+            serverRunning={started && !stopping}
+            onOpenAuthConfig={handleChangeAuth}
+          />
         )}
 
-        {/* Model mappings tab */}
-        {started && tab === 'advancedConfig' && (
-          <ModelMappingsPage serverRunning={started && !stopping} />
-        )}
-
-        {/* Logs tab */}
-        {started && tab === 'logs' && (
-          <div className="p-4 h-full flex flex-col">
-            <div className="flex-1 bg-black rounded-xl p-4 flex flex-col overflow-hidden min-h-0">
-              <div className="flex items-center justify-between mb-3 shrink-0">
-                <span className="text-[13px] font-semibold text-ink-faint uppercase tracking-wide">
-                  {t('dashboard.serverLog')}
-                </span>
-                <button
-                  onClick={() => setLogs([])}
-                  className="text-[13px] text-ink-soft hover:text-ink-faint transition-colors"
-                >
-                  {t('dashboard.clear')}
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto font-mono text-[13px] text-green-400 space-y-0.5 leading-relaxed">
-                {logs.length === 0 ?
-                  <span className="text-ink-soft">{t('dashboard.noLogs')}</span>
-                : logs.map((line, i) => (
-                    <div key={i} className="whitespace-pre-wrap break-all">
-                      {line.trimEnd()}
-                    </div>
-                  ))
-                }
-                <div ref={logEndRef} />
-              </div>
-            </div>
+        {showCreate && (tab === 'studio' || studioOpened) && (
+          <div className={tab === 'studio' ? 'h-full' : 'hidden'}>
+            <MediaStudioPage
+              serverRunning={started && !stopping && !restarting}
+            />
           </div>
+        )}
+
+        {/* Keep the editor mounted after opening it to preserve unsaved drafts. */}
+        {(tab === 'advancedConfig' || advancedConfigOpened) && (
+          <div className={tab === 'advancedConfig' ? 'h-full' : 'hidden'}>
+            <AdvancedConfigPage
+              active={tab === 'advancedConfig'}
+              serverRunning={started && !stopping && !restarting}
+            />
+          </div>
+        )}
+
+        {/* Keep the panel mounted so startup lines stream in during a restart. */}
+        {started && tab === 'logs' && (
+          <ServerLogPanel key={logPanelSession} variant="page" />
         )}
       </div>
     </div>
@@ -1208,65 +1390,80 @@ export default function DashboardPage({
 
 // Subcomponents
 
-function QuotaBar({
-  label,
-  quota,
+function TokenUsageSummaryMetrics({
+  className,
   loading,
-  mode,
+  t,
+  totals,
 }: {
-  label: string
-  quota: QuotaDetail | undefined
+  className: string
   loading: boolean
-  mode: 'used' | 'remaining'
+  t: TranslateFn
+  totals: TokenUsageTotals
 }) {
-  const { t } = useLanguage()
-  const remainingPct = quota ? getCopilotQuotaPercentRemaining(quota) : 0
-  const pct = quota && mode === 'used' ? 100 - remainingPct : remainingPct
-  const colorClass = getQuotaBarColor(pct, mode === 'used')
-
-  let displayText = '—'
-  if (quota) {
-    const entitlement = quota.entitlement ?? 0
-    const remaining = getCopilotQuotaRemaining(quota) ?? 0
-    if (quota.unlimited) {
-      displayText = '∞'
-    } else if (mode === 'used') {
-      const used = Math.floor(entitlement - remaining)
-      displayText = `${used} / ${Math.floor(entitlement)}`
-    } else {
-      displayText = `${Math.floor(remaining)} / ${Math.floor(entitlement)}`
-    }
-    if (!quota.unlimited) {
-      displayText += ` · ${t(
-        mode === 'used' ?
-          'dashboard.quotaUsedPercent'
-        : 'dashboard.quotaRemainingPercent',
-        { percent: pct.toFixed(1) },
-      )}`
-    }
-  }
+  const costCurrencies = [...new Set(totals.costs.map((cost) => cost.currency))]
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[13px] text-ink-soft">{label}</span>
-        <span
-          className={`text-[13px] font-medium ${loading ? 'text-ink-faint' : 'text-ink-soft'}`}
-        >
-          {loading ? '…' : displayText}
-        </span>
-      </div>
-      <div className="h-1.5 bg-sunken rounded-full overflow-hidden">
-        {loading ?
-          <div className="h-full bg-line animate-pulse rounded-full" />
-        : quota && (
-            <div
-              className={`h-full rounded-full transition-all ${colorClass}`}
-              style={{ width: `${pct}%` }}
-            />
-          )
-        }
-      </div>
+    <div className={className}>
+      <TokenUsageMetric
+        label={t('dashboard.tokenUsageTotal')}
+        value={formatTokenCount(calcTokenTotal(totals))}
+        loading={loading}
+        tone="slate"
+      />
+      <TokenUsageMetric
+        label={t('dashboard.tokenUsageInput')}
+        value={formatTokenCount(totals.input_tokens)}
+        loading={loading}
+        tone="blue"
+      />
+      <TokenUsageMetric
+        label={t('dashboard.tokenUsageOutput')}
+        value={formatTokenCount(totals.output_tokens)}
+        loading={loading}
+        tone="green"
+      />
+      <TokenUsageMetric
+        label={t('dashboard.tokenUsageCacheRead')}
+        value={formatTokenCount(totals.cache_read_input_tokens)}
+        loading={loading}
+        tone="cyan"
+      />
+      <TokenUsageMetric
+        label={t('dashboard.tokenUsageCacheWrite')}
+        value={formatTokenCount(totals.cache_creation_input_tokens)}
+        loading={loading}
+        tone="amber"
+      />
+      <TokenUsageMetric
+        label={t('dashboard.tokenUsageCacheHitRate')}
+        value={formatCacheHitRate(totals)}
+        loading={loading}
+        tone="cyan"
+      />
+      <TokenUsageMetric
+        label={t('dashboard.tokenUsageRequests')}
+        value={formatTokenCount(totals.request_count)}
+        loading={loading}
+        tone="violet"
+      />
+      {costCurrencies.length > 0 ?
+        costCurrencies.map((currency) => (
+          <TokenUsageCostMetric
+            key={currency}
+            label={`${t('dashboard.tokenUsageCost')} (${currency})`}
+            value={formatTokenCost(
+              totals.costs.find((cost) => cost.currency === currency),
+            )}
+            loading={loading}
+          />
+        ))
+      : <TokenUsageCostMetric
+          label={t('dashboard.tokenUsageCost')}
+          value={formatTokenCosts(totals.costs)}
+          loading={loading}
+        />
+      }
     </div>
   )
 }
@@ -1277,8 +1474,12 @@ function TokenUsagePanel({
   eventsLoading,
   loading,
   onEventsPageChange,
+  onSessionsPageChange,
   onPeriodChange,
   period,
+  sessionsError,
+  sessionsLoading,
+  sessionsPage,
   t,
   tokenUsage,
 }: {
@@ -1287,22 +1488,24 @@ function TokenUsagePanel({
   eventsLoading: boolean
   loading: boolean
   onEventsPageChange: (page: number) => void
+  onSessionsPageChange: (page: number) => void
   onPeriodChange: (period: TokenUsagePeriod) => void
   period: TokenUsagePeriod
+  sessionsError: boolean
+  sessionsLoading: boolean
+  sessionsPage: TokenUsageSessionsPage | null
   t: TranslateFn
   tokenUsage: TokenUsageSummary | null
 }) {
   const [trendModel, setTrendModel] = useState(ALL_MODELS_VALUE)
+  const [breakdownTab, setBreakdownTab] = useState<'models' | 'sessions'>(
+    'models',
+  )
   const totals = tokenUsage?.totals ?? EMPTY_TOKEN_USAGE_TOTALS
-  const costCurrencies = [...new Set(totals.costs.map((cost) => cost.currency))]
-  const periods: Array<{ key: TokenUsagePeriod; label: string }> = [
-    { key: 'today', label: t('dashboard.tokenUsagePeriodToday') },
-    { key: 'this_week', label: t('dashboard.tokenUsagePeriodThisWeek') },
-    { key: 'last_7_days', label: t('dashboard.tokenUsagePeriodLast7Days') },
-    { key: 'this_month', label: t('dashboard.tokenUsagePeriodThisMonth') },
-    { key: 'last_30_days', label: t('dashboard.tokenUsagePeriodLast30Days') },
-    { key: 'lifetime', label: t('dashboard.tokenUsagePeriodLifetime') },
-  ]
+  const periods = TOKEN_USAGE_PERIODS.map((key) => ({
+    key,
+    label: getTokenUsagePeriodLabel(t, key),
+  }))
   const trendModels = dailyUsage?.byModel ?? tokenUsage?.byModel ?? []
   const selectedTrendModel =
     trendModels.some((model) => model.model === trendModel) ? trendModel : (
@@ -1310,6 +1513,7 @@ function TokenUsagePanel({
     )
   const hasModelRows = Boolean(tokenUsage && tokenUsage.byModel.length > 0)
   const hasEventRows = Boolean(eventsPage && eventsPage.items.length > 0)
+  const hasSessionRows = Boolean(sessionsPage && sessionsPage.items.length > 0)
 
   return (
     <div className="bg-surface border border-line rounded-xl p-3">
@@ -1334,67 +1538,12 @@ function TokenUsagePanel({
         </div>
       </div>
 
-      <div className="grid grid-cols-6 gap-2">
-        <TokenUsageMetric
-          label={t('dashboard.tokenUsageTotal')}
-          value={formatTokenCount(calcTokenTotal(totals))}
-          loading={loading}
-          tone="slate"
-        />
-        <TokenUsageMetric
-          label={t('dashboard.tokenUsageInput')}
-          value={formatTokenCount(totals.input_tokens)}
-          loading={loading}
-          tone="blue"
-        />
-        <TokenUsageMetric
-          label={t('dashboard.tokenUsageOutput')}
-          value={formatTokenCount(totals.output_tokens)}
-          loading={loading}
-          tone="green"
-        />
-        <TokenUsageMetric
-          label={t('dashboard.tokenUsageCacheRead')}
-          value={formatTokenCount(totals.cache_read_input_tokens)}
-          loading={loading}
-          tone="cyan"
-        />
-        <TokenUsageMetric
-          label={t('dashboard.tokenUsageCacheWrite')}
-          value={formatTokenCount(totals.cache_creation_input_tokens)}
-          loading={loading}
-          tone="amber"
-        />
-        <TokenUsageMetric
-          label={t('dashboard.tokenUsageCacheHitRate')}
-          value={formatCacheHitRate(totals)}
-          loading={loading}
-          tone="cyan"
-        />
-        <TokenUsageMetric
-          label={t('dashboard.tokenUsageRequests')}
-          value={formatTokenCount(totals.request_count)}
-          loading={loading}
-          tone="violet"
-        />
-        {costCurrencies.length > 0 ?
-          costCurrencies.map((currency) => (
-            <TokenUsageCostMetric
-              key={currency}
-              label={`${t('dashboard.tokenUsageCost')} (${currency})`}
-              value={formatTokenCost(
-                totals.costs.find((cost) => cost.currency === currency),
-              )}
-              loading={loading}
-            />
-          ))
-        : <TokenUsageCostMetric
-            label={t('dashboard.tokenUsageCost')}
-            value={formatTokenCosts(totals.costs)}
-            loading={loading}
-          />
-        }
-      </div>
+      <TokenUsageSummaryMetrics
+        className="grid grid-cols-6 gap-2"
+        loading={loading}
+        t={t}
+        totals={totals}
+      />
 
       {period !== 'today' && (
         <TokenUsageTrendChart
@@ -1408,12 +1557,48 @@ function TokenUsagePanel({
         />
       )}
 
-      <div className="mt-3 overflow-hidden rounded-lg border border-line-soft">
-        <div className="flex items-center justify-between bg-sunken px-2.5 py-1.5">
-          <span className="text-[13px] font-semibold text-ink-soft">
-            {t('dashboard.tokenUsageModelBreakdown')}
-          </span>
-          {tokenUsage && (
+      <div
+        id="token-usage-breakdown"
+        className="mt-3 overflow-hidden rounded-lg border border-line-soft"
+      >
+        <div className="flex flex-col gap-1.5 bg-sunken px-2.5 py-1.5 sm:flex-row sm:items-center sm:justify-between">
+          <div
+            role="tablist"
+            aria-label={t('dashboard.tokenUsage')}
+            className="flex items-center gap-1"
+          >
+            <button
+              id="token-usage-model-tab"
+              type="button"
+              role="tab"
+              aria-controls="token-usage-breakdown-panel"
+              aria-selected={breakdownTab === 'models'}
+              onClick={() => setBreakdownTab('models')}
+              className={`rounded-md px-2 py-1 text-[13px] transition-colors ${
+                breakdownTab === 'models' ?
+                  'bg-surface font-semibold text-ink shadow-sm'
+                : 'text-ink-faint hover:bg-surface/60 hover:text-ink-soft'
+              }`}
+            >
+              {t('dashboard.tokenUsageModelBreakdown')}
+            </button>
+            <button
+              id="token-usage-session-tab"
+              type="button"
+              role="tab"
+              aria-controls="token-usage-breakdown-panel"
+              aria-selected={breakdownTab === 'sessions'}
+              onClick={() => setBreakdownTab('sessions')}
+              className={`rounded-md px-2 py-1 text-[13px] transition-colors ${
+                breakdownTab === 'sessions' ?
+                  'bg-surface font-semibold text-ink shadow-sm'
+                : 'text-ink-faint hover:bg-surface/60 hover:text-ink-soft'
+              }`}
+            >
+              {t('dashboard.tokenUsageSessionBreakdown')}
+            </button>
+          </div>
+          {breakdownTab === 'models' && tokenUsage && (
             <div className="flex items-center gap-2 text-[13px] text-ink-faint">
               <span>
                 {t('dashboard.modelsCount', { n: tokenUsage.byModel.length })}
@@ -1423,62 +1608,184 @@ function TokenUsagePanel({
               )}
             </div>
           )}
+          {breakdownTab === 'sessions' && sessionsPage && (
+            <div className="flex items-center gap-2 text-[13px] text-ink-faint">
+              <span>
+                {t('dashboard.tokenUsagePage', {
+                  page: sessionsPage.page,
+                  total: sessionsPage.total_pages,
+                })}
+              </span>
+              <span>
+                {t('dashboard.tokenUsageSessionsCount', {
+                  n: sessionsPage.total,
+                })}
+              </span>
+              {sessionsLoading && (
+                <span className="text-ink-faint">{t('dashboard.loading')}</span>
+              )}
+              <button
+                onClick={() =>
+                  onSessionsPageChange(Math.max(1, sessionsPage.page - 1))
+                }
+                disabled={sessionsLoading || sessionsPage.page <= 1}
+                className="h-7 rounded-md border border-line bg-surface px-2 text-[13px] text-ink-soft disabled:opacity-40"
+              >
+                {t('dashboard.previous')}
+              </button>
+              <button
+                onClick={() =>
+                  onSessionsPageChange(
+                    Math.min(sessionsPage.total_pages, sessionsPage.page + 1),
+                  )
+                }
+                disabled={
+                  sessionsLoading
+                  || sessionsPage.page >= sessionsPage.total_pages
+                }
+                className="h-7 rounded-md border border-line bg-surface px-2 text-[13px] text-ink-soft disabled:opacity-40"
+              >
+                {t('dashboard.next')}
+              </button>
+            </div>
+          )}
         </div>
-        <div className="min-h-44">
-          {loading && !tokenUsage ?
-            <div className="flex h-44 items-start px-2.5 py-2 text-[13px] text-ink-faint animate-pulse">
-              {t('dashboard.loading')}
-            </div>
-          : hasModelRows && tokenUsage ?
-            <div
-              className={`h-44 overflow-auto ${loading ? 'opacity-60' : ''}`}
-            >
-              <table className="w-full min-w-[960px] text-left text-[13px]">
-                <thead className="sticky top-0 bg-surface text-ink-faint">
-                  <tr className="border-b border-line-soft">
-                    <th className="px-2.5 py-1.5 font-semibold">
-                      {t('dashboard.tokenUsageModel')}
-                    </th>
-                    <th className="px-2.5 py-1.5 text-right font-semibold">
-                      {t('dashboard.tokenUsageRequests')}
-                    </th>
-                    <th className="px-2.5 py-1.5 text-right font-semibold">
-                      {t('dashboard.tokenUsageInput')}
-                    </th>
-                    <th className="px-2.5 py-1.5 text-right font-semibold">
-                      {t('dashboard.tokenUsageOutput')}
-                    </th>
-                    <th className="px-2.5 py-1.5 text-right font-semibold">
-                      {t('dashboard.tokenUsageCacheRead')}
-                    </th>
-                    <th className="px-2.5 py-1.5 text-right font-semibold">
-                      {t('dashboard.tokenUsageCacheWrite')}
-                    </th>
-                    <th className="px-2.5 py-1.5 text-right font-semibold">
-                      {t('dashboard.tokenUsageCacheHitRate')}
-                    </th>
-                    <th className="px-2.5 py-1.5 text-right font-semibold">
-                      {t('dashboard.tokenUsageTotalTokens')}
-                    </th>
-                    <th className="px-2.5 py-1.5 text-right font-semibold">
-                      {t('dashboard.tokenUsageTotalCost')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tokenUsage.byModel.map((model) => (
-                    <TokenUsageModelRow key={model.model} model={model} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          : <div className="px-2.5 py-2 text-[13px] text-ink-faint">
-              {t('dashboard.noTokenUsage')}
-            </div>
+        <div
+          id="token-usage-breakdown-panel"
+          role="tabpanel"
+          aria-labelledby={
+            breakdownTab === 'models' ?
+              'token-usage-model-tab'
+            : 'token-usage-session-tab'
           }
+          className="min-h-44"
+        >
+          {breakdownTab === 'models'
+            && (loading && !tokenUsage ?
+              <div className="flex h-[194px] items-start px-2.5 py-2 text-[13px] text-ink-faint animate-pulse">
+                {t('dashboard.loading')}
+              </div>
+            : hasModelRows && tokenUsage ?
+              <div
+                className={`h-[194px] overflow-auto [scrollbar-gutter:stable] ${loading ? 'opacity-60' : ''}`}
+              >
+                <table className="w-full min-w-[1120px] table-fixed text-left text-[13px]">
+                  <thead className="sticky top-0 bg-surface text-ink-faint">
+                    <tr className="border-b border-line-soft">
+                      <th className="w-[220px] px-2.5 py-1.5 font-semibold">
+                        {t('dashboard.tokenUsageModel')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageRequests')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageInput')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageOutput')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageCacheRead')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageCacheWrite')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageCacheHitRate')}
+                      </th>
+                      <th
+                        className="px-2.5 py-1.5 text-right font-semibold"
+                        title={t('dashboard.tokenUsageTimingHint')}
+                      >
+                        {t('dashboard.tokenUsageAverageFirstToken')}
+                      </th>
+                      <th
+                        className="px-2.5 py-1.5 text-right font-semibold"
+                        title={t('dashboard.tokenUsageTimingHint')}
+                      >
+                        {t('dashboard.tokenUsageOutputSpeed')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageTotalTokens')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageTotalCost')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tokenUsage.byModel.map((model) => (
+                      <TokenUsageModelRow key={model.model} model={model} />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            : <div className="px-2.5 py-2 text-[13px] text-ink-faint">
+                {t('dashboard.noTokenUsage')}
+              </div>)}
+          {breakdownTab === 'sessions'
+            && (sessionsLoading && !sessionsPage ?
+              <div className="flex h-[194px] items-start px-2.5 py-2 text-[13px] text-ink-faint animate-pulse">
+                {t('dashboard.loading')}
+              </div>
+            : sessionsError ?
+              <div
+                role="alert"
+                className="px-2.5 py-2 text-[13px] text-red-600 dark:text-red-400"
+              >
+                {t('dashboard.tokenUsageSessionsLoadFailed')}
+              </div>
+            : hasSessionRows && sessionsPage ?
+              <div
+                className={`h-[194px] overflow-auto [scrollbar-gutter:stable] ${sessionsLoading ? 'opacity-60' : ''}`}
+              >
+                <table className="w-full min-w-[960px] table-fixed text-left text-[13px]">
+                  <thead className="sticky top-0 bg-surface text-ink-faint">
+                    <tr className="border-b border-line-soft">
+                      <th className="w-[280px] px-2.5 py-1.5 font-semibold">
+                        {t('dashboard.tokenUsageSession')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageRequests')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageInput')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageOutput')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageCacheRead')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageCacheWrite')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageCacheHitRate')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageTotalTokens')}
+                      </th>
+                      <th className="px-2.5 py-1.5 text-right font-semibold">
+                        {t('dashboard.tokenUsageTotalCost')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sessionsPage.items.map((session) => (
+                      <TokenUsageSessionRow
+                        key={session.session_id}
+                        session={session}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            : <div className="px-2.5 py-2 text-[13px] text-ink-faint">
+                {t('dashboard.noTokenUsage')}
+              </div>)}
         </div>
       </div>
-
       <div className="mt-3 overflow-hidden rounded-lg border border-line-soft">
         <div className="flex flex-col gap-1.5 bg-sunken px-2.5 py-1.5 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-[13px] font-semibold text-ink-soft">
@@ -1529,7 +1836,7 @@ function TokenUsagePanel({
             <div
               className={`h-64 overflow-auto ${eventsLoading ? 'opacity-60' : ''}`}
             >
-              <table className="w-full min-w-[1060px] text-left text-[13px]">
+              <table className="w-full min-w-[1140px] text-left text-[13px]">
                 <thead className="sticky top-0 bg-surface text-ink-faint">
                   <tr className="border-b border-line-soft">
                     <th className="px-2.5 py-1.5 font-semibold">
@@ -1558,6 +1865,9 @@ function TokenUsagePanel({
                     </th>
                     <th className="px-2.5 py-1.5 text-right font-semibold">
                       {t('dashboard.tokenUsageCacheWrite')}
+                    </th>
+                    <th className="px-2.5 py-1.5 text-right font-semibold">
+                      {t('dashboard.tokenUsageDuration')}
                     </th>
                     <th className="px-2.5 py-1.5 text-right font-semibold">
                       {t('dashboard.tokenUsageTotalTokens')}
@@ -1946,10 +2256,7 @@ function TokenUsageTrendChart({
 function TokenUsageModelRow({ model }: { model: TokenUsageModelSummary }) {
   return (
     <tr className="border-b border-line-soft last:border-b-0">
-      <td
-        className="max-w-[260px] truncate px-2.5 py-1.5 text-ink"
-        title={model.model}
-      >
+      <td className="truncate px-2.5 py-1.5 text-ink" title={model.model}>
         {model.model}
       </td>
       <td className="px-2.5 py-1.5 text-right text-ink-soft">
@@ -1970,12 +2277,62 @@ function TokenUsageModelRow({ model }: { model: TokenUsageModelSummary }) {
       <td className="px-2.5 py-1.5 text-right text-ink-soft">
         {formatCacheHitRate(model)}
       </td>
+      <td className="whitespace-nowrap px-2.5 py-1.5 text-right text-ink-soft">
+        {formatLatency(model.average_first_token_ms)}
+      </td>
+      <td className="whitespace-nowrap px-2.5 py-1.5 text-right text-ink-soft">
+        {formatOutputSpeed(model.output_tokens_per_second)}
+      </td>
       <td className="px-2.5 py-1.5 text-right font-semibold text-ink">
         {formatTokenCount(calcTokenTotal(model))}
       </td>
       <td className="px-2.5 py-1.5 text-right font-semibold text-amber-700 dark:text-amber-400">
         <span className="inline-flex flex-col items-end leading-4">
           <TokenUsageValueLines value={formatTokenCosts(model.costs)} />
+        </span>
+      </td>
+    </tr>
+  )
+}
+
+function TokenUsageSessionRow({
+  session,
+}: {
+  session: TokenUsageSessionSummary
+}) {
+  const sessionId = formatCellText(session.session_id)
+  return (
+    <tr className="border-b border-line-soft last:border-b-0">
+      <td
+        className="truncate px-2.5 py-1.5 font-mono text-ink"
+        title={sessionId}
+      >
+        {sessionId}
+      </td>
+      <td className="px-2.5 py-1.5 text-right text-ink-soft">
+        {formatTokenCount(session.request_count)}
+      </td>
+      <td className="px-2.5 py-1.5 text-right text-ink-soft">
+        {formatTokenCount(session.input_tokens)}
+      </td>
+      <td className="px-2.5 py-1.5 text-right text-ink-soft">
+        {formatTokenCount(session.output_tokens)}
+      </td>
+      <td className="px-2.5 py-1.5 text-right text-ink-soft">
+        {formatTokenCount(session.cache_read_input_tokens)}
+      </td>
+      <td className="px-2.5 py-1.5 text-right text-ink-soft">
+        {formatTokenCount(session.cache_creation_input_tokens)}
+      </td>
+      <td className="px-2.5 py-1.5 text-right text-ink-soft">
+        {formatCacheHitRate(session)}
+      </td>
+      <td className="px-2.5 py-1.5 text-right font-semibold text-ink">
+        {formatTokenCount(calcTokenTotal(session))}
+      </td>
+      <td className="px-2.5 py-1.5 text-right font-semibold text-amber-700 dark:text-amber-400">
+        <span className="inline-flex flex-col items-end leading-4">
+          <TokenUsageValueLines value={formatTokenCosts(session.costs)} />
         </span>
       </td>
     </tr>
@@ -2004,13 +2361,13 @@ function TokenUsageEventRow({ event }: { event: TokenUsageEventRecord }) {
         {event.model}
       </td>
       <td
-        className="max-w-[160px] truncate px-2.5 py-1.5 font-mono text-ink-soft"
+        className="max-w-[240px] truncate px-2.5 py-1.5 font-mono text-ink-soft"
         title={formatCellText(event.session_id)}
       >
         {formatCellText(event.session_id)}
       </td>
       <td
-        className="max-w-[160px] truncate px-2.5 py-1.5 font-mono text-ink-soft"
+        className="max-w-[110px] truncate px-2.5 py-1.5 font-mono text-ink-soft"
         title={event.trace_id}
       >
         {event.trace_id}
@@ -2026,6 +2383,9 @@ function TokenUsageEventRow({ event }: { event: TokenUsageEventRecord }) {
       </td>
       <td className="px-2.5 py-1.5 text-right text-ink-soft">
         {formatTokenCount(event.cache_creation_input_tokens)}
+      </td>
+      <td className="whitespace-nowrap px-2.5 py-1.5 text-right text-ink-soft">
+        {formatLatency(event.duration_ms)}
       </td>
       <td className="px-2.5 py-1.5 text-right font-semibold text-ink">
         {formatTokenCount(event.total_tokens)}

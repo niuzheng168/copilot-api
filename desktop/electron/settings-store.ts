@@ -14,6 +14,7 @@ const SETTINGS_PATH = path.join(
 )
 
 const DEFAULT_SETTINGS: DesktopSettings = {
+  serverRuntime: 'bun',
   apiHome: '',
   sqliteDbPath: '',
   oauthApp: 'default',
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS: DesktopSettings = {
   accountType: 'individual',
   verbose: false,
   showToken: false,
+  showCreate: false,
   language: 'auto',
   theme: 'auto',
   proxy: {
@@ -74,7 +76,14 @@ export function normalizeProxySettings(
 export function normalizeSettings(
   settings: Partial<DesktopSettings> | null | undefined,
 ): DesktopSettings {
+  // Existing settings without a runtime used Electron's system proxy and PAC.
+  // Only new installations should opt into Bun without an explicit selection.
+  const legacyRuntime = settings != null && settings.serverRuntime === undefined
   return {
+    serverRuntime:
+      settings?.serverRuntime === 'node' || legacyRuntime ?
+        'node'
+      : DEFAULT_SETTINGS.serverRuntime,
     apiHome:
       typeof settings?.apiHome === 'string' ?
         settings.apiHome
@@ -126,6 +135,10 @@ export function normalizeSettings(
       typeof settings?.showToken === 'boolean' ?
         settings.showToken
       : DEFAULT_SETTINGS.showToken,
+    showCreate:
+      typeof settings?.showCreate === 'boolean' ?
+        settings.showCreate
+      : DEFAULT_SETTINGS.showCreate,
     language:
       (
         settings?.language === 'en'

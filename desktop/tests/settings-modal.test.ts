@@ -17,6 +17,7 @@ import type {
 import { acquireDomTestLock } from './dom-test-lock'
 
 const initialSettings: DesktopSettings = {
+  serverRuntime: 'bun',
   apiHome: '',
   sqliteDbPath: '',
   oauthApp: 'default',
@@ -29,6 +30,7 @@ const initialSettings: DesktopSettings = {
   accountType: 'individual',
   verbose: false,
   showToken: false,
+  showCreate: false,
   language: 'en',
   theme: 'light',
   proxy: {
@@ -99,6 +101,12 @@ beforeEach(async () => {
     value: {
       platform: 'win32',
       getSettings: () => Promise.resolve(structuredClone(settings)),
+      getBunRuntime: () =>
+        Promise.resolve({
+          available: true,
+          version: '1.4.0',
+          path: '/usr/local/bin/bun',
+        }),
       getServerKeys: () => Promise.resolve(structuredClone(keys)),
       saveSettings,
       saveServerKeys,
@@ -274,6 +282,63 @@ async function changeAdminKey() {
 }
 
 describe('settings modal partial saves', () => {
+  test('shows detected Bun and saves an explicit Node runtime selection', async () => {
+    await render()
+    await click('Startup')
+    const select = container.querySelector<HTMLSelectElement>('#server-runtime')
+    expect(select?.value).toBe('bun')
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      'Bun 1.4.0 detected',
+    )
+    if (!select) throw new Error('Missing runtime selector')
+    await act(async () => {
+      select.value = 'node'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await click('Save')
+    expect(settings.serverRuntime).toBe('node')
+    expect(alert).not.toHaveBeenCalled()
+  })
+
+  test('explains fallback for an unsupported Bun version', async () => {
+    window.electronAPI.getBunRuntime = () =>
+      Promise.resolve({ available: false, version: '1.3.14' })
+    await render()
+    await click('Startup')
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      'Bun 1.3.14 is unsupported',
+    )
+    await click('Save')
+    expect(settings.serverRuntime).toBe('bun')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps settings usable when Bun detection fails', async () => {
+    window.electronAPI.getBunRuntime = () =>
+      Promise.reject(new Error('unavailable'))
+    await render()
+    await click('Startup')
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      'Bun >= 1.4.0 was not found',
+    )
+  })
+
+  test('saves show create from general settings', async () => {
+    await render()
+    const toggle = [...container.querySelectorAll('button')].find(
+      (node) =>
+        node.getAttribute('role') === 'switch'
+        && node.parentElement?.textContent?.includes('Show create'),
+    )
+    if (!toggle) throw new Error('Missing show create switch')
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    await act(async () => {
+      toggle.click()
+    })
+    await click('Save')
+    expect(settings.showCreate).toBe(true)
+  })
+
   test('saves desktop preferences when persisted keys fail to refresh', async () => {
     saveServerKeys.mockImplementationOnce((update) => {
       persistKeys(update)

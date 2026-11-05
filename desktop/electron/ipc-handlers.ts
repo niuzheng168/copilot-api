@@ -1,6 +1,19 @@
 import fs from 'node:fs/promises'
 
-import { ipcMain, shell, BrowserWindow } from 'electron'
+import { ipcMain, shell, BrowserWindow, dialog, nativeImage } from 'electron'
+
+import {
+  createMediaStudioClient,
+  mediaFileExtension,
+  saveMediaFile,
+  validateMediaUrl,
+} from './media-studio'
+import { compressVideoImage } from './compress-video-image'
+import type {
+  ImageCreationInput,
+  SaveMediaInput,
+  VideoCreationInput,
+} from '../src/types/media'
 
 import { normalizeApiKeys } from '../../src/lib/request-auth'
 import { CodexOAuthError } from '../../src/lib/oauth/codex'
@@ -15,10 +28,8 @@ import { loadModelsDevProviderOptions } from '../../src/lib/models-dev-cache'
 import { PATHS } from '../../src/lib/paths'
 import { invalidateConfigCache } from '../../src/lib/config-store'
 import { loadProviderModelOptions } from './provider-model-options'
-import {
-  getProviderManagementConfig,
-  saveProviderManagementConfig,
-} from '../../src/lib/provider-management'
+import { saveProviderManagementConfig } from '../../src/lib/provider-management'
+import { getDesktopProviderManagementConfig } from './provider-management'
 import {
   isValidServerHost,
   resolveEffectiveServerHost,
@@ -56,12 +67,15 @@ import {
   getHost,
   getServerBaseUrl,
   getLogs,
+  clearLogs,
   isRunning,
 } from './server-manager'
 import { readSettings, writeSettings } from './settings-store'
 import { runSettingsTransaction } from './settings-transaction'
 import { createConfigRefresher } from './config-refresh'
+import { configEditorReply, createAppConfigEditor } from './config-editor'
 import { shouldRestartServerForSettings } from './settings-runtime'
+import { detectBunRuntime } from './bun-runtime'
 import {
   readServerKeysConfig,
   writeServerKeysConfig,
@@ -77,6 +91,8 @@ import type {
   ProviderAuthInput,
   ServerAuthInfo,
   ServerKeysConfigUpdate,
+  SubscriptionProvider,
+  SubscriptionUsage,
 } from '../src/types/ipc'
 
 interface ConfigApiErrorResponse {
@@ -250,10 +266,66 @@ function saveCredentialsAndRefresh(save: () => Promise<void>): Promise<void> {
   })
 }
 
+const appConfigEditor = createAppConfigEditor({
+  saveAndRefresh: saveAndRefreshConfig,
+})
+
 export function registerIpcHandlers(
   mainWindow: BrowserWindow,
   options: IpcHandlersOptions = {},
 ): void {
+  const mediaClient = createMediaStudioClient({
+    getBaseUrl: () => {
+      if (!isRunning())
+        throw new Error('Start the server before creating media')
+      return getServerBaseUrl()
+    },
+    getHeaders: () => getServerRequestHeaders(),
+  })
+  mainWindow.once?.('closed', () => mediaClient.cancelAll())
+  ipcMain.handle(
+    'media:create-images',
+    (_event, id: string, input: ImageCreationInput) =>
+      mediaClient.createImages(id, input),
+  )
+  ipcMain.handle(
+    'media:create-video',
+    (_event, id: string, input: VideoCreationInput) =>
+      mediaClient.createVideo(
+        id,
+        input.image ?
+          {
+            ...input,
+            image: compressVideoImage(input.image, (bytes) =>
+              nativeImage.createFromBuffer(Buffer.from(bytes)),
+            ),
+          }
+        : input,
+      ),
+  )
+  ipcMain.handle('media:get-video', (_event, id: string, requestId: string) =>
+    mediaClient.getVideo(id, requestId),
+  )
+  ipcMain.handle('media:cancel', (_event, id: string) => mediaClient.cancel(id))
+  ipcMain.handle('media:save', async (_event, input: SaveMediaInput) => {
+    validateMediaUrl(input.url, input.kind)
+    const extension = mediaFileExtension(input)
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: `copilot-${Date.now()}.${extension}`,
+      filters: [
+        {
+          name: input.kind === 'video' ? 'Video' : 'Image',
+          extensions:
+            input.kind === 'video' ?
+              ['mp4']
+            : ['png', 'jpg', 'jpeg', 'webp', 'gif'],
+        },
+      ],
+    })
+    if (result.canceled || !result.filePath) return false
+    await saveMediaFile(input, result.filePath)
+    return true
+  })
   ipcMain.handle('auth:get-status', async () => getDesktopAuthStatus())
 
   // Auth: Start the OAuth device flow. The token is polled in the background
@@ -483,6 +555,7 @@ export function registerIpcHandlers(
       }
 
       const serverOptions = {
+        runtime: settings.serverRuntime,
         verbose: settings.verbose,
         showToken: settings.showToken,
         host: effectiveHost,
@@ -531,6 +604,7 @@ export function registerIpcHandlers(
 
   // Settings
   ipcMain.handle('settings:get', async () => readSettings())
+  ipcMain.handle('settings:get-bun-runtime', () => detectBunRuntime())
   ipcMain.handle('settings:save', async (_event, settings: DesktopSettings) => {
     if (!isValidServerHost(settings?.host ?? '')) {
       throw new Error(await tMain('server.invalidHost'))
@@ -547,6 +621,7 @@ export function registerIpcHandlers(
       }
       if (isRunning() && shouldRestartServerForSettings(prev, settings)) {
         const status = await startServer(getPort(), {
+          runtime: settings.serverRuntime,
           host: settings.host,
           verbose: settings.verbose,
           showToken: settings.showToken,
@@ -563,12 +638,23 @@ export function registerIpcHandlers(
   ipcMain.handle('config:get-model-mappings', async () =>
     fetchModelMappingsConfig(),
   )
+  ipcMain.handle('config:get-document', () =>
+    configEditorReply(() => appConfigEditor.read(), 'readFailed'),
+  )
+  ipcMain.handle('config:save-document', (_event, input: unknown) =>
+    configEditorReply(() => appConfigEditor.save(input), 'saveFailed'),
+  )
+  ipcMain.handle('config:apply-document', (_event, revision: unknown) =>
+    configEditorReply(() => appConfigEditor.apply(revision), 'applyFailed'),
+  )
   ipcMain.handle('config:get-provider-management', () => {
     invalidateConfigCache()
-    return getProviderManagementConfig()
+    return getDesktopProviderManagementConfig()
   })
   ipcMain.handle('config:save-provider-management', (_event, input: unknown) =>
-    saveAndRefreshConfig(() => saveProviderManagementConfig(input)),
+    saveAndRefreshConfig(() =>
+      getDesktopProviderManagementConfig(saveProviderManagementConfig(input)),
+    ),
   )
   ipcMain.handle('config:get-provider-model-options', () =>
     loadProviderModelOptions(),
@@ -595,6 +681,29 @@ export function registerIpcHandlers(
   })
 
   // Server: Proxy HTTP requests through the main process to bypass file:// origin CORS in the renderer
+  ipcMain.handle(
+    'server:fetch-subscription-usage',
+    async (_event, provider: SubscriptionProvider) => {
+      if (
+        provider !== 'codex'
+        && provider !== 'xai'
+        && provider !== 'github-copilot'
+        && provider !== 'opencode-go'
+      ) {
+        throw new Error('Unsupported subscription provider')
+      }
+      const headers = await getServerRequestHeaders()
+      const response = await fetch(`${getServerBaseUrl()}/usage/${provider}`, {
+        headers,
+        // Allow for a credential refresh before the bounded upstream query.
+        signal: AbortSignal.timeout(60_000),
+      })
+      if (response.status === 404) return null
+      if (!response.ok) throw new Error('Failed to fetch subscription usage')
+      return (await response.json()) as SubscriptionUsage
+    },
+  )
+
   ipcMain.handle('server:fetch-usage', async () => {
     const baseUrl = getServerBaseUrl()
     try {
@@ -708,10 +817,43 @@ export function registerIpcHandlers(
     },
   )
 
+  ipcMain.handle(
+    'server:fetch-token-usage-sessions',
+    async (_event, period: string, page: number, pageSize: number) => {
+      const baseUrl = getServerBaseUrl()
+      const normalizedPeriod =
+        TOKEN_USAGE_PERIODS.has(period) ? period : 'today'
+      const normalizedPage =
+        Number.isFinite(page) && page > 0 ? Math.floor(page) : 1
+      const normalizedPageSize =
+        Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 5
+      const params = new URLSearchParams({
+        page: String(normalizedPage),
+        page_size: String(normalizedPageSize),
+        period: normalizedPeriod,
+      })
+      try {
+        const headers = await getServerRequestHeaders()
+        const res = await fetch(
+          `${baseUrl}/token-usage/sessions?${params.toString()}`,
+          {
+            headers,
+            signal: AbortSignal.timeout(5000),
+          },
+        )
+        if (!res.ok) return null
+        return (await res.json()) as unknown
+      } catch {
+        return null
+      }
+    },
+  )
+
   ipcMain.handle('server:get-auth-info', async () => getServerAuthInfo())
 
   // Server: Return the in-memory log buffer
   ipcMain.handle('server:get-logs', () => getLogs())
+  ipcMain.handle('server:clear-logs', () => clearLogs())
 
   // Window controls (used by the custom title bar menu)
   ipcMain.on('window:reload', () => mainWindow.reload())

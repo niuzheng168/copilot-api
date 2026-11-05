@@ -19,7 +19,7 @@ import {
 } from "./lib/credential-store"
 import { startModelsDevCache } from "./lib/models-dev-cache"
 import { initOpencodeVersion } from "./lib/opencode"
-import { ensurePaths } from "./lib/paths"
+import { ensurePaths, PATHS } from "./lib/paths"
 import { initProxyFromEnv } from "./lib/proxy"
 import {
   getConfiguredApiKeys,
@@ -32,6 +32,8 @@ import {
   resolveServerBinding,
 } from "./lib/server-host"
 import { state } from "./lib/state"
+import { loadGatewayPlugins } from "./lib/gateway-plugins"
+import { registerProcessCleanup } from "./lib/process-cleanup"
 
 interface RunServerOptions {
   host: string
@@ -178,7 +180,16 @@ export async function runServer(options: RunServerOptions): Promise<void> {
   )
 
   const { createServer } = await import("./server")
-  const server = createServer({ networkExposed: binding.networkExposed })
+  const plugins = await loadGatewayPlugins(process.env.COPILOT_API_PLUGINS, {
+    port: options.port,
+    baseDir: PATHS.APP_DIR,
+  })
+  if (plugins) registerProcessCleanup(() => plugins.close())
+  const server = createServer({
+    networkExposed: binding.networkExposed,
+    port: options.port,
+    plugins,
+  })
 
   serve({
     fetch: server.fetch as ServerHandler,

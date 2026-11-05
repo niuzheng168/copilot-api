@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppUpdateStatus, XaiAuthInfo } from '../src/types/ipc'
+import type {
+  AppUpdateStatus,
+  ServerLogRecord,
+  XaiAuthInfo,
+} from '../src/types/ipc'
+import type {
+  ImageCreationInput,
+  SaveMediaInput,
+  VideoCreationInput,
+} from '../src/types/media'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getAuthStatus: () => ipcRenderer.invoke('auth:get-status'),
@@ -56,9 +65,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getServerStatus: () => ipcRenderer.invoke('server:get-status'),
 
   getSettings: () => ipcRenderer.invoke('settings:get'),
+  getBunRuntime: () => ipcRenderer.invoke('settings:get-bun-runtime'),
   getAppUpdateStatus: () => ipcRenderer.invoke('update:get-status'),
   checkAppUpdate: () => ipcRenderer.invoke('update:check'),
   installAppUpdate: () => ipcRenderer.invoke('update:install'),
+  openAppUpdatePackage: (showInFolder = false) =>
+    ipcRenderer.invoke('update:open-package', showInFolder),
   onAppUpdateStatus: (callback: (status: AppUpdateStatus) => void) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
@@ -70,6 +82,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSettings: (settings: unknown) =>
     ipcRenderer.invoke('settings:save', settings),
   getModelMappingsConfig: () => ipcRenderer.invoke('config:get-model-mappings'),
+  getAppConfig: () => ipcRenderer.invoke('config:get-document'),
+  saveAppConfig: (input: unknown) =>
+    ipcRenderer.invoke('config:save-document', input),
+  applyAppConfig: (revision: string) =>
+    ipcRenderer.invoke('config:apply-document', revision),
   getProviderManagementConfig: () =>
     ipcRenderer.invoke('config:get-provider-management'),
   getProviderModelOptions: () =>
@@ -82,7 +99,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openUrl: (url: string) => ipcRenderer.invoke('shell:open-url', url),
 
   fetchUsage: () => ipcRenderer.invoke('server:fetch-usage'),
+  fetchSubscriptionUsage: (
+    provider: 'github-copilot' | 'codex' | 'xai' | 'opencode-go',
+  ) => ipcRenderer.invoke('server:fetch-subscription-usage', provider),
   fetchModels: () => ipcRenderer.invoke('server:fetch-models'),
+  createImages: (id: string, input: ImageCreationInput) =>
+    ipcRenderer.invoke('media:create-images', id, input),
+  createVideo: (id: string, input: VideoCreationInput) =>
+    ipcRenderer.invoke('media:create-video', id, input),
+  getVideo: (id: string, requestId: string) =>
+    ipcRenderer.invoke('media:get-video', id, requestId),
+  cancelMediaRequest: (id: string) => ipcRenderer.invoke('media:cancel', id),
+  saveMedia: (input: SaveMediaInput) => ipcRenderer.invoke('media:save', input),
   fetchTokenUsage: (period: string) =>
     ipcRenderer.invoke('server:fetch-token-usage', period),
   fetchTokenUsageDaily: (period: string) =>
@@ -94,11 +122,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       page,
       pageSize,
     ),
+  fetchTokenUsageSessions: (period: string, page: number, pageSize: number) =>
+    ipcRenderer.invoke(
+      'server:fetch-token-usage-sessions',
+      period,
+      page,
+      pageSize,
+    ),
   getServerAuthInfo: () => ipcRenderer.invoke('server:get-auth-info'),
   getServerKeys: () => ipcRenderer.invoke('auth:get-server-keys'),
   saveServerKeys: (keys: unknown) =>
     ipcRenderer.invoke('auth:save-server-keys', keys),
   getLogs: () => ipcRenderer.invoke('server:get-logs'),
+  clearLogs: () => ipcRenderer.invoke('server:clear-logs'),
 
   onAuthSuccess: (callback: (result: unknown) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, result: unknown) =>
@@ -114,8 +150,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.off('server:status', handler)
   },
 
-  onServerLog: (callback: (log: string) => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, log: string) =>
+  onServerLog: (callback: (log: ServerLogRecord) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, log: ServerLogRecord) =>
       callback(log)
     ipcRenderer.on('server:log', handler)
     return () => ipcRenderer.off('server:log', handler)

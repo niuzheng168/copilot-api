@@ -32,8 +32,9 @@ npx @jeffreycao/copilot-api@latest start
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "gpt-6.1-sol[1m]",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "gpt-6.1-sol[1m]",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "gpt-6-luna[1m]",
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "272000",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
     "CLAUDE_CODE_AUTO_MODE_SERVER": "0",
+    "CLAUDE_CODE_AUTO_MODE_MODEL": "codex-auto-review",
     "CLAUDE_CODE_USE_VERTEX": "0",
     "CLAUDE_CODE_USE_BEDROCK": "0",
     "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
@@ -52,9 +53,10 @@ npx @jeffreycao/copilot-api@latest start
 ```
 
 - `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1"` 让 Claude Code 的 `/model` 菜单发现网关模型，参见[官方网关配置说明](https://code.claude.com/docs/en/llm-gateway-connect#add-gateway-models-to-the-model-picker)。当 User-Agent 包含 `claude`（不区分大小写）时，`/v1/models` 会给本身不含 `claude` 的模型名添加 `my-claude-`，保留 provider 前缀，并给所有模型 ID 追加 `[1m]`，不判断上下文大小。例如 `opencode-go/glm-5.3-flash` 返回为 `opencode-go/my-claude-glm-5.3-flash[1m]`，`claude-opus-4-8` 返回为 `claude-opus-4-8[1m]`。Messages 和 token 计数接口会在模型映射及 provider 路由前去掉这个兼容前缀和 `[1m]` 后缀；其他客户端的模型 ID 保持原有格式。
-- 桌面端 **Coding Agent 展示模型** 通过 `agentsModels` 同时控制 Codex 和 Claude Code 的发现列表。填写上游原始模型 ID，不加 `my-claude-`、`[1m]` 或网关 provider 前缀。
+- 桌面端 **Coding Agent 展示模型** 通过 `agentsModels` 控制 Codex、Claude Code、DeepSeek 和 OpenCode 的发现列表。填写上游原始模型 ID，不加 `my-claude-`、`[1m]` 或网关 provider 前缀。Claude、Codex 和 DeepSeek 始终排除仅输出图片的模型，显式选择也不会展示；OpenCode 可以展示选中的仅输出图片模型，支持图片输入的聊天模型仍可按各客户端的筛选规则展示。
 - 模型显示名包含 provider，例如 `GLM-5.3-Flash (opencode-go)`。已有显示名会作为基础，已有相同 provider 前缀或后缀时不重复添加；Copilot 模型标记为 `github-copilot`。
 - 请根据需要替换 `ANTHROPIC_DEFAULT_FABLE_MODEL`、`ANTHROPIC_DEFAULT_OPUS_MODEL`、`ANTHROPIC_DEFAULT_SONNET_MODEL` 和 `ANTHROPIC_DEFAULT_HAIKU_MODEL`。配置完成后，请安装 claude code 插件，见 [插件集成](integrations.md#plugin-integrations)。
+- `CLAUDE_CODE_AUTO_MODE_MODEL`（Claude Code v2.1.302+）指定客户端 auto mode 分类器使用的模型，不影响服务端 auto mode 的模型。保持 `CLAUDE_CODE_AUTO_MODE_SERVER: "0"` 可使用客户端分类器。示例使用 `codex-auto-review`，需要启用 Codex provider，并通过网关默认模型映射路由；可按需替换为其他可用模型。网关的 `claudeAutoModel` 替换优先于请求中的模型：请在网关的 [config.json](configuration.md#configuration-configjson) 中显式设置 `"claudeAutoModel": ""` 来禁用该项替换，然后重启网关或通过桌面端应用修改；省略 `claudeAutoModel` 会恢复网关的动态默认替换。其他路由规则仍然生效，包括非 token 计费 Copilot 账号的 `smallModels.copilot` 预热模型替换。
 - `CLAUDE_CODE_TOTAL_TOKENS_REMINDER: "off"` 用于关闭 Claude Code 的 total tokens 提醒功能。该功能开启时会在对话中注入 `<total_tokens>N tokens left</total_tokens>` 块，提示模型剩余的 token 预算；默认预算为 1500w（15,000,000）tokens，意义不大，因此这里配置为关闭。
 - 将 `CLAUDE_CODE_ATTRIBUTION_HEADER` 设为 `0` 可以阻止 Claude Code 在 system prompt 中附加计费和版本信息，从而避免 prompt cache 失效。
 - 关闭 `CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION` 和 `CLAUDE_CODE_ENABLE_AWAY_SUMMARY` 可以避免不必要地消耗额度。

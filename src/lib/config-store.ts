@@ -29,6 +29,9 @@ export interface AppConfig {
   >
   useMessagesApi?: boolean
   useResponsesApiWebSocket?: boolean
+  codexMultiAgentV1?: boolean
+  // Copilot model IDs that must not request output.encrypted_content.
+  noEncryptedOutputModels?: Array<string>
   upstreamTransport?: UpstreamTransportConfig
   anthropicApiKey?: string
   useResponsesApiWebSearch?: boolean
@@ -121,10 +124,12 @@ export type ProviderAuthType =
   | "azure-entra"
   | "oauth2"
   | "x-api-key"
+  | "x-goog-api-key"
 export const SUPPORTED_PROVIDER_TYPES = [
   "anthropic",
   "openai-compatible",
   "openai-responses",
+  "google",
 ] as const
 export type ProviderType = (typeof SUPPORTED_PROVIDER_TYPES)[number]
 export type ToolContentSupportType = "array" | "image" | "pdf"
@@ -161,7 +166,7 @@ const defaultModelMappings = {
   "codex-auto-review": "codex/codex-auto-review",
   "gpt-reserve": "codex/gpt-reserve",
 }
-export const defaultOpencodeModelContextWindow = 300_000
+export const defaultOpencodeModelContextWindow = 400_000
 
 export const defaultConfig: AppConfig = {
   auth: {
@@ -181,6 +186,8 @@ export const defaultConfig: AppConfig = {
   modelResponsesApiCompactThresholds,
   useMessagesApi: true,
   useResponsesApiWebSocket: defaultResponsesApiWebSocketEnabled,
+  codexMultiAgentV1: false,
+  noEncryptedOutputModels: [],
   upstreamTransport: defaultUpstreamTransportConfig,
   useResponsesApiWebSearch: true,
   alphaSearchCodexPriority: true,
@@ -321,10 +328,6 @@ function mergeDefaultConfig(inputConfig: AppConfig): {
   const contextManagement = normalizeContextManagementConfig(
     config.contextManagement,
   )
-  const opencodeModelContextWindow = positiveIntegerOrDefault(
-    config.opencodeModelContextWindow,
-    defaultOpencodeModelContextWindow,
-  )
   const {
     changed: upstreamTransportMigrated,
     migrated: migratedUpstreamTransport,
@@ -358,8 +361,6 @@ function mergeDefaultConfig(inputConfig: AppConfig): {
   const hasResponsesApiCompactThresholdChanges =
     missingResponsesApiCompactThresholdModels.length > 0
   const hasContextManagementChanges = missingContextManagementKeys.length > 0
-  const hasOpencodeModelContextWindowChanges =
-    config.opencodeModelContextWindow !== opencodeModelContextWindow
   const hasUpstreamTransportChanges = Object.entries(upstreamTransport).some(
     ([key, value]) =>
       migratedUpstreamTransport[key as keyof UpstreamTransportConfig] !== value,
@@ -371,7 +372,6 @@ function mergeDefaultConfig(inputConfig: AppConfig): {
     && !hasReasoningEffortChanges
     && !hasResponsesApiCompactThresholdChanges
     && !hasContextManagementChanges
-    && !hasOpencodeModelContextWindowChanges
     && !hasUpstreamTransportChanges
     && !upstreamTransportMigrated
     && !agentModelsMigrated
@@ -391,10 +391,16 @@ function mergeDefaultConfig(inputConfig: AppConfig): {
         ...modelMappings,
       },
       contextManagement: {
+        ...((
+          config.contextManagement
+          && typeof config.contextManagement === "object"
+          && !Array.isArray(config.contextManagement)
+        ) ?
+          config.contextManagement
+        : {}),
         ...defaultContextManagementConfig,
         ...contextManagement,
       },
-      opencodeModelContextWindow,
       extraPrompts: {
         ...defaultExtraPrompts,
         ...extraPrompts,
@@ -407,7 +413,10 @@ function mergeDefaultConfig(inputConfig: AppConfig): {
         ...defaultModelReasoningEfforts,
         ...modelReasoningEfforts,
       },
-      upstreamTransport,
+      upstreamTransport: {
+        ...migratedUpstreamTransport,
+        ...upstreamTransport,
+      },
     },
     changed: true,
   }
@@ -449,6 +458,27 @@ function normalizeContextManagementConfig(
       { responses: value.responses }
     : {}),
   }
+}
+
+function migrateRetiredRoleModels(config: AppConfig): {
+  mergedConfig: AppConfig
+  changed: boolean
+} {
+  const mergedConfig = { ...config }
+  let changed = false
+
+  for (const key of [
+    "alphaSearchModel",
+    "messageApiWebSearchModel",
+    "claudeAutoModel",
+  ] as const) {
+    if (mergedConfig[key] === "gpt-5-mini") {
+      mergedConfig[key] = "gpt-6-luna"
+      changed = true
+    }
+  }
+
+  return { mergedConfig, changed }
 }
 
 // responsesTransport was renamed to upstreamTransport, and headersTimeoutMsV2
@@ -531,11 +561,18 @@ export function mergeConfigWithDefaults(): AppConfig {
     mergedConfig: mergedConfigWithAdminApiKey,
     changed: adminApiKeyChanged,
   } = ensureAdminApiKey(mergedConfig)
-  const shouldPersistConfig = changed || adminApiKeyChanged
+  // Admin key setup may reread the file, so migrate models after it completes.
+  const { mergedConfig: migratedConfig, changed: modelsMigrated } =
+    migrateRetiredRoleModels(mergedConfigWithAdminApiKey)
+  const shouldPersistConfig = changed || adminApiKeyChanged || modelsMigrated
+
+  if (modelsMigrated) {
+    consola.info("Migrating retired role models: gpt-5-mini -> gpt-6-luna")
+  }
 
   if (shouldPersistConfig) {
     try {
-      writeConfigToDisk(mergedConfigWithAdminApiKey)
+      writeConfigToDisk(migratedConfig)
     } catch (writeError) {
       if (adminApiKeyChanged) {
         throw writeError
@@ -548,8 +585,8 @@ export function mergeConfigWithDefaults(): AppConfig {
     }
   }
 
-  cachedConfig = mergedConfigWithAdminApiKey
-  return mergedConfigWithAdminApiKey
+  cachedConfig = migratedConfig
+  return migratedConfig
 }
 
 // Authentication remains available even when a bulk-edited settings file is invalid.

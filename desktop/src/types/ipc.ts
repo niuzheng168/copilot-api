@@ -1,5 +1,18 @@
 import type { LangPreference } from '../locales'
 import type {
+  SubscriptionProvider,
+  SubscriptionUsage,
+} from '../../../src/lib/types/subscription-usage'
+export type { SubscriptionProvider, SubscriptionUsage }
+import type {
+  CreatedImage,
+  ImageCreationInput,
+  SaveMediaInput,
+  VideoCreationInput,
+  VideoCreationResult,
+} from './media'
+import type { ConfigEditorReply } from '../lib/config-editor-errors'
+import type {
   XaiAuthInfo,
   OAuthAccountSummary,
 } from '../../../src/lib/types/oauth'
@@ -50,8 +63,8 @@ export interface XaiLoginInput {
 }
 
 export type ProviderType =
-  'anthropic' | 'openai-compatible' | 'openai-responses'
-export type ProviderAuthType = 'authorization' | 'x-api-key'
+  'anthropic' | 'openai-compatible' | 'openai-responses' | 'google'
+export type ProviderAuthType = 'authorization' | 'x-api-key' | 'x-goog-api-key'
 export type ProviderAuthTypeInput = ProviderAuthType | '__default__'
 export interface ModelsDevProviderOption {
   id: string
@@ -88,6 +101,11 @@ export interface ServerStatus {
   error?: string
 }
 
+export interface ServerLogRecord {
+  sequence: number
+  text: string
+}
+
 export interface ServerAuthInfo {
   enabled: boolean
   headerName?: string
@@ -108,6 +126,24 @@ export interface ServerKeysConfigUpdate {
 export interface ModelMappingsConfig {
   configPath: string
   modelMappings: Record<string, string>
+}
+
+export interface AppConfigDocument {
+  configPath: string
+  content: string
+  revision: string
+  defaultContent: string
+}
+
+export interface AppConfigUpdate {
+  content: string
+  revision: string
+}
+
+export interface AppConfigSaveResult extends AppConfigDocument {
+  saved: true
+  applied: boolean
+  refreshError?: string
 }
 
 export type TokenUsagePeriod =
@@ -139,7 +175,13 @@ export interface TokenUsageTotals {
 }
 
 export interface TokenUsageModelSummary extends TokenUsageTotals {
+  average_first_token_ms: number | null
+  output_tokens_per_second: number | null
   model: string
+}
+
+export interface TokenUsageSessionSummary extends TokenUsageTotals {
+  session_id: string
 }
 
 export interface TokenUsageSummary {
@@ -176,10 +218,16 @@ export interface TokenUsageDailySummary {
 }
 
 export interface TokenUsageEventRecord {
+  request_id: string | null
+  first_token_ms: number | null
+  duration_ms: number | null
+  request_outcome: 'completed' | 'cancelled' | 'error' | null
+  output_tokens_per_second: number | null
   id: number
   created_at_ms: number
   created_at_utc: string
   trace_id: string
+  user_agent: string
   session_id: string
   user_id: string
   source: 'copilot' | 'provider'
@@ -209,6 +257,21 @@ export interface TokenUsageEventsPage {
   total_pages: number
 }
 
+export interface TokenUsageSessionsPage {
+  items: TokenUsageSessionSummary[]
+  page: number
+  page_size: number
+  period: TokenUsagePeriod
+  range: {
+    start_ms: number
+    end_ms: number
+    start_utc: string
+    end_utc: string
+  }
+  total: number
+  total_pages: number
+}
+
 export type ThemePreference = 'light' | 'dark' | 'auto'
 
 export interface AppUpdateStatus {
@@ -224,6 +287,7 @@ export interface AppUpdateStatus {
     | 'disabled'
   currentVersion: string
   manualInstall: boolean
+  packageReady?: boolean
   releaseUrl: string
   version?: string
   percent?: number
@@ -231,6 +295,14 @@ export interface AppUpdateStatus {
 }
 
 export type DesktopProxyMode = 'system' | 'custom' | 'direct'
+
+export type ServerRuntime = 'bun' | 'node'
+
+export interface BunRuntimeStatus {
+  available: boolean
+  version?: string
+  path?: string
+}
 
 export interface DesktopProxySettings {
   mode: DesktopProxyMode
@@ -240,6 +312,7 @@ export interface DesktopProxySettings {
 }
 
 export interface DesktopSettings {
+  serverRuntime: ServerRuntime
   apiHome: string
   sqliteDbPath: string
   oauthApp: 'default' | 'opencode'
@@ -252,6 +325,7 @@ export interface DesktopSettings {
   accountType: 'individual' | 'business' | 'enterprise'
   verbose: boolean
   showToken: boolean
+  showCreate: boolean
   language: LangPreference
   theme: ThemePreference
   proxy: DesktopProxySettings
@@ -290,14 +364,23 @@ declare global {
       stopServer: () => Promise<void>
       getServerStatus: () => Promise<ServerStatus>
       getSettings: () => Promise<DesktopSettings>
+      getBunRuntime: () => Promise<BunRuntimeStatus>
       getAppUpdateStatus: () => Promise<AppUpdateStatus>
       checkAppUpdate: () => Promise<AppUpdateStatus>
       installAppUpdate: () => Promise<AppUpdateStatus>
+      openAppUpdatePackage: (showInFolder?: boolean) => Promise<void>
       onAppUpdateStatus: (
         callback: (status: AppUpdateStatus) => void,
       ) => () => void
       saveSettings: (settings: DesktopSettings) => Promise<void>
       getModelMappingsConfig: () => Promise<ModelMappingsConfig>
+      getAppConfig: () => Promise<ConfigEditorReply<AppConfigDocument>>
+      saveAppConfig: (
+        input: AppConfigUpdate,
+      ) => Promise<ConfigEditorReply<AppConfigSaveResult>>
+      applyAppConfig: (
+        revision: string,
+      ) => Promise<ConfigEditorReply<AppConfigSaveResult>>
       getProviderManagementConfig: () => Promise<ProviderManagementConfig>
       saveProviderManagementConfig: (
         input: ProviderManagementUpdate,
@@ -307,11 +390,30 @@ declare global {
       ) => Promise<void>
       openUrl: (url: string) => Promise<void>
       fetchUsage: () => Promise<unknown>
+      fetchSubscriptionUsage: (
+        provider: SubscriptionProvider,
+      ) => Promise<SubscriptionUsage | null>
       fetchModels: () => Promise<unknown>
+      createImages: (
+        id: string,
+        input: ImageCreationInput,
+      ) => Promise<CreatedImage[]>
+      createVideo: (
+        id: string,
+        input: VideoCreationInput,
+      ) => Promise<VideoCreationResult>
+      getVideo: (id: string, requestId: string) => Promise<VideoCreationResult>
+      cancelMediaRequest: (id: string) => Promise<void>
+      saveMedia: (input: SaveMediaInput) => Promise<boolean>
       getProviderModelOptions: () => Promise<ProviderModelOptions>
       fetchTokenUsage: (period: TokenUsagePeriod) => Promise<unknown>
       fetchTokenUsageDaily: (period: TokenUsagePeriod) => Promise<unknown>
       fetchTokenUsageEvents: (
+        period: TokenUsagePeriod,
+        page: number,
+        pageSize: number,
+      ) => Promise<unknown>
+      fetchTokenUsageSessions: (
         period: TokenUsagePeriod,
         page: number,
         pageSize: number,
@@ -321,10 +423,11 @@ declare global {
       saveServerKeys: (
         keys: ServerKeysConfigUpdate,
       ) => Promise<ServerKeysConfig>
-      getLogs: () => Promise<string[]>
+      getLogs: () => Promise<ServerLogRecord[]>
+      clearLogs: () => Promise<number>
       onAuthSuccess: (callback: (result: AuthResult) => void) => () => void
       onServerStatus: (callback: (status: ServerStatus) => void) => () => void
-      onServerLog: (callback: (log: string) => void) => () => void
+      onServerLog: (callback: (log: ServerLogRecord) => void) => () => void
       platform: NodeJS.Platform
       windowReload: () => void
       windowMinimize: () => void

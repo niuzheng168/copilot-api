@@ -1,8 +1,5 @@
-import {
-  dashscopePeakWindows,
-  deepseekPeakWindows,
-} from "./token-usage/peak-windows"
 import type { TokenUsagePricingConfig } from "./token-usage/pricing"
+import { DEFAULT_IMAGE_MODELS } from "./image-models"
 import type { CodexReasoningEffort, ModelReasoningField } from "./config-store"
 import {
   getOpencodeGoModelConfig,
@@ -32,21 +29,10 @@ type BuiltinProviderModelCatalog = Record<
 >
 
 const CODEX_LUNA_PRICING: TokenUsagePricingConfig = {
-  tiers: [
-    {
-      cacheCreationInput: 0.125,
-      cachedInput: 0.01,
-      input: 0.1,
-      maxInputTokens: 272_000,
-      output: 0.5,
-    },
-    {
-      cacheCreationInput: 0.25,
-      cachedInput: 0.02,
-      input: 0.2,
-      output: 0.75,
-    },
-  ],
+  cacheCreationInput: 0.125,
+  cachedInput: 0.01,
+  input: 0.1,
+  output: 0.5,
 }
 
 export class BuiltinProviderModelRegistry {
@@ -55,100 +41,44 @@ export class BuiltinProviderModelRegistry {
     Readonly<BuiltinProviderModelConfig>
   > = {
     codex: { supportPdf: true },
-    xai: { supportPdf: true },
   }
 
   private static readonly catalog: BuiltinProviderModelCatalog = {
-    xai: {
-      "grok-4.7": {
-        contextWindow: 500_000,
-        maxOutputTokens: 500_000,
-        inputModalities: ["text", "image"],
-        reasoningEfforts: ["low", "medium", "high", "xhigh"],
-        defaultReasoningEffort: "high",
-        pricing: {
-          tiers: [
-            { cachedInput: 0.5, input: 2, output: 6, maxInputTokens: 200_000 },
-            { cachedInput: 1, input: 4, output: 12 },
-          ],
-        },
-      },
-    },
+    // ChatGPT-signed-in Codex has no >272K long-context pricing multiplier.
+    // https://help.openai.com/en/articles/20001415-chatgpt-rate-card-enterprise-token-based-pricing
     codex: {
       "codex-auto-review": { pricing: CODEX_LUNA_PRICING },
       "gpt-reserve": { pricing: CODEX_LUNA_PRICING },
-      "gpt-5.5": {
-        pricing: {
-          tiers: [
-            {
-              cachedInput: 0.5,
-              input: 5,
-              maxInputTokens: 272_000,
-              output: 30,
-            },
-            {
-              cachedInput: 1,
-              input: 10,
-              output: 45,
-            },
-          ],
-        },
-      },
       "gpt-5.6-sol": {
         pricing: {
-          tiers: [
-            {
-              cacheCreationInput: 5,
-              cachedInput: 0.4,
-              input: 4,
-              maxInputTokens: 272_000,
-              output: 20,
-            },
-            {
-              cacheCreationInput: 10,
-              cachedInput: 0.8,
-              input: 8,
-              output: 30,
-            },
-          ],
+          cacheCreationInput: 5,
+          cachedInput: 0.4,
+          input: 4,
+          output: 20,
         },
       },
       "gpt-5.6-terra": {
         pricing: {
-          tiers: [
-            {
-              cacheCreationInput: 2.5,
-              cachedInput: 0.2,
-              input: 2,
-              maxInputTokens: 272_000,
-              output: 12,
-            },
-            {
-              cacheCreationInput: 5,
-              cachedInput: 0.4,
-              input: 4,
-              output: 18,
-            },
-          ],
+          cacheCreationInput: 2.5,
+          cachedInput: 0.2,
+          input: 2,
+          output: 12,
         },
       },
       "gpt-5.6-luna": {
         pricing: {
-          tiers: [
-            {
-              cacheCreationInput: 0.25,
-              cachedInput: 0.02,
-              input: 0.2,
-              maxInputTokens: 272_000,
-              output: 1.2,
-            },
-            {
-              cacheCreationInput: 0.5,
-              cachedInput: 0.04,
-              input: 0.4,
-              output: 1.8,
-            },
-          ],
+          cacheCreationInput: 0.25,
+          cachedInput: 0.02,
+          input: 0.2,
+          output: 1.2,
+        },
+      },
+      "gpt-6-astra": {
+        pricing: {
+          cacheCreationInput: 12.5,
+          cachedInput: 1,
+          input: 10,
+          output: 50,
         },
       },
       "gpt-6-luna": {
@@ -156,243 +86,26 @@ export class BuiltinProviderModelRegistry {
       },
       "gpt-6-sol": {
         pricing: {
-          tiers: [
-            {
-              cacheCreationInput: 2.5,
-              cachedInput: 0.2,
-              input: 2,
-              maxInputTokens: 272_000,
-              output: 10,
-            },
-            {
-              cacheCreationInput: 5,
-              cachedInput: 0.4,
-              input: 4,
-              output: 15,
-            },
-          ],
+          cacheCreationInput: 2.5,
+          cachedInput: 0.2,
+          input: 2,
+          output: 10,
         },
       },
       "gpt-6.1-sol": {
         pricing: {
-          tiers: [
-            {
-              cacheCreationInput: 2.5,
-              cachedInput: 0.1,
-              input: 2,
-              maxInputTokens: 272_000,
-              output: 10,
-            },
-            {
-              cacheCreationInput: 5,
-              cachedInput: 0.2,
-              input: 4,
-              output: 15,
-            },
-          ],
-        },
-      },
-    },
-    dashscope: {
-      "glm-5.3": {
-        contextWindow: 1_000_000,
-        inputModalities: ["text"],
-        maxOutputTokens: 64_000,
-        pricing: {
-          cachedInput: 2,
-          input: 8,
-          output: 28,
-        },
-        reasoningEfforts: ["low", "high", "max"],
-      },
-      "deepseek-v4.1-flash": {
-        contextWindow: 1_000_000,
-        defaultReasoningEffort: "high",
-        inputModalities: ["text", "image"],
-        maxOutputTokens: 393_216,
-        pricing: {
-          cachedInput: 0.2,
-          input: 2,
-          offPeak: {
-            cachedInput: 0.1,
-            input: 1,
-            output: 4,
-          },
-          output: 8,
-          peakWindows: dashscopePeakWindows,
-        },
-        reasoningEfforts: ["low", "high", "max"],
-      },
-      "qwen3.8-max": {
-        contextWindow: 1_000_000,
-        defaultReasoningEffort: "xhigh",
-        inputModalities: ["text", "image"],
-        maxOutputTokens: 64_000,
-        pricing: {
-          cachedInput: 1.5,
-          cacheCreationInput: 15,
-          explicitCachedInput: 1,
-          input: 12,
-          output: 36,
-        },
-        reasoningEfforts: ["low", "medium", "xhigh"],
-      },
-      "qwen3.8-max-0902": {
-        contextWindow: 1_000_000,
-        defaultReasoningEffort: "xhigh",
-        inputModalities: ["text", "image"],
-        maxOutputTokens: 131_072,
-        pricing: {
-          cachedInput: 1.5,
-          cacheCreationInput: 15,
-          explicitCachedInput: 1,
-          input: 12,
-          output: 36,
-        },
-        reasoningEfforts: ["low", "medium", "xhigh"],
-      },
-      "qwen3.8-flash": {
-        contextWindow: 1_000_000,
-        defaultReasoningEffort: "xhigh",
-        inputModalities: ["text", "image"],
-        maxOutputTokens: 131_072,
-        pricing: {
+          cacheCreationInput: 2.5,
           cachedInput: 0.1,
+          input: 2,
+          output: 10,
+        },
+      },
+      "gpt-6.1-terra": {
+        pricing: {
           cacheCreationInput: 1.25,
-          explicitCachedInput: 0.1,
-          input: 0.8,
-          output: 2.7,
-        },
-        reasoningEfforts: ["low", "medium", "xhigh"],
-      },
-      "qwen3.7-plus": {
-        contextWindow: 1_000_000,
-        defaultReasoningEffort: "xhigh",
-        inputModalities: ["text", "image"],
-        maxOutputTokens: 64_000,
-        pricing: {
-          tiers: [
-            {
-              cachedInput: 0.4,
-              cacheCreationInput: 2.5,
-              explicitCachedInput: 0.2,
-              input: 2,
-              maxInputTokens: 256_000,
-              output: 8,
-            },
-            {
-              cachedInput: 1.2,
-              cacheCreationInput: 7.5,
-              explicitCachedInput: 0.6,
-              input: 6,
-              maxInputTokens: 1_000_000,
-              output: 24,
-            },
-          ],
-        },
-        reasoningEfforts: ["low", "medium", "xhigh"],
-      },
-      "kimi/kimi-k3": {
-        contextWindow: 1_048_576,
-        defaultReasoningEffort: "max",
-        inputModalities: ["text", "image"],
-        maxOutputTokens: 64_000,
-        pricing: {
-          cachedInput: 2,
-          input: 20,
-          output: 100,
-        },
-        reasoningEfforts: ["max"],
-      },
-      "ZHIPU/GLM-5.3": {
-        contextWindow: 1_048_576,
-        inputModalities: ["text"],
-        maxOutputTokens: 131_072,
-        pricing: {
-          cachedInput: 2,
-          input: 8,
-          output: 28,
-        },
-        reasoningEfforts: ["low", "high", "max"],
-      },
-      "ZHIPU/GLM-5.3-Flash": {
-        contextWindow: 1_048_576,
-        inputModalities: ["text", "image"],
-        maxOutputTokens: 131_072,
-        pricing: {
-          cachedInput: 0.23,
-          input: 0.8,
-          output: 2.8,
-        },
-        reasoningEfforts: ["low", "high", "max"],
-      },
-      "ZHIPU/GLM-5.3-FlashX": {
-        contextWindow: 1_048_576,
-        inputModalities: ["text", "image"],
-        maxOutputTokens: 131_072,
-        pricing: {
-          cachedInput: 0.57,
-          input: 2,
-          output: 7,
-        },
-        reasoningEfforts: ["low", "high", "max"],
-      },
-    },
-    deepseek: {
-      "deepseek-flash": {
-        contextWindow: 1_000_000,
-        inputModalities: ["text", "image"],
-        maxOutputTokens: 384_000,
-        pricing: {
-          cachedInput: 0.04,
-          input: 2,
-          offPeak: {
-            cachedInput: 0.02,
-            input: 1,
-            output: 4,
-          },
-          output: 8,
-          peakWindows: deepseekPeakWindows,
-        },
-        reasoningEfforts: ["low", "high", "max"],
-      },
-      "deepseek-v4-pro": {
-        contextWindow: 1_000_000,
-        inputModalities: ["text"],
-        maxOutputTokens: 64_000,
-        pricing: {
-          cachedInput: 0.3,
-          input: 9,
-          offPeak: {
-            cachedInput: 0.15,
-            input: 4.5,
-            output: 13.5,
-          },
-          output: 27,
-          peakWindows: deepseekPeakWindows,
-        },
-        reasoningEfforts: ["low", "high", "max"],
-      },
-    },
-    kimi: {
-      k3: {
-        contextWindow: 1_048_576,
-        inputModalities: ["text", "image"],
-        maxOutputTokens: 64_000,
-        pricing: {
-          cachedInput: 0.3,
-          input: 3,
-          output: 15,
-        },
-      },
-      "k3-256k": {
-        contextWindow: 262_144,
-        inputModalities: ["text", "image"],
-        maxOutputTokens: 64_000,
-        pricing: {
-          cachedInput: 0.3,
-          input: 3,
-          output: 15,
+          cachedInput: 0.05,
+          input: 1,
+          output: 5,
         },
       },
     },
@@ -434,6 +147,47 @@ export class BuiltinProviderModelRegistry {
 }
 
 export const builtinProviderModelRegistry = new BuiltinProviderModelRegistry()
+
+// Image endpoints support these models even when the upstream chat catalog
+// omits them. Keep them separate from models advertised to chat-only clients.
+const IMAGE_MODELS: Record<
+  string,
+  Array<{ id: string; name: string; family: string }>
+> = {
+  "github-copilot": [
+    {
+      id: DEFAULT_IMAGE_MODELS["github-copilot"],
+      name: "GPT Image 2.5 Flare",
+      family: "gpt-image",
+    },
+  ],
+  codex: [
+    {
+      id: DEFAULT_IMAGE_MODELS.codex,
+      name: "GPT Image 2",
+      family: "gpt-image",
+    },
+  ],
+  xai: [
+    {
+      id: DEFAULT_IMAGE_MODELS.xai,
+      name: "Grok Imagine Image 2.0",
+      family: "grok-imagine",
+    },
+  ],
+}
+
+export function getBuiltinProviderImageModelRecords(
+  provider: string,
+): Array<Record<string, unknown>> {
+  return (IMAGE_MODELS[provider] ?? []).map((model) => ({
+    ...model,
+    object: "model",
+    type: "image",
+    input_modalities: ["text", "image"],
+    output_modalities: ["image"],
+  }))
+}
 
 export function getBuiltinProviderModelRecords(
   provider: string,

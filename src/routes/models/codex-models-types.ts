@@ -17,6 +17,7 @@ export interface CodexModel {
   tool_mode: CodexToolMode | null
   multi_agent_version: CodexMultiAgentVersion | null
   use_responses_lite: boolean
+  supports_reasoning_effort_updates?: boolean
   include_skills_usage_instructions: boolean
   auto_review_model_override: string | null
   context_window: number
@@ -133,7 +134,7 @@ export interface CodexServiceTier {
 
 export interface CodexModelMessages {
   instructions_template: string
-  instructions_variables: CodexInstructionsVariables | null
+  instructions_variables?: CodexInstructionsVariables | null
   approvals: unknown
   auto_review: unknown
   permissions: unknown

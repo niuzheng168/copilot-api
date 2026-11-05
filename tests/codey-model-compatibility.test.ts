@@ -29,6 +29,8 @@ function evaluate(
     }),
   )
   const policyFile = path.join(directory, "codey-model-policy.json")
+  const settingsFile = path.join(directory, "codey-settings.json")
+  fs.writeFileSync(settingsFile, "{}\n", { mode: 0o600 })
   fs.writeFileSync(
     policyFile,
     JSON.stringify({
@@ -58,6 +60,7 @@ console.log(JSON.stringify({
       ...process.env,
       CODEY_MANAGED: String(managed),
       CODEY_MODEL_POLICY_FILE: policyFile,
+      CODEY_SETTINGS_FILE: settingsFile,
       COPILOT_API_HOME: directory,
       COPILOT_API_OAUTH_APP: "",
       COPILOT_API_ENTERPRISE_URL: "",

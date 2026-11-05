@@ -17,7 +17,7 @@ import type {
 
 import { installModelsDevCatalog } from "~/lib/models-dev-cache"
 import { createFallbackModel } from "~/lib/provider-model"
-import { RICH_TOOL_RESULT_MOVED_TEXT } from "~/routes/messages/non-stream-translation"
+import { RICH_TOOL_RESULT_MOVED_TEXT } from "~/routes/messages/completions-translation"
 
 import { modelsDevCatalogFixture } from "./fixtures/models-dev-catalog"
 
@@ -41,6 +41,7 @@ const getTokenCount = mock(
     Promise.resolve({ input: 40, output: 2 }),
 )
 const noopTokenUsageRecorder = () => {}
+let restoreTokenUsageRecorder = () => {}
 
 await mock.module("~/lib/config", () => ({
   ...actualConfigModule,
@@ -53,11 +54,6 @@ await mock.module("~/lib/config", () => ({
 
 await mock.module("~/lib/tokenizer", () => ({
   getTokenCount,
-}))
-
-await mock.module("~/lib/token-usage", () => ({
-  ...actualTokenUsageModule,
-  createProviderTokenUsageRecorder: () => noopTokenUsageRecorder,
 }))
 
 const { messageRoutes } = await import("~/routes/messages/route")
@@ -116,6 +112,11 @@ const createApp = () => {
 }
 
 beforeEach(() => {
+  const recorder = spyOn(
+    actualTokenUsageModule,
+    "createProviderTokenUsageRecorder",
+  ).mockImplementation(() => noopTokenUsageRecorder)
+  restoreTokenUsageRecorder = () => recorder.mockRestore()
   providerConfig = {
     apiKey: "provider-key",
     authType: "authorization",
@@ -138,6 +139,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  restoreTokenUsageRecorder()
   ;(globalThis as unknown as { fetch: typeof fetch }).fetch = originalFetch
   providerConfig = null
 })

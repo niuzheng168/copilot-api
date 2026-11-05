@@ -13,7 +13,6 @@ import { GITHUB_COPILOT_PROVIDER } from "~/lib/github-copilot-provider"
 import { stripInternalRequestHeaders } from "~/lib/internal-headers"
 import { resolveModelPdfSupport } from "~/lib/model-pdf-support"
 import { findEndpointModel } from "~/lib/models"
-import { getModelsDevModel } from "~/lib/models-dev-cache"
 import type { Reasoning } from "~/lib/types/responses"
 import {
   resolveProviderCurrency,
@@ -22,17 +21,17 @@ import {
 import {
   createModelListResponse,
   getAgentModels,
-  getFirstPositiveNumber,
   getRecordField,
   getStringField,
-  isRecord,
+  getStringList,
   type ClientModel,
 } from "~/routes/models/model-discovery"
+import { getModelMetadata } from "~/routes/models/model-metadata"
 
 const RESPONSES_PACKAGE = "@opencode/ai/providers/openai/responses"
-// OpenCode's cost schema is USD per million tokens. CNY prices (configured or
-// built in) are converted with this fixed rate; prices in any other currency
-// are not returned as USD.
+const IMAGES_PACKAGE = "@opencode/ai/providers/openai/images"
+// OpenCode's cost schema is USD per million tokens. Configured CNY prices
+// are converted with this fixed rate; other currencies are not returned as USD.
 const CNY_PER_USD = 6.7
 const COST_DECIMALS = 6
 
@@ -41,9 +40,10 @@ export interface OpencodeModel {
   id: string
   modelID: string
   providerID: string
+  type?: "chat" | "image" | "decision"
   name: string
   family?: string
-  package: typeof RESPONSES_PACKAGE
+  package: string
   capabilities: { tools: boolean; input: Array<string>; output: Array<string> }
   variants: Array<{ id: string; body: Record<string, unknown> }>
   time: { released: number }
@@ -136,24 +136,6 @@ function mapConfiguredCost(
   )
 }
 
-function positiveInteger(...values: Array<number | undefined>): number {
-  const value = values.find(
-    (value) =>
-      typeof value === "number" && Number.isFinite(value) && value >= 1,
-  )
-  return Math.floor(value ?? 0)
-}
-
-function stringList(value: unknown): Array<string> | undefined {
-  if (!Array.isArray(value)) return undefined
-  const strings = [
-    ...new Set(
-      value.filter((item): item is string => typeof item === "string"),
-    ),
-  ]
-  return strings.length > 0 ? strings : undefined
-}
-
 // Variant bodies go to the gateway's Responses endpoint. Keep its supported
 // reasoning.effort values and drop unknown catalog values such as "default".
 const RESPONSES_EFFORTS = new Set<string>([
@@ -173,24 +155,6 @@ function normalizeEffortValues(
   return [...new Set(efforts)]
 }
 
-function catalogEffortValues(
-  catalog: ModelsDevModel | undefined,
-): Array<string> | undefined {
-  // models.dev is external data; tolerate non-array options and null entries.
-  const options: unknown = catalog?.reasoning_options
-  if (!Array.isArray(options)) return undefined
-  const values: Array<string> = []
-  for (const option of options) {
-    if (!isRecord(option) || option.type !== "effort") continue
-    const optionValues: unknown = option.values
-    if (!Array.isArray(optionValues)) continue
-    for (const value of optionValues) {
-      if (typeof value === "string") values.push(value)
-    }
-  }
-  return stringList(values)
-}
-
 function toOpencodeModel(
   model: ClientModel,
   contextWindow: number,
@@ -203,71 +167,35 @@ function toOpencodeModel(
       (findEndpointModel(model.id)?.id ?? model.id)
     : model.id.slice(separator + 1)
   const config = getRawProviderConfig(provider)
-  const modelConfig = config?.models?.[rawId] ?? config?.models?.[model.id]
-  const builtin = builtinProviderModelRegistry.getModelConfig(provider, rawId)
-  const catalogProvider = config?.modelsDevProviderId || provider
-  const catalog = (getModelsDevModel(catalogProvider, rawId)
-    ?? getModelsDevModel(catalogProvider, model.id)) as
-    | ModelsDevModelWithMetadata
-    | undefined
-  const capabilities = getRecordField(model, "capabilities")
-  const supports = getRecordField(capabilities, "supports")
-  const limits = getRecordField(capabilities, "limits")
-  const context = positiveInteger(
-    modelConfig?.contextWindow,
-    getFirstPositiveNumber(limits, [
-      "max_context_window_tokens",
-      "max_prompt_tokens",
-    ]),
-    getFirstPositiveNumber(model, [
-      "context_window",
-      "context_length",
-      "max_context_length",
-      "max_model_len",
-    ]),
-    catalog?.limit?.context,
-    builtin?.contextWindow,
-    200_000,
-  )
-  const inputLimit = positiveInteger(
-    getFirstPositiveNumber(limits, ["max_prompt_tokens"]),
-    catalog?.limit?.input,
-  )
-  const supportedMediaTypes = stringList(
+  const metadata = getModelMetadata(provider, rawId, model, config)
+  const { modelConfig, defaults, capabilities, supports, limits } = metadata
+  const catalog = metadata.catalog as ModelsDevModelWithMetadata | undefined
+  const output =
+    getStringList(model.output_modalities)
+    ?? getStringList(catalog?.modalities?.output)
+    ?? (model.type === "image" ? ["image"] : ["text"])
+  const isImage = output.includes("image") && !output.includes("text")
+  const context = metadata.contextWindow ?? 256_000
+  const inputLimit = metadata.inputLimit ?? 0
+  const supportedMediaTypes = getStringList(
     getRecordField(limits, "vision")?.supported_media_types,
   )
-  const supportPdf = resolveModelPdfSupport(provider, {
-    supportPdf: modelConfig?.supportPdf,
-    supportedMediaTypes,
-    catalogInputModalities: catalog?.modalities?.input,
-    builtinSupportPdf:
-      builtin?.supportPdf
-      ?? builtinProviderModelRegistry.getProviderDefaults(provider)?.supportPdf,
-  })
-  const input = [
-    ...(stringList(modelConfig?.inputModalities)
-      ?? stringList(
-        model.input_modalities
-          ?? getRecordField(model, "modalities")?.input
-          ?? model.modalities
-          ?? getRecordField(model, "architecture")?.input_modalities,
-      )
-      ?? (typeof supports?.vision === "boolean" ?
-        ["text", ...(supports.vision ? ["image"] : [])]
-      : undefined)
-      ?? catalog?.modalities?.input
-      ?? builtin?.inputModalities ?? ["text"]),
-  ].filter((modality) => modality !== "pdf" || supportPdf)
-  if (supportPdf && !input.includes("pdf")) input.push("pdf")
-  const efforts = normalizeEffortValues(
-    stringList(
-      modelConfig?.reasoningEfforts
-        ?? model.reasoning_efforts
-        ?? supports?.reasoning_effort,
-    )
-      ?? catalogEffortValues(catalog)
-      ?? builtin?.reasoningEfforts,
+  const supportPdf =
+    !isImage
+    && resolveModelPdfSupport(provider, {
+      supportPdf: modelConfig?.supportPdf,
+      supportedMediaTypes,
+      catalogInputModalities: catalog?.modalities?.input,
+      builtinSupportPdf:
+        defaults?.supportPdf
+        ?? builtinProviderModelRegistry.getProviderDefaults(provider)
+          ?.supportPdf,
+    })
+  const input = metadata.inputModalities.filter(
+    (modality) => modality !== "pdf" || supportPdf,
   )
+  if (supportPdf && !input.includes("pdf")) input.push("pdf")
+  const efforts = normalizeEffortValues(metadata.reasoningEfforts)
   // OpenCode's cost schema is USD-only; CNY prices are converted at the fixed
   // CNY_PER_USD rate, while unsupported currencies fall through to the USD
   // models.dev catalog.
@@ -281,56 +209,57 @@ function toOpencodeModel(
     modelConfig?.pricing && configuredRate !== undefined ?
       mapConfiguredCost(modelConfig.pricing, configuredRate)
     : catalog?.cost ? mapCatalogCost(catalog.cost)
-    : builtin?.pricing && builtinRate !== undefined ?
-      mapConfiguredCost(builtin.pricing, builtinRate)
+    : defaults?.pricing && builtinRate !== undefined ?
+      mapConfiguredCost(defaults.pricing, builtinRate)
     : []
   const released = Date.parse(catalog?.release_date ?? "")
   return {
     id: model.id,
     modelID: model.id,
     providerID: "local",
+    ...(isImage && { type: "image" }),
     name: getStringField(model, "display_name") ?? catalog?.name ?? model.id,
-    family: catalog?.family ?? getStringField(capabilities ?? {}, "family"),
-    package: RESPONSES_PACKAGE,
+    family:
+      catalog?.family
+      ?? getStringField(model, "family")
+      ?? getStringField(capabilities ?? {}, "family"),
+    package: isImage ? IMAGES_PACKAGE : RESPONSES_PACKAGE,
     capabilities: {
       tools:
-        typeof supports?.tool_calls === "boolean" ?
-          supports.tool_calls
+        isImage ? false
+        : typeof supports?.tool_calls === "boolean" ? supports.tool_calls
         : (catalog?.tool_call ?? true),
       input: [...input],
-      output: [...(catalog?.modalities?.output ?? ["text"])],
+      output,
     },
-    variants: efforts.map((effort) => ({
-      id: effort,
-      body: { reasoning: { effort } },
-    })),
+    variants:
+      isImage ?
+        []
+      : efforts.map((effort) => ({
+          id: effort,
+          body: { reasoning: { effort } },
+        })),
     time: { released: Number.isFinite(released) ? released : 0 },
     cost,
     status: catalog?.status ?? (model.preview ? "beta" : "active"),
     enabled: true,
-    limit: {
-      context: Math.min(context, contextWindow),
-      ...(inputLimit > 0 && {
-        input: Math.min(inputLimit, context, contextWindow),
-      }),
-      output: Math.min(
-        context,
-        positiveInteger(
-          modelConfig?.maxOutputTokens,
-          getFirstPositiveNumber(limits, ["max_output_tokens"]),
-          getFirstPositiveNumber(model, ["max_output_tokens"]),
-          catalog?.limit?.output,
-          builtin?.maxOutputTokens,
-          32_000,
-        ),
-      ),
-    },
+    limit:
+      isImage ?
+        { context: 0, output: 0 }
+      : {
+          context: Math.min(context, contextWindow),
+          ...(inputLimit > 0 && {
+            input: Math.min(inputLimit, context, contextWindow),
+          }),
+          output: Math.min(context, metadata.maxOutputTokens ?? 32_000),
+        },
   }
 }
 
 export async function handleOpencodeModels(c: Context): Promise<Response> {
   const models = await getAgentModels(
     stripInternalRequestHeaders(c.req.raw.headers),
+    { includeImageModels: true },
   )
   const contextWindow = getOpencodeModelContextWindow()
   c.header("Cache-Control", "private, no-store")

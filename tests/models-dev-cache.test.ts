@@ -9,9 +9,11 @@ import { resolveTokenUsageCost } from "~/lib/token-usage/pricing"
 import {
   getModelsDevModelApi,
   getModelsDevModel,
+  getModelsDevModelConfig,
   getModelsDevModelMaxOutputTokens,
   getModelsDevModelPricing,
   getModelsDevModelProviderType,
+  getModelsDevProviderApi,
   getModelsDevProviderOptions,
   getModelsDevProviderModelIds,
   loadCachedModelsDevCatalog,
@@ -24,7 +26,10 @@ import {
   stopModelsDevRefreshLoop,
 } from "~/lib/models-dev-cache"
 
-import { modelsDevCatalogFixture } from "./fixtures/models-dev-catalog"
+import {
+  modelsDevCatalogFixture,
+  modelsDevReleaseModelsFixture,
+} from "./fixtures/models-dev-catalog"
 
 let tempDir: string | undefined
 
@@ -49,6 +54,108 @@ afterEach(async () => {
   await stopModelsDevRefreshLoop()
   if (tempDir) await fs.rm(tempDir, { recursive: true, force: true })
   tempDir = undefined
+})
+
+test.each([
+  { releaseDate: "2026-10-31", expected: "reasoning" as const },
+  { releaseDate: "2026-11-01", expected: undefined },
+  { releaseDate: "2026-11-02", expected: undefined },
+  { releaseDate: undefined, expected: undefined },
+  { releaseDate: "invalid", expected: undefined },
+])(
+  "limits the Hy reasoning field fallback by release date $releaseDate",
+  ({ releaseDate, expected }) => {
+    installModelsDevCatalog({
+      "opencode-go": {
+        models: {
+          hy: { id: "hy", family: "Hy", release_date: releaseDate },
+        },
+      },
+    })
+
+    const config = getModelsDevModelConfig("opencode-go", "hy")
+    expect(config).toBeDefined()
+    expect(config?.reasoningField).toBe(expected)
+    expect(
+      builtinProviderModelRegistry.getModelConfig("opencode-go", "hy")
+        ?.reasoningField,
+    ).toBe(expected)
+  },
+)
+
+test("preserves explicit reasoning metadata and scopes the date fallback to Hy", () => {
+  installModelsDevCatalog({
+    "opencode-go": {
+      models: {
+        explicit: {
+          id: "explicit",
+          family: "Hy",
+          release_date: "2026-10-31",
+          interleaved: { field: "reasoning_content" },
+        },
+        recent: {
+          id: "recent",
+          family: "Hy",
+          release_date: "2026-11-01",
+          interleaved: { field: "reasoning_content" },
+        },
+        other: { id: "other", family: "Other", release_date: "2026-10-31" },
+      },
+    },
+  })
+
+  for (const id of ["explicit", "recent"]) {
+    expect(getModelsDevModelConfig("opencode-go", id)?.reasoningField).toBe(
+      "reasoning_content",
+    )
+  }
+  expect(
+    getModelsDevModelConfig("opencode-go", "other")?.reasoningField,
+  ).toBeUndefined()
+})
+
+test("filters older releases consistently across models.dev lists, protocols, limits and pricing", () => {
+  const models = {
+    ...modelsDevReleaseModelsFixture,
+    "before-cutoff": {
+      ...modelsDevReleaseModelsFixture["before-cutoff"],
+      limit: { output: 32_000 },
+      cost: { input: 1, output: 2 },
+      provider: { api: "https://old.example/v1" },
+    },
+  }
+  const catalog = {
+    ...modelsDevCatalogFixture,
+    "opencode-go": { npm: "@ai-sdk/openai-compatible", models },
+    example: {
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://example.com/v1",
+      models,
+    },
+  }
+  const original = structuredClone(catalog)
+  installModelsDevCatalog(catalog)
+  const visibleIds = [
+    "after-cutoff",
+    "invalid-date",
+    "on-cutoff",
+    "unknown-date",
+  ]
+  expect(getOpencodeGoModelIds()).toEqual(visibleIds)
+  expect(getModelsDevProviderModelIds("example")).toEqual(visibleIds)
+  expect(getModelsDevModelConfig("example", "before-cutoff")).toBeUndefined()
+  expect(getModelsDevModelPricing("example", "before-cutoff")).toBeUndefined()
+  expect(
+    getModelsDevModelMaxOutputTokens("example", "before-cutoff"),
+  ).toBeUndefined()
+  expect(
+    getModelsDevModelProviderType("example", "before-cutoff"),
+  ).toBeUndefined()
+  expect(getModelsDevModelApi("example", "before-cutoff")).toBeUndefined()
+  expect(getModelsDevModelProviderType("example", "on-cutoff")).toBe(
+    "openai-compatible",
+  )
+  expect(catalog).toEqual(original)
 })
 
 test("exposes raw models.dev metadata even for providers excluded from the provider picker", () => {
@@ -77,6 +184,57 @@ test("exposes raw models.dev metadata even for providers excluded from the provi
   expect(getModelsDevModel("opencode-go", "missing")).toBeUndefined()
 })
 
+test.each([
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    npm: "@ai-sdk/anthropic",
+    api: "https://api.anthropic.com/v1",
+    type: "anthropic",
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    npm: "@ai-sdk/openai",
+    api: "https://api.openai.com/v1",
+    type: "openai-responses",
+  },
+  {
+    id: "google",
+    name: "Google",
+    npm: "@ai-sdk/google",
+    api: "https://generativelanguage.googleapis.com/v1beta",
+    type: "google",
+  },
+] as const)(
+  "uses the official provider API for $id when the catalog omits it",
+  (expected) => {
+    const { id, name, npm, api, type } = expected
+    const provider = { name, npm, models: { example: { id: "example" } } }
+    for (const missingApi of [undefined, null]) {
+      installModelsDevCatalog({
+        ...modelsDevCatalogFixture,
+        [id]: { ...provider, api: missingApi },
+      })
+      expect(getModelsDevProviderOptions()).toContainEqual({
+        id,
+        name,
+        api,
+        type,
+      })
+      expect(getModelsDevProviderApi(id)).toBe(api)
+      expect(getModelsDevProviderModelIds(id)).toEqual(["example"])
+      expect(getModelsDevModelProviderType(id, "example")).toBe(type)
+    }
+
+    installModelsDevCatalog({
+      ...modelsDevCatalogFixture,
+      [id]: { ...provider, api: " https://catalog.example/v2/// " },
+    })
+    expect(getModelsDevProviderApi(id)).toBe("https://catalog.example/v2")
+  },
+)
+
 test("lists usable Chat, Responses, and Anthropic providers without the built-in choices", async () => {
   installModelsDevCatalog({
     ...modelsDevCatalogFixture,
@@ -104,6 +262,13 @@ test("lists usable Chat, Responses, and Anthropic providers without the built-in
           id: "claude",
           provider: { npm: "@ai-sdk/anthropic" },
         },
+        gemini: {
+          id: "gemini",
+          provider: {
+            npm: "@ai-sdk/google",
+            api: "https://google.example/v1beta",
+          },
+        },
       },
     },
     "responses-provider": {
@@ -130,12 +295,15 @@ test("lists usable Chat, Responses, and Anthropic providers without the built-in
       api: "https://copilot.example/v1",
     },
     "missing-api": { npm: "@ai-sdk/openai-compatible" },
+    "missing-anthropic-api": { npm: "@ai-sdk/anthropic" },
+    "missing-openai-api": { npm: "@ai-sdk/openai" },
+    "missing-google-api": { npm: "@ai-sdk/google" },
     templated: {
       npm: "@ai-sdk/openai-compatible",
       api: "https://${ACCOUNT}.example/v1",
     },
     unsupported: {
-      npm: "@ai-sdk/google",
+      npm: "@ai-sdk/unsupported",
       api: "https://google.example/v1",
     },
   })
@@ -173,6 +341,12 @@ test("lists usable Chat, Responses, and Anthropic providers without the built-in
   )
   expect(getModelsDevModelProviderType("chat-provider", "claude")).toBe(
     "anthropic",
+  )
+  expect(getModelsDevModelProviderType("chat-provider", "gemini")).toBe(
+    "google",
+  )
+  expect(getModelsDevModelApi("chat-provider", "gemini")).toBe(
+    "https://google.example/v1beta",
   )
   expect(
     getModelsDevModelProviderType("responses-provider", "completion"),

@@ -21,6 +21,7 @@ export {
   getTokenUsageDailySummary,
   getTokenUsageEventsPage,
   getTokenUsageSessionsSummary,
+  getTokenUsageSessionsPage,
   getTokenUsageSummary,
   normalizeOptionalToken,
   normalizeToken,
@@ -36,8 +37,10 @@ export type {
   TokenUsageEventsPage,
   TokenUsageModelSummary,
   TokenUsagePeriod,
-  TokenUsageSessionSummary,
+  TokenUsageDetailedSessionSummary,
   TokenUsageSessionsSummary,
+  TokenUsageSessionsPage,
+  TokenUsageSessionSummary,
   TokenUsageSource,
   TokenUsageSummary,
   TokenUsageTotals,
@@ -45,6 +48,7 @@ export type {
 } from "./store"
 
 export interface TokenUsageEventInput extends UsageTokens {
+  upstreamRequestId?: string | null
   serviceTier?: string | null
   endpoint: TokenUsageEndpoint
   fallbackSessionId?: string | null
@@ -87,6 +91,7 @@ interface TokenUsageEventMap {
 }
 
 const tokenUsageEventBus = new EventBus<TokenUsageEventMap>()
+const USER_AGENT_MAX_LENGTH = 64
 
 function resolveTraceId(traceId: string | null | undefined): string {
   return (
@@ -116,13 +121,18 @@ function resolveUserId(input: TokenUsageEventInput): string {
 function toPersistedEvent(
   input: TokenUsageEventInput,
 ): PersistedTokenUsageEvent | null {
-  if (!hasAnyToken(input)) {
+  const now = new Date()
+  const cost = resolveTokenUsageCost({ ...input, at: now })
+  if (!hasAnyToken(input) && !cost) {
     return null
   }
 
-  const now = new Date()
-  const cost = resolveTokenUsageCost({ ...input, at: now })
+  const timing = requestContext.getStore()?.requestTiming
   return {
+    request_id: timing?.id ?? null,
+    first_token_ms: timing?.firstTokenMs ?? null,
+    duration_ms: timing?.durationMs ?? null,
+    request_outcome: timing?.outcome ?? null,
     cache_creation_input_tokens: normalizeToken(
       input.cache_creation_input_tokens,
     ),
@@ -149,7 +159,12 @@ function toPersistedEvent(
     total_cost_nanos: cost?.total_cost_nanos ?? null,
     total_tokens: resolveTotalTokens(input),
     trace_id: resolveTraceId(input.traceId),
+    user_agent: (requestContext.getStore()?.userAgent ?? "").slice(
+      0,
+      USER_AGENT_MAX_LENGTH,
+    ),
     user_id: resolveUserId(input),
+    upstream_request_id: input.upstreamRequestId?.trim() || null,
   }
 }
 
@@ -161,12 +176,22 @@ export function recordTokenUsageEvent(input: TokenUsageEventInput): void {
     return
   }
 
+  const observer = requestContext.getStore()?.pluginRequest
+  const timing = requestContext.getStore()?.requestTiming
+  if (timing) timing.hasUsage = true
+  observer?.setSessionId(event.session_id)
+  observer?.recordUsage(event)
   tokenUsageEventBus.publish("token_usage.recorded", event)
 }
 
 export function createTokenUsageRecorder(
   options: TokenUsageRecorderOptions,
 ): (usage: UsageTokens) => void {
+  requestContext
+    .getStore()
+    ?.pluginRequest?.setSessionId(
+      resolveTokenUsageSessionId(options.sessionId, options.fallbackSessionId),
+    )
   return (usage) => {
     recordTokenUsageEvent({
       ...usage,

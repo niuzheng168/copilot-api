@@ -40,6 +40,14 @@ const CODEX_MODELS: Array<CodexModelDefinition> = [
   },
   {
     contextWindow: 872_000,
+    id: "gpt-6-astra",
+    input: ["text", "image"],
+    maxTokens: 128_000,
+    name: "GPT-6 Astra",
+    reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
+  },
+  {
+    contextWindow: 872_000,
     id: "gpt-6-luna",
     input: ["text", "image"],
     maxTokens: 128_000,
@@ -62,6 +70,14 @@ const CODEX_MODELS: Array<CodexModelDefinition> = [
     name: "GPT-6.1 Sol",
     reasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
   },
+  {
+    contextWindow: 872_000,
+    id: "gpt-6.1-terra",
+    input: ["text", "image"],
+    maxTokens: 128_000,
+    name: "GPT-6.1 Terra",
+    reasoningEfforts: ["none", "low", "medium", "high", "xhigh", "max"],
+  },
   ...["codex-auto-review", "gpt-reserve"].map((id) => ({
     contextWindow: 872_000,
     id,
@@ -73,7 +89,7 @@ const CODEX_MODELS: Array<CodexModelDefinition> = [
 ]
 
 const CODEX_MODELS_URL = `${CODEX_API_BASE_URL}/codex/models`
-const CODEX_MODELS_TIMEOUT_MS = 15_000
+const CODEX_MODELS_TIMEOUT_MS = 3_000
 
 export function resolveCodexModelsUrl(requestUrl: string): string {
   const upstreamUrl = new URL(CODEX_MODELS_URL)

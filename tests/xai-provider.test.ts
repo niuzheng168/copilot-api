@@ -14,6 +14,9 @@ import { fileURLToPath } from "node:url"
 
 import type { ResolvedProviderConfig } from "~/lib/config"
 import type { ResponsesPayload } from "~/lib/types/responses"
+import { installModelsDevCatalog } from "~/lib/models-dev-cache"
+
+import { modelsDevProviderCatalogFixture } from "./fixtures/models-dev-catalog"
 
 // Existing route tests replace ES modules; run real-config integration checks
 // in a subprocess so those mocks cannot affect credential and account behavior.
@@ -30,13 +33,15 @@ if (process.env.COPILOT_API_XAI_TEST_PROCESS !== "1") {
           + new TextDecoder().decode(result.stderr),
       )
     expect(result.exitCode).toBe(0)
-  })
+  }, 30_000)
 } else {
   const { default: consola } = await import("consola")
   const { Hono } = await import("hono")
   const { runAuthLogin, runAuthAccounts } = await import("~/auth")
   const { modelRoutes } = await import("~/routes/models/route")
   const { providerModelRoutes } = await import("~/routes/provider/models/route")
+  const { imageRoutes } = await import("~/routes/images/route")
+  const { videoRoutes } = await import("~/routes/videos/route")
   const {
     getProviderConfig,
     getRawProviderConfig,
@@ -71,6 +76,7 @@ if (process.env.COPILOT_API_XAI_TEST_PROCESS !== "1") {
   let taskDir: string
 
   beforeEach(() => {
+    installModelsDevCatalog(modelsDevProviderCatalogFixture)
     taskDir = fs.mkdtempSync(path.join(os.tmpdir(), "copilot-api-xai-"))
     PATHS.APP_DIR = taskDir
     PATHS.CONFIG_PATH = path.join(taskDir, "config.json")
@@ -188,6 +194,158 @@ if (process.env.COPILOT_API_XAI_TEST_PROCESS !== "1") {
       )
       expect(fs.existsSync(PATHS.XAI_CREDENTIAL_PATH)).toBe(false)
     })
+
+    test.each(["oauth2", "authorization"] as const)(
+      "routes image model mappings with real %s provider resolution and ignores retired overrides",
+      async (authType) => {
+        if (authType === "oauth2") await persistXaiCredentials(credentials)
+        fs.writeFileSync(
+          PATHS.CONFIG_PATH,
+          JSON.stringify({
+            imageGenerationModel: "xai/retired-override",
+            imageEditModel: "xai/retired-edit-override",
+            modelMappings: { "gpt-image-1": "xai/grok-imagine-image-2.0" },
+            providers: {
+              xai: {
+                apiKey:
+                  authType === "authorization" ? "xai-api-key" : undefined,
+                authType,
+                baseUrl: "https://api.x.ai",
+                type: "openai-responses",
+              },
+            },
+          }),
+        )
+        invalidateConfigCache()
+        const requests: Array<{ url: string; init?: RequestInit }> = []
+        setFetch((input, init) => {
+          requests.push({
+            url: input instanceof Request ? input.url : input.toString(),
+            init,
+          })
+          return Promise.resolve(
+            Response.json({
+              created: null,
+              data: [{ b64_json: "image-bytes" }],
+            }),
+          )
+        })
+        const app = new Hono()
+        app.route("/v1/images", imageRoutes)
+        const response = await app.request("/v1/images/generations", {
+          body: JSON.stringify({
+            model: "gpt-image-1",
+            prompt: "ok",
+            quality: "high",
+          }),
+          headers: {
+            authorization: "Bearer gateway-key",
+            "content-type": "application/json",
+          },
+          method: "POST",
+        })
+        expect(response.status).toBe(200)
+        expect(requests).toHaveLength(1)
+        const { url, init } = requests[0]
+        expect(url).toBe(
+          authType === "oauth2" ?
+            "https://cli-chat-proxy.grok.com/v1/images/generations"
+          : "https://api.x.ai/v1/images/generations",
+        )
+        expect(new Headers(init?.headers).get("authorization")).toBe(
+          authType === "oauth2" ? "Bearer access-token" : "Bearer xai-api-key",
+        )
+        expect(await new Response(init?.body).json()).toEqual({
+          model: "grok-imagine-image-2.0",
+          prompt: "ok",
+          quality: "medium",
+          response_format: "b64_json",
+        })
+      },
+    )
+
+    test.each(["oauth2", "authorization"] as const)(
+      "routes video submissions and results with real %s provider resolution",
+      async (authType) => {
+        if (authType === "oauth2") await persistXaiCredentials(credentials)
+        fs.writeFileSync(
+          PATHS.CONFIG_PATH,
+          JSON.stringify({
+            modelMappings: { "my-video": "xai/grok-imagine-video-1.5" },
+            providers: {
+              xai: {
+                apiKey:
+                  authType === "authorization" ? "xai-api-key" : undefined,
+                authType,
+                baseUrl: "https://api.x.ai",
+                type: "openai-responses",
+              },
+            },
+          }),
+        )
+        invalidateConfigCache()
+        const resultBody = {
+          status: "done",
+          model: "grok-imagine-video-1.5",
+          video: { url: "https://vidgen.x.ai/clip.mp4", duration: 5 },
+        }
+        const requests: Array<{ url: string; init?: RequestInit }> = []
+        setFetch((input, init) => {
+          requests.push({
+            url: input instanceof Request ? input.url : input.toString(),
+            init,
+          })
+          return Promise.resolve(
+            Response.json(
+              init?.method === "POST" ?
+                { request_id: "video-job" }
+              : resultBody,
+            ),
+          )
+        })
+        const app = new Hono()
+        app.route("/v1/videos", videoRoutes)
+        const submitted = await app.request("/v1/videos/generations", {
+          method: "POST",
+          headers: { authorization: "Bearer gateway-key" },
+          body: JSON.stringify({
+            model: "my-video",
+            prompt: "A boat",
+            duration: 5,
+          }),
+        })
+        expect(submitted.status).toBe(200)
+        expect(await submitted.json()).toEqual({ request_id: "video-job" })
+        const result = await app.request("/v1/videos/video-job", {
+          headers: { authorization: "Bearer gateway-key" },
+        })
+        expect(result.status).toBe(200)
+        expect(await result.json()).toEqual(resultBody)
+        expect(requests).toHaveLength(2)
+        const baseUrl =
+          authType === "oauth2" ?
+            "https://cli-chat-proxy.grok.com"
+          : "https://api.x.ai"
+        expect(requests.map(({ url }) => url)).toEqual([
+          `${baseUrl}/v1/videos/generations`,
+          `${baseUrl}/v1/videos/video-job`,
+        ])
+        for (const { init } of requests) {
+          expect(new Headers(init?.headers).get("authorization")).toBe(
+            authType === "oauth2" ?
+              "Bearer access-token"
+            : "Bearer xai-api-key",
+          )
+        }
+        expect(await new Response(requests[0].init?.body).json()).toEqual({
+          model: "grok-imagine-video-1.5",
+          prompt: "A boat",
+          duration: 5,
+        })
+        expect(requests[1].init?.method).toBe("GET")
+        expect(requests[1].init?.body).toBeUndefined()
+      },
+    )
 
     test.each([
       ["https://api.x.ai/", "https://cli-chat-proxy.grok.com"],
@@ -380,7 +538,7 @@ if (process.env.COPILOT_API_XAI_TEST_PROCESS !== "1") {
       expect(consola.log).not.toHaveBeenCalledWith("cli-access")
     })
 
-    test("lists only builtin Grok 4.7 in provider and aggregated model endpoints without upstream discovery", async () => {
+    test("combines cached xAI chat models and built-in images in aggregated discovery without upstream requests", async () => {
       await persistXaiCredentials(credentials)
       const upstream = mock(() =>
         Promise.reject(new Error("Model listing must stay local")),
@@ -394,13 +552,27 @@ if (process.env.COPILOT_API_XAI_TEST_PROCESS !== "1") {
         data: Array<{ id: string; context_window: number }>
       }
       expect(raw.status).toBe(200)
-      expect(body.data.map((model) => model.id)).toEqual(["grok-4.7"])
+      expect(body.data.map((model) => model.id)).toEqual([
+        "grok-4.7",
+        "grok-catalog-only",
+      ])
       expect(body.data[0].context_window).toBe(500_000)
       const aggregated = await app.request("/v1/models")
       const models = (await aggregated.json()) as {
         data: Array<{ id: string }>
       }
-      expect(models.data.map((model) => model.id)).toEqual(["xai/grok-4.7"])
+      expect(models.data.map((model) => model.id)).toEqual([
+        "xai/grok-4.7",
+        "xai/grok-catalog-only",
+        "xai/grok-imagine-image-2.0",
+      ])
+      expect(
+        models.data.find((model) => model.id === "xai/grok-imagine-image-2.0"),
+      ).toMatchObject({
+        type: "image",
+        input_modalities: ["text", "image"],
+        output_modalities: ["image"],
+      })
       expect(upstream).not.toHaveBeenCalled()
       const codex = await app.request("/v1/models", {
         headers: { "user-agent": "codex/1.0" },

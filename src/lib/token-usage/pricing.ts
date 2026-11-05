@@ -1,12 +1,18 @@
 import { builtinProviderModelRegistry } from "../builtin-provider-models"
+import { getModelsDevModelPricing } from "../models-dev-cache"
+import {
+  resolveProviderModelsDevId,
+  usesModelsDevModelCatalog,
+} from "../provider-model-catalog"
 import type { TokenUsagePeakWindow } from "./peak-windows"
+import { resolveBuiltinImageCost } from "./image-pricing"
 import {
   normalizeToken,
+  type TokenUsageEndpoint,
   type TokenUsageSource,
   type UsageTokens,
 } from "./store"
 
-export { dashscopePeakWindows, deepseekPeakWindows } from "./peak-windows"
 export type { TokenUsagePeakWindow } from "./peak-windows"
 
 export interface TokenUsagePricingTier {
@@ -33,6 +39,7 @@ export interface CalculatedTokenUsageCost {
 }
 
 export interface TokenUsageCostInput extends UsageTokens {
+  endpoint?: TokenUsageEndpoint
   serviceTier?: string | null
   // Timestamp used to pick peak or off-peak prices; defaults to the current
   // time when omitted.
@@ -47,6 +54,7 @@ export interface TokenUsageCostInput extends UsageTokens {
 interface ResolvedPricing {
   pricing: TokenUsagePricingConfig
   source: string
+  currency?: string
 }
 
 const COST_NANOS_PER_UNIT = 1_000_000_000
@@ -67,7 +75,9 @@ export function resolveTokenUsageCost(
 ): CalculatedTokenUsageCost | null {
   if (
     input.source === "provider"
-    && input.providerName?.trim().toLowerCase() === "openrouter"
+    && ["openrouter", "xai"].includes(
+      input.providerName?.trim().toLowerCase() ?? "",
+    )
   ) {
     const reportedCost = resolveReportedProviderCost(input)
     if (reportedCost) {
@@ -84,6 +94,15 @@ export function resolveTokenUsageCost(
     return null
   }
 
+  if (
+    providerName.toLowerCase() === "codex"
+    && !input.pricing
+    && (input.endpoint === "images_generations"
+      || input.endpoint === "images_edits")
+  ) {
+    return resolveBuiltinImageCost(input)
+  }
+
   const resolvedPricing = resolveProviderPricing(
     providerName,
     input.model,
@@ -98,7 +117,9 @@ export function resolveTokenUsageCost(
     getInputTokenTotal(input),
     resolvePricingTime(input.at),
   )
-  const currency = resolveProviderCurrency(providerName, input.pricingCurrency)
+  const currency =
+    resolvedPricing.currency
+    ?? resolveProviderCurrency(providerName, input.pricingCurrency)
   if (!currency) {
     return null
   }
@@ -173,6 +194,12 @@ export function getCostAmount(totalCostNanos: number): number {
   return totalCostNanos / COST_NANOS_PER_UNIT
 }
 
+export function xaiUsdTicksToCost(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ?
+      value / 10_000_000_000
+    : undefined
+}
+
 function resolveCopilotCost(
   input: TokenUsageCostInput,
 ): CalculatedTokenUsageCost | null {
@@ -205,6 +232,14 @@ function resolveProviderPricing(
       pricing: configuredPricing,
       source: "config",
     }
+  }
+
+  if (usesModelsDevModelCatalog(providerName)) {
+    const pricing = getModelsDevModelPricing(
+      resolveProviderModelsDevId(providerName),
+      model,
+    )
+    if (pricing) return { pricing, source: "models.dev", currency: "USD" }
   }
 
   const pricingModel =

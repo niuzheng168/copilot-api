@@ -19,6 +19,7 @@ import {
 import { getUpstreamTransportConfig } from "~/lib/config"
 import { logCopilotRateLimits } from "~/lib/copilot-rate-limit"
 import { HTTPError } from "~/lib/error"
+import { setPluginRequestActualModel } from "~/lib/request-context"
 import { state } from "~/lib/state"
 import { parseUserIdMetadata } from "~/lib/utils"
 import { fetchUpstreamWithLifecycle } from "~/services/upstream-http"
@@ -34,6 +35,8 @@ const allowedAnthropicBetas = new Set([
   "context-management-2025-06-27",
   ADVANCED_TOOL_USE_BETA,
   EXTENDED_CACHE_TTL_BETA,
+  "mid-conversation-output-config-2026-07-01",
+  "per-turn-control-2026-07-01",
 ])
 
 export const buildAnthropicBetaHeader = (
@@ -136,6 +139,7 @@ export const createMessages = async (
   consola.log(`<-- model: ${payload.model}`)
 
   const transportConfig = getUpstreamTransportConfig()
+  setPluginRequestActualModel(payload.model)
   const response = await fetchUpstreamWithLifecycle(
     `${copilotBaseUrl(state)}/v1/messages`,
     {

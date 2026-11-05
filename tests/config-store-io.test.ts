@@ -10,12 +10,17 @@ import {
   getMessageApiWebSearchModel,
   getOpencodeModelContextWindow,
   invalidateConfigCache,
+  mergeConfigWithDefaults,
   reloadConfig,
   setConfiguredApiKeys,
   writeConfigToDisk,
   type AppConfig,
 } from "~/lib/config-store"
-import { getSmallModel, getSmallModelForProvider } from "~/lib/model-policy"
+import {
+  getSmallModel,
+  getSmallModelForProvider,
+  isOutputEncryptedContentDisabled,
+} from "~/lib/model-policy"
 import { PATHS } from "~/lib/paths"
 import { state } from "~/lib/state"
 
@@ -102,8 +107,11 @@ test("reloadConfig creates a default config when it is missing", () => {
   })
   expect(config.alphaSearchModel).toBe("gpt-6-luna")
   expect(config.messageApiWebSearchModel).toBe("gpt-6-luna")
-  expect(config.opencodeModelContextWindow).toBe(300_000)
-  expect(getOpencodeModelContextWindow()).toBe(300_000)
+  expect(config.opencodeModelContextWindow).toBe(400_000)
+  expect(config.noEncryptedOutputModels).toEqual([])
+  expect(config.codexMultiAgentV1).toBe(false)
+  expect(isOutputEncryptedContentDisabled("gpt-6-astra")).toBe(false)
+  expect(getOpencodeModelContextWindow()).toBe(400_000)
   expect(config.extraPrompts).toBeUndefined()
   expect(config.modelReasoningEfforts).toBeUndefined()
   if (process.platform !== "win32") {
@@ -111,46 +119,91 @@ test("reloadConfig creates a default config when it is missing", () => {
   }
 })
 
+test("reloads Codex Multi-Agent V1 changes saved through the config store", () => {
+  useTempConfigPath()
+  for (const codexMultiAgentV1 of [true, false]) {
+    writeConfigToDisk({ codexMultiAgentV1 })
+    expect(reloadConfig().codexMultiAgentV1).toBe(codexMultiAgentV1)
+  }
+})
+
 test.each([
-  { configured: undefined, expected: 300_000 },
-  { configured: 150_000, expected: 150_000 },
-  { configured: 600_000, expected: 600_000 },
-  { configured: 150_000.9, expected: 150_000 },
-  { configured: 1, expected: 1 },
-  { configured: 0, expected: 300_000 },
-  { configured: -1, expected: 300_000 },
-  { configured: 0.5, expected: 300_000 },
-  { configured: null, expected: 300_000 },
-  { configured: "600000", expected: 300_000 },
-  { configured: true, expected: 300_000 },
-  { configured: {}, expected: 300_000 },
-  { configured: [], expected: 300_000 },
+  { configured: undefined, expected: false },
+  { configured: [], expected: false },
+  { configured: ["gpt-6-astra"], expected: true },
+  { configured: ["gpt-6-luna"], expected: false },
+  { configured: ["gpt-6-astra-preview"], expected: false },
+  { configured: null, expected: false },
+  { configured: "gpt-6-astra", expected: false },
+  { configured: {}, expected: false },
 ])(
-  "normalizes and persists the OpenCode context window setting %j",
+  "matches only exact encrypted output exclusions from config %j",
   ({ configured, expected }) => {
     const configPath = useTempConfigPath()
     fs.writeFileSync(
       configPath,
-      JSON.stringify({
-        ...defaultConfig,
-        auth: { adminApiKey: "existing-admin-key" },
-        opencodeModelContextWindow: configured,
-      }),
+      JSON.stringify({ noEncryptedOutputModels: configured }),
       "utf8",
     )
+    invalidateConfigCache()
 
-    expect(reloadConfig().opencodeModelContextWindow).toBe(expected)
+    expect(isOutputEncryptedContentDisabled("gpt-6-astra")).toBe(expected)
+  },
+)
+
+test("reloadConfig refreshes and clears encrypted output model exclusions", () => {
+  useTempConfigPath()
+  for (const models of [["gpt-6-astra"], ["gpt-6-luna"], []]) {
+    writeConfigToDisk({
+      auth: { adminApiKey: "existing-admin-key" },
+      noEncryptedOutputModels: models,
+    })
+    expect(reloadConfig().noEncryptedOutputModels).toEqual(models)
+    expect(isOutputEncryptedContentDisabled("gpt-6-astra")).toBe(
+      models.includes("gpt-6-astra"),
+    )
+    expect(isOutputEncryptedContentDisabled("gpt-6-luna")).toBe(
+      models.includes("gpt-6-luna"),
+    )
+  }
+})
+
+test.each([
+  { configured: undefined, expected: 400_000 },
+  { configured: 150_000, expected: 150_000 },
+  { configured: 300_000, expected: 300_000 },
+  { configured: 600_000, expected: 600_000 },
+  { configured: 150_000.9, expected: 150_000 },
+  { configured: 1, expected: 1 },
+  { configured: 0, expected: 400_000 },
+  { configured: -1, expected: 400_000 },
+  { configured: 0.5, expected: 400_000 },
+  { configured: null, expected: 400_000 },
+  { configured: "600000", expected: 400_000 },
+  { configured: true, expected: 400_000 },
+  { configured: {}, expected: 400_000 },
+  { configured: [], expected: 400_000 },
+])(
+  "normalizes the OpenCode context window on read without rewriting config %j",
+  ({ configured, expected }) => {
+    const configPath = useTempConfigPath()
+    const storedConfig = JSON.stringify({
+      ...defaultConfig,
+      auth: { adminApiKey: "existing-admin-key" },
+      opencodeModelContextWindow: configured,
+    })
+    fs.writeFileSync(configPath, storedConfig, "utf8")
+
+    reloadConfig()
     expect(getOpencodeModelContextWindow()).toBe(expected)
-    const storedConfig = fs.readFileSync(configPath, "utf8")
-    expect(
-      (JSON.parse(storedConfig) as AppConfig).opencodeModelContextWindow,
-    ).toBe(expected)
-    expect(reloadConfig().opencodeModelContextWindow).toBe(expected)
+    expect(fs.readFileSync(configPath, "utf8")).toBe(storedConfig)
+    reloadConfig()
+    expect(getOpencodeModelContextWindow()).toBe(expected)
     expect(fs.readFileSync(configPath, "utf8")).toBe(storedConfig)
   },
 )
 
-test("uses the default OpenCode context ceiling on a lazy read without rewriting legacy config", () => {
+test("uses the default OpenCode context ceiling on a lazy read and reload without rewriting legacy config", () => {
   const configPath = useTempConfigPath()
   const legacyConfig = JSON.stringify({
     ...defaultConfig,
@@ -160,13 +213,11 @@ test("uses the default OpenCode context ceiling on a lazy read without rewriting
   fs.writeFileSync(configPath, legacyConfig, "utf8")
   invalidateConfigCache()
 
-  expect(getOpencodeModelContextWindow()).toBe(300_000)
+  expect(getOpencodeModelContextWindow()).toBe(400_000)
   expect(fs.readFileSync(configPath, "utf8")).toBe(legacyConfig)
   reloadConfig()
-  expect(
-    (JSON.parse(fs.readFileSync(configPath, "utf8")) as AppConfig)
-      .opencodeModelContextWindow,
-  ).toBe(300_000)
+  expect(getOpencodeModelContextWindow()).toBe(400_000)
+  expect(fs.readFileSync(configPath, "utf8")).toBe(legacyConfig)
 })
 
 test("reloadConfig refreshes an explicitly configured OpenCode context ceiling", () => {
@@ -199,6 +250,72 @@ test("small and search model getters use gpt-6-luna when config fields are absen
   expect(getMessageApiWebSearchModel()).toBe("gpt-6-luna")
   expect(getClaudeAutoModel()).toBeUndefined()
 })
+
+test.each([undefined, "existing-admin-key"])(
+  "startup migrates retired role models with admin key %j and persists once",
+  (adminApiKey) => {
+    const configPath = useTempConfigPath()
+    const legacyConfig: AppConfig = {
+      ...defaultConfig,
+      auth: { apiKeys: ["existing-api-key"], adminApiKey },
+      alphaSearchModel: "gpt-5-mini",
+      messageApiWebSearchModel: "gpt-5-mini",
+      claudeAutoModel: "gpt-5-mini",
+      modelMappings: { "gpt-5-mini": "custom/gpt-5-mini" },
+      extraPrompts: { "gpt-5-mini": "custom prompt" },
+      modelReasoningEfforts: { "gpt-5-mini": "low" },
+      providers: { custom: { apiKey: "provider-key" } },
+    }
+    fs.writeFileSync(configPath, JSON.stringify(legacyConfig), "utf8")
+
+    const config = mergeConfigWithDefaults()
+
+    expect(config).toMatchObject({
+      ...legacyConfig,
+      auth: {
+        apiKeys: ["existing-api-key"],
+        ...(adminApiKey ? { adminApiKey } : {}),
+      },
+      alphaSearchModel: "gpt-6-luna",
+      messageApiWebSearchModel: "gpt-6-luna",
+      claudeAutoModel: "gpt-6-luna",
+    })
+    expect(config.auth?.adminApiKey).toBeTruthy()
+    const storedConfig = fs.readFileSync(configPath, "utf8")
+    expect(JSON.parse(storedConfig)).toEqual(config)
+    expect(getAlphaSearchModel()).toBe("gpt-6-luna")
+    expect(getMessageApiWebSearchModel()).toBe("gpt-6-luna")
+    expect(getClaudeAutoModel()).toBe("gpt-6-luna")
+
+    fs.utimesSync(configPath, 1, 1)
+    const modifiedTime = fs.statSync(configPath).mtimeMs
+    expect(mergeConfigWithDefaults()).toEqual(config)
+    expect(fs.readFileSync(configPath, "utf8")).toBe(storedConfig)
+    expect(fs.statSync(configPath).mtimeMs).toBe(modifiedTime)
+  },
+)
+
+test.each(["", "custom/gpt-5-mini", "gpt-5-mini-custom", "gpt-6-luna"])(
+  "startup preserves explicit role model setting %j without rewriting the file",
+  (model) => {
+    const configPath = useTempConfigPath()
+    const config: AppConfig = {
+      ...defaultConfig,
+      auth: { adminApiKey: "existing-admin-key" },
+      alphaSearchModel: model,
+      messageApiWebSearchModel: model,
+      claudeAutoModel: model,
+    }
+    const storedConfig = JSON.stringify(config)
+    fs.writeFileSync(configPath, storedConfig, "utf8")
+    fs.utimesSync(configPath, 1, 1)
+    const modifiedTime = fs.statSync(configPath).mtimeMs
+
+    expect(mergeConfigWithDefaults()).toEqual(config)
+    expect(fs.readFileSync(configPath, "utf8")).toBe(storedConfig)
+    expect(fs.statSync(configPath).mtimeMs).toBe(modifiedTime)
+  },
+)
 
 test.each<{
   name: string
@@ -475,4 +592,41 @@ test("setConfiguredApiKeys can clear all keys", () => {
   const config = JSON.parse(fs.readFileSync(configPath, "utf8")) as StoredConfig
   expect(config.auth.apiKeys).toEqual([])
   expect(config.auth.adminApiKey).toBe("admin-key")
+})
+
+test("reloadConfig preserves extension fields when persisting normalized defaults", () => {
+  const configPath = useTempConfigPath()
+  fs.writeFileSync(
+    configPath,
+    JSON.stringify({
+      auth: { adminApiKey: "test-admin" },
+      futureRoot: { keep: true },
+      contextManagement: { messages: false, futureContext: { keep: true } },
+      upstreamTransport: {
+        headersTimeoutMs: 1234,
+        futureTransport: { keep: true },
+      },
+    }),
+  )
+  reloadConfig()
+  const persisted = JSON.parse(fs.readFileSync(configPath, "utf8")) as {
+    futureRoot: { keep: boolean }
+    contextManagement: {
+      messages: boolean
+      responses: boolean
+      futureContext: { keep: boolean }
+    }
+    upstreamTransport: {
+      headersTimeoutMs: number
+      futureTransport: { keep: boolean }
+    }
+  }
+  expect(persisted.futureRoot).toEqual({ keep: true })
+  expect(persisted.contextManagement).toEqual({
+    messages: false,
+    responses: false,
+    futureContext: { keep: true },
+  })
+  expect(persisted.upstreamTransport.headersTimeoutMs).toBe(1234)
+  expect(persisted.upstreamTransport.futureTransport).toEqual({ keep: true })
 })
