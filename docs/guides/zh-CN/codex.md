@@ -79,7 +79,37 @@ enabled = false
 >
 > 使用 Codex 需先通过 ChatGPT 或 API Key 登录。`requires_openai_auth = true` 用于在 UI 中显示登录账号信息，ChatGPT 登录时还可显示额度和订阅信息；请求鉴权仍优先使用 `env_key`。如需绕过 Codex 客户端的账号限制，可尝试设为 `false`。注意：设为 `false` 后，桌面应用会隐藏 Remote（**Settings → Connections** 中的 **Control this Mac**）（[openai/codex#36879](https://github.com/openai/codex/issues/36879)）。
 >
-> `GITHUB_COPILOT_API_KEY` 需设置为系统级用户环境变量，以便 Codex 应用也能读取。填写任一[网关 API Key](cli.md#auth-命令选项)；未配置 Key 时，填写任意非空占位值即可。未设置时，Codex 会报 `Missing environment variable` 错误。
+> `GITHUB_COPILOT_API_KEY` 用于网关鉴权。填写任一[网关 API Key](cli.md#auth-命令选项)；未配置 Key 时，填写任意非空占位值即可。未设置时，Codex 会报 `Missing environment variable` 错误。
+
+### 设置 `GITHUB_COPILOT_API_KEY` 环境变量
+
+网关未配置 API Key 时，可使用 `dummy` 占位；启用鉴权时请换成实际 API Key。
+
+**macOS（终端）：**
+
+```sh
+launchctl setenv GITHUB_COPILOT_API_KEY dummy
+```
+
+此命令设置当前用户登录会话的环境变量，供之后从 Dock/Finder 启动的应用读取。设置后完全退出（`⌘Q`）并重新打开 Codex；使用 CLI 时也需完全退出并重新打开终端应用。注销或重启 macOS 后需重新执行。
+
+**Linux（终端）：**
+
+在所用 shell 的启动文件中加入以下行（Bash 为 `~/.bashrc`，Zsh 为 `~/.zshrc`），然后重新打开终端：
+
+```sh
+export GITHUB_COPILOT_API_KEY=dummy
+```
+
+该配置会长期生效。修改已有值后还需完全退出并重新打开 Codex。
+
+**Windows（CMD / PowerShell）：**
+
+```sh
+setx GITHUB_COPILOT_API_KEY dummy
+```
+
+此命令保存当前用户的环境变量。设置后完全退出并重新打开 Codex 或终端，使新环境变量生效。
 
 ### 自动审核模型映射
 

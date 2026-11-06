@@ -77,7 +77,37 @@ enabled = false
 >
 > Sign in to Codex with ChatGPT or an API key before use. `requires_openai_auth = true` shows account information in the UI, plus quota usage and subscription details for ChatGPT sign-in; request authentication still prioritizes `env_key`. To bypass account restrictions in the Codex client, try setting it to `false`. Note that `false` also hides Remote (**Control this Mac** under **Settings → Connections**) in the desktop app ([openai/codex#36879](https://github.com/openai/codex/issues/36879)).
 >
-> Set `GITHUB_COPILOT_API_KEY` as a system-level user environment variable so the Codex app can read it too. Use one of the [gateway API keys](cli.md#auth-command-options), or any non-empty placeholder when none are configured; if it is unset, Codex fails with a `Missing environment variable` error.
+> `GITHUB_COPILOT_API_KEY` authenticates requests to the gateway. Use one of the [gateway API keys](cli.md#auth-command-options), or any non-empty placeholder when none are configured; if it is unset, Codex fails with a `Missing environment variable` error.
+
+### Set the `GITHUB_COPILOT_API_KEY` Environment Variable
+
+Use `dummy` as a placeholder if gateway API key authentication is disabled; otherwise use your actual gateway API key.
+
+**macOS (Terminal):**
+
+```sh
+launchctl setenv GITHUB_COPILOT_API_KEY dummy
+```
+
+This sets the variable for your current login session, including apps subsequently launched from Dock or Finder. Fully quit (`⌘Q`) and reopen Codex; for CLI use, fully quit and reopen your terminal app as well. Run the command again after logging out or restarting macOS.
+
+**Linux (Terminal):**
+
+Add the following line to your shell startup file (`~/.bashrc` for Bash or `~/.zshrc` for Zsh), then open a new terminal:
+
+```sh
+export GITHUB_COPILOT_API_KEY=dummy
+```
+
+The setting persists across new terminal sessions. Fully quit and reopen Codex after changing an existing value.
+
+**Windows (Command Prompt / PowerShell):**
+
+```sh
+setx GITHUB_COPILOT_API_KEY dummy
+```
+
+This saves a user environment variable. Fully quit and reopen Codex or your terminal to pick up the new value.
 
 ### Auto Review Model Mapping
 
