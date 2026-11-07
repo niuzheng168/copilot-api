@@ -3,6 +3,7 @@ import type { Context } from "hono"
 
 import { streamSSE, type SSEMessage } from "hono/streaming"
 
+import { guardChatCompletionsStream } from "~/lib/chat-completions-stream"
 import { resolveMappedModel } from "~/lib/config"
 import { recordChatCompletionFirstToken } from "~/lib/first-token"
 import { createHandlerLogger, debugJson } from "~/lib/logger"
@@ -19,13 +20,16 @@ import {
 import { generateRequestIdFromPayload, getUUID, isNullish } from "~/lib/utils"
 import { handleProviderChatCompletionsForProvider } from "~/routes/provider/chat-completions/handler"
 import type {
-  ChatCompletionChunk,
   ChatCompletionResponse,
   ChatCompletionsPayload,
 } from "~/lib/types/chat-completions"
 import { createChatCompletions } from "~/services/copilot/create-chat-completions"
 
 const logger = createHandlerLogger("chat-completions-handler")
+
+export const chatCompletionsHandlerDependencies = {
+  createChatCompletions,
+}
 
 export async function handleCompletion(c: Context) {
   let payload = await c.req.json<ChatCompletionsPayload>()
@@ -85,11 +89,12 @@ export async function handleCompletion(c: Context) {
     reasoningEffort: payload.reasoning_effort,
   })
 
-  const response = await createChatCompletions(payload, {
-    clientSignal: c.req.raw.signal,
-    requestId,
-    sessionId,
-  })
+  const response =
+    await chatCompletionsHandlerDependencies.createChatCompletions(payload, {
+      clientSignal: c.req.raw.signal,
+      requestId,
+      sessionId,
+    })
 
   if (isNonStreaming(response)) {
     debugJson(logger, "Non-streaming response:", response)
@@ -106,40 +111,29 @@ export async function handleCompletion(c: Context) {
   return streamSSE(c, async (stream) => {
     let usage: UsageTokens = {}
 
-    for await (const chunk of response) {
-      debugJson(logger, "Streaming chunk:", chunk)
-      const parsedChunk = parseChatCompletionChunk(chunk)
-      recordChatCompletionFirstToken(parsedChunk)
-      if (parsedChunk?.usage || parsedChunk?.copilot_usage) {
-        usage = {
-          ...normalizeOpenAIUsage(parsedChunk.usage),
-          total_nano_aiu: normalizeOptionalToken(
-            parsedChunk.copilot_usage?.total_nano_aiu,
-          ),
+    try {
+      for await (const {
+        message: chunk,
+        completion: parsedChunk,
+      } of guardChatCompletionsStream(response)) {
+        debugJson(logger, "Streaming chunk:", chunk)
+        recordChatCompletionFirstToken(parsedChunk)
+        if (parsedChunk?.usage || parsedChunk?.copilot_usage) {
+          usage = {
+            ...normalizeOpenAIUsage(parsedChunk.usage),
+            total_nano_aiu: normalizeOptionalToken(
+              parsedChunk.copilot_usage?.total_nano_aiu,
+            ),
+          }
         }
+        await writeSSEIfConnected(stream, chunk as SSEMessage)
       }
-      await writeSSEIfConnected(stream, chunk as SSEMessage)
+    } finally {
+      recordUsage(usage)
     }
-
-    recordUsage(usage)
   })
 }
 
 const isNonStreaming = (
   response: Awaited<ReturnType<typeof createChatCompletions>>,
 ): response is ChatCompletionResponse => Object.hasOwn(response, "choices")
-
-const parseChatCompletionChunk = (
-  chunk: unknown,
-): ChatCompletionChunk | null => {
-  const data = (chunk as { data?: string }).data
-  if (!data || data === "[DONE]") {
-    return null
-  }
-
-  try {
-    return JSON.parse(data) as ChatCompletionChunk
-  } catch {
-    return null
-  }
-}

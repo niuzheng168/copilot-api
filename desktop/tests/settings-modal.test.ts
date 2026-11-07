@@ -104,7 +104,7 @@ beforeEach(async () => {
       getBunRuntime: () =>
         Promise.resolve({
           available: true,
-          version: '1.4.0',
+          version: '1.4.4',
           path: '/usr/local/bin/bun',
         }),
       getServerKeys: () => Promise.resolve(structuredClone(keys)),
@@ -288,7 +288,7 @@ describe('settings modal partial saves', () => {
     const select = container.querySelector<HTMLSelectElement>('#server-runtime')
     expect(select?.value).toBe('bun')
     expect(container.querySelector('[role="status"]')?.textContent).toContain(
-      'Bun 1.4.0 detected',
+      'Bun 1.4.4 detected',
     )
     if (!select) throw new Error('Missing runtime selector')
     await act(async () => {
@@ -319,7 +319,7 @@ describe('settings modal partial saves', () => {
     await render()
     await click('Startup')
     expect(container.querySelector('[role="status"]')?.textContent).toContain(
-      'Bun >= 1.4.0 was not found',
+      'Bun >= 1.4.4 was not found',
     )
   })
 
