@@ -81,7 +81,7 @@ test("a gh token is used directly without the VS Code token-exchange or refresh 
   )
 })
 
-test("direct GitHub headers do not impersonate OpenCode or an editor client", () => {
+test("direct GitHub preserves its OAuth identity and declares chat API capabilities consistently", () => {
   directMode()
   for (const headers of [
     githubHeaders(state),
@@ -95,6 +95,12 @@ test("direct GitHub headers do not impersonate OpenCode or an editor client", ()
     expect(headers["copilot-integration-id"]).toBeUndefined()
     expect(JSON.stringify(headers)).not.toContain("opencode/")
   }
+  expect(copilotModelsHeaders(state)["Copilot-Integration-Id"]).toBe(
+    "vscode-chat",
+  )
+  expect(copilotHeaders(state)["Copilot-Integration-Id"]).toBe("vscode-chat")
+  expect(githubHeaders(state)["Copilot-Integration-Id"]).toBeUndefined()
+  expect(githubUserHeaders(state)["Copilot-Integration-Id"]).toBeUndefined()
 })
 
 test("direct HTTP/WebSocket, affinity, vision and compaction use the same OAuth path", () => {
@@ -125,6 +131,7 @@ test("direct HTTP/WebSocket, affinity, vision and compaction use the same OAuth 
   expect(socket.Authorization).toBe("Bearer fixture-gh-oauth")
   expect(socket["x-initiator"]).toBeUndefined()
   expect(socket["User-Agent"]).toBe("codey-gh-auth")
+  expect(socket["Copilot-Integration-Id"]).toBe("vscode-chat")
 })
 
 test("OpenCode still retains its own headers and default mode still exchanges tokens", async () => {
@@ -132,6 +139,8 @@ test("OpenCode still retains its own headers and default mode still exchanges to
   process.env.COPILOT_API_OAUTH_APP = "opencode"
   expect(copilotModelsHeaders(state)["User-Agent"]).toStartWith("opencode/")
   expect(copilotHeaders(state)["Openai-Intent"]).toBe("conversation-edits")
+  expect(copilotModelsHeaders(state)["Copilot-Integration-Id"]).toBeUndefined()
+  expect(copilotHeaders(state)["Copilot-Integration-Id"]).toBeUndefined()
   delete process.env.COPILOT_API_AUTH_MODE
   delete process.env.COPILOT_API_OAUTH_APP
   const exchange = mock(() =>

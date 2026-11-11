@@ -258,6 +258,11 @@ export const copilotModelsHeaders = (state: State) => {
     return {
       Authorization: `Bearer ${state.copilotToken}`,
       "User-Agent": directOAuthUserAgent(),
+      // This is API capability routing, not the OAuth app/identity. Without it
+      // Copilot defaults gh tokens to copilot-4-cli and hides/rejects Gemini.
+      ...(!isOpencodeOauthApp() ?
+        { "Copilot-Integration-Id": "vscode-chat" }
+      : {}),
     }
   }
   const headers = githubCopilotHeaders(state)
@@ -280,6 +285,9 @@ export const copilotHeaders = (
       ...(isOpencodeOauthApp() ?
         { ...getOpencodeLLMHeaders(), "Openai-Intent": "conversation-edits" }
       : { ...standardHeaders(), "User-Agent": directOAuthUserAgent() }),
+      ...(!isOpencodeOauthApp() ?
+        { "Copilot-Integration-Id": "vscode-chat" }
+      : {}),
     }
 
     const store = requestContext.getStore()
