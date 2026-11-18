@@ -233,3 +233,129 @@ test("a future package can declare a new successor without changing migration co
   ) as { models: Array<{ slug: string }> }
   expect(futureCatalog.models[0]?.slug).toBe("gpt-7-future")
 })
+
+function gpt62Fixture(selected: string, catalogUpdated = false) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "codey-gpt62-"))
+  tempDirs.push(directory)
+  process.env.CODEY_MANAGED = "true"
+  process.env.CODEX_HOME = directory
+  const policyFile = path.join(directory, "codey-model-policy.json")
+  process.env.CODEY_MODEL_POLICY_FILE = policyFile
+  const policy = {
+    schema: 1,
+    activeModel: "gpt-6.2-sol",
+    selectableModels: ["gpt-6.2-sol", "gpt-6.2-astra"],
+    retiredModels: ["gpt-6.1-sol", "gpt-6-astra", "codex/gpt-6-astra"],
+    replacements: {
+      "gpt-6.1-sol": "gpt-6.2-sol",
+      "gpt-6-astra": "gpt-6.2-astra",
+      "codex/gpt-6-astra": "gpt-6.2-astra",
+    },
+    aliases: {},
+    contextWindow: 872_000,
+    autoCompactTokenLimit: 722_000,
+    catalogFile: "a100-models.json",
+  }
+  const models = policy.selectableModels.map((slug) => ({
+    slug,
+    context_window: 872_000,
+  }))
+  const configFile = path.join(directory, "config.toml")
+  const modelsFile = path.join(directory, "models.json")
+  const before =
+    `model = '${selected}' # selected\r\n`
+    + "model_context_window = 922000\r\n"
+    + "model_auto_compact_token_limit = 123456\r\n"
+    + "model_reasoning_effort = 'high'\r\n"
+    + `[model_providers.custom]\r\nmodel = '${selected}'\r\n`
+  fs.writeFileSync(policyFile, JSON.stringify(policy))
+  fs.writeFileSync(
+    path.join(directory, policy.catalogFile),
+    JSON.stringify({ models }),
+  )
+  fs.writeFileSync(configFile, before)
+  fs.writeFileSync(
+    modelsFile,
+    JSON.stringify({
+      marker: "keep",
+      models: [
+        ...(catalogUpdated ? models : (
+          policy.retiredModels.map((slug) => ({ slug }))
+        )),
+        { slug: "owner/custom", label: "Keep" },
+      ],
+    }),
+  )
+  return { configFile, modelsFile, policyFile, policy, before }
+}
+
+for (const catalogUpdated of [false, true]) {
+  test.each([
+    ["gpt-6.1-sol", "gpt-6.2-sol"],
+    ["gpt-6-astra", "gpt-6.2-astra"],
+    ["codex/gpt-6-astra", "gpt-6.2-astra"],
+  ])(
+    `upgrades %s at startup (catalog already refreshed: ${catalogUpdated})`,
+    (selected, target) => {
+      const f = gpt62Fixture(selected, catalogUpdated)
+      expect(migrateCodeyManagedCodexModelFiles()).toBe(target)
+      const expected = f.before
+        .replace(`model = '${selected}'`, `model = '${target}'`)
+        .replace("922000", "872000")
+      expect(fs.readFileSync(f.configFile, "utf8")).toBe(expected)
+      expect(JSON.parse(fs.readFileSync(f.modelsFile, "utf8"))).toEqual({
+        marker: "keep",
+        models: [
+          { slug: "gpt-6.2-sol", context_window: 872_000 },
+          { slug: "gpt-6.2-astra", context_window: 872_000 },
+          { slug: "owner/custom", label: "Keep" },
+        ],
+      })
+      expect(migrateCodeyManagedCodexModelFiles()).toBeNull()
+      expect(fs.readFileSync(f.configFile, "utf8")).toBe(expected)
+      expect(JSON.parse(fs.readFileSync(f.policyFile, "utf8"))).toMatchObject({
+        aliases: {},
+      })
+    },
+  )
+}
+
+test.each(["owner/custom", "gpt-6.2-sol", "gpt-6.2-astra"])(
+  "startup leaves an explicit %s selection and settings unchanged",
+  (selected) => {
+    const f = gpt62Fixture(selected)
+    const modelsBefore = fs.readFileSync(f.modelsFile, "utf8")
+    expect(migrateCodeyManagedCodexModelFiles()).toBeNull()
+    expect(fs.readFileSync(f.configFile, "utf8")).toBe(f.before)
+    expect(fs.readFileSync(f.modelsFile, "utf8")).toBe(modelsBefore)
+  },
+)
+
+test("startup migrates the old managed compaction limit but keeps a custom context limit", () => {
+  const f = gpt62Fixture("gpt-6.1-sol", true)
+  const before = f.before.replace("922000", "12345").replace("123456", "762000")
+  fs.writeFileSync(f.configFile, before)
+  expect(migrateCodeyManagedCodexModelFiles()).toBe("gpt-6.2-sol")
+  expect(fs.readFileSync(f.configFile, "utf8")).toBe(
+    before.replace("gpt-6.1-sol", "gpt-6.2-sol").replace("762000", "722000"),
+  )
+})
+
+test.each([
+  { replacements: null },
+  { replacements: [] },
+  { replacements: { "gpt-6-astra": "owner/custom" } },
+])(
+  "rejects an invalid replacement policy before changing files: %j",
+  ({ replacements }) => {
+    const f = gpt62Fixture("gpt-6-astra")
+    fs.writeFileSync(
+      f.policyFile,
+      JSON.stringify({ ...f.policy, replacements }),
+    )
+    expect(() => migrateCodeyManagedCodexModelFiles()).toThrow(
+      "Invalid Codey managed model policy",
+    )
+    expect(fs.readFileSync(f.configFile, "utf8")).toBe(f.before)
+  },
+)

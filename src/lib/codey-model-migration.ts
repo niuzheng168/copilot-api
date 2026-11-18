@@ -23,16 +23,19 @@ export function migrateCodeyManagedCodexModelFiles(): string | null {
   const table = source.search(/^\s*\[/m)
   const rootEnd = table < 0 ? source.length : table
   const root = source.slice(0, rootEnd)
+  const selection = /^([ \t]*model[ \t]*=[ \t]*)(["'])([^"'\r\n]+)\2/m
+  const selected = root.match(selection)?.[3]
+  const replacements = policy.replacements ?? {}
   if (
-    !new RegExp(
-      `^\\s*model\\s*=\\s*["'](${Object.keys(policy.aliases)
-        .map((model) => model.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-        .join("|")})["']\\s*(?:#.*)?$`,
-      "m",
-    ).test(root)
+    !selected
+    || (!Object.hasOwn(replacements, selected)
+      && !Object.hasOwn(policy.aliases, selected))
   ) {
     return null
   }
+  const replacingSelection = Object.hasOwn(replacements, selected)
+  const target =
+    replacingSelection ? replacements[selected] : policy.aliases[selected]
 
   const replace = (text: string, name: string, value: string): string => {
     const pattern = new RegExp(`^(\\s*${name}\\s*=\\s*)[^\\r\\n#]+`, "m")
@@ -41,19 +44,34 @@ export function migrateCodeyManagedCodexModelFiles(): string | null {
       : `${name} = ${value}\n${text}`
   }
   let migratedRoot = root.replace(
-    /^(\s*model\s*=\s*)["'][^"']+["']/m,
-    `$1"${policy.activeModel}"`,
+    selection,
+    (_, prefix: string, quote: string) => `${prefix}${quote}${target}${quote}`,
   )
-  migratedRoot = replace(
-    migratedRoot,
-    "model_context_window",
-    String(policy.contextWindow),
-  )
-  migratedRoot = replace(
-    migratedRoot,
-    "model_auto_compact_token_limit",
-    String(policy.autoCompactTokenLimit),
-  )
+  if (replacingSelection) {
+    // Older package updaters refresh the catalog but leave config.toml alone.
+    // Complete that upgrade at startup, without creating runtime aliases or
+    // overwriting owner-adjusted context limits, effort or provider tables.
+    migratedRoot = migratedRoot
+      .replace(
+        /^([ \t]*model_context_window[ \t]*=[ \t]*)(922000|872000)(?=[ \t]*(?:#|\r?$))/m,
+        (_, prefix: string) => `${prefix}${policy.contextWindow}`,
+      )
+      .replace(
+        /^([ \t]*model_auto_compact_token_limit[ \t]*=[ \t]*)(762000|722000)(?=[ \t]*(?:#|\r?$))/m,
+        (_, prefix: string) => `${prefix}${policy.autoCompactTokenLimit}`,
+      )
+  } else {
+    migratedRoot = replace(
+      migratedRoot,
+      "model_context_window",
+      String(policy.contextWindow),
+    )
+    migratedRoot = replace(
+      migratedRoot,
+      "model_auto_compact_token_limit",
+      String(policy.autoCompactTokenLimit),
+    )
+  }
 
   const catalog = JSON.parse(fs.readFileSync(modelsFile, "utf8")) as {
     models?: Array<Record<string, unknown>>
@@ -68,30 +86,28 @@ export function migrateCodeyManagedCodexModelFiles(): string | null {
       "utf8",
     ),
   ) as { models?: Array<Record<string, unknown>> }
-  const current = packagedCatalog.models?.find(
-    (model) => model.slug === policy.activeModel,
+  const managedSlugs = policy.selectableModels ?? [policy.activeModel]
+  const managedModels = managedSlugs.map((slug) => {
+    const model = packagedCatalog.models?.find((entry) => entry.slug === slug)
+    if (!model) throw new Error("Codey package lacks active model metadata")
+    return structuredClone(model)
+  })
+  const isManaged = (slug: unknown): boolean =>
+    typeof slug === "string"
+    && (managedSlugs.includes(slug)
+      || (policy.retiredModels ?? []).includes(slug)
+      || Object.hasOwn(policy.aliases, slug))
+  const managedIndex = catalog.models.findIndex((model) =>
+    isManaged(model.slug),
   )
-  if (!current) throw new Error("Codey package lacks active model metadata")
-  const managedIndex = catalog.models.findIndex(
-    (model) =>
-      typeof model.slug === "string"
-      && (model.slug === policy.activeModel
-        || Object.hasOwn(policy.aliases, model.slug)),
-  )
-  const custom = catalog.models.filter(
-    (model) =>
-      typeof model.slug !== "string"
-      || (model.slug !== policy.activeModel
-        && !Object.hasOwn(policy.aliases, model.slug)),
-  )
-  custom.splice(Math.max(0, managedIndex), 0, structuredClone(current))
+  const custom = catalog.models.filter((model) => !isManaged(model.slug))
+  custom.splice(Math.max(0, managedIndex), 0, ...managedModels)
 
-  // The gateway alias is persisted first. A package rollback can therefore
-  // serve both the retired ID and the newly migrated active model.
+  // Publish metadata before selecting the replacement model.
   writeFileAtomically(
     modelsFile,
     `${JSON.stringify({ ...catalog, models: custom }, null, 2)}\n`,
   )
   writeFileAtomically(configFile, migratedRoot + source.slice(rootEnd))
-  return policy.activeModel
+  return target
 }

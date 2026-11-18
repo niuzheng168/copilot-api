@@ -19,6 +19,8 @@ describe("Codex service tier price estimates", () => {
   for (const { model, standardCost } of [
     { model: "gpt-6-sol", standardCost: 433_000 },
     { model: "gpt-6.1-sol", standardCost: 429_000 },
+    { model: "gpt-6.2-sol", standardCost: 404_000 },
+    { model: "gpt-6.2-astra", standardCost: 1_616_000 },
     { model: "gpt-6-luna", standardCost: 21_650 },
     { model: "codex-auto-review", standardCost: 21_650 },
     { model: "gpt-reserve", standardCost: 21_650 },
@@ -56,6 +58,19 @@ describe("Codex service tier price estimates", () => {
       currency: "USD",
       source: "builtin",
       total_cost_nanos: 6_530_172_000,
+    })
+  })
+
+  test.each([
+    ["gpt-6.2-sol", 544_206_000],
+    ["gpt-6.2-astra", 2_176_824_000],
+  ])("%s keeps its flat upstream rate for long contexts", (model, cost) => {
+    expect(
+      resolveTokenUsageCost({ ...usage, model, input_tokens: 272_001 }),
+    ).toEqual({
+      currency: "USD",
+      source: "builtin",
+      total_cost_nanos: cost,
     })
   })
 

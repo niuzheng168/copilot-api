@@ -5,6 +5,9 @@ export type CodeyManagedModelPolicy = {
   schema: 1
   activeModel: string
   aliases: Record<string, string>
+  selectableModels?: Array<string>
+  retiredModels?: Array<string>
+  replacements?: Record<string, string>
   contextWindow: number
   autoCompactTokenLimit: number
   catalogFile: string
@@ -42,6 +45,32 @@ export function readCodeyManagedModelPolicy(): CodeyManagedModelPolicy | null {
       ([source, target]) =>
         !source || typeof target !== "string" || target !== policy.activeModel,
     )
+    || (policy.selectableModels !== undefined
+      && (!Array.isArray(policy.selectableModels)
+        || !policy.selectableModels.includes(policy.activeModel)
+        || policy.selectableModels.some(
+          (model) => typeof model !== "string" || !model.trim(),
+        )
+        || new Set(policy.selectableModels).size
+          !== policy.selectableModels.length))
+    || (policy.retiredModels !== undefined
+      && (!Array.isArray(policy.retiredModels)
+        || policy.retiredModels.some(
+          (model) =>
+            typeof model !== "string"
+            || !model.trim()
+            || model === policy.activeModel
+            || policy.selectableModels?.includes(model),
+        )))
+    || (policy.replacements !== undefined
+      && (!policy.replacements
+        || typeof policy.replacements !== "object"
+        || Array.isArray(policy.replacements)
+        || Object.entries(policy.replacements).some(
+          ([source, target]) =>
+            !policy.retiredModels?.includes(source)
+            || !policy.selectableModels?.includes(target),
+        )))
   ) {
     throw new Error("Invalid Codey managed model policy")
   }

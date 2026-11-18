@@ -63,6 +63,24 @@ describe("codex api helpers", () => {
     expect("stream" in payload).toBe(false)
   })
 
+  test.each(["gpt-6.2-sol", "gpt-6.2-astra"])(
+    "forwards %s and its selected effort without substituting another model",
+    (model) => {
+      expect(
+        buildCodexResponsesWebSocketPayload({
+          model,
+          input: "hello",
+          reasoning: { effort: "max" },
+          stream: true,
+        }),
+      ).toMatchObject({
+        model,
+        reasoning: { effort: "max" },
+        type: "response.create",
+      })
+    },
+  )
+
   test("moves system input messages into instructions when they are empty", () => {
     const payload = buildCodexResponsesWebSocketPayload({
       input: [
@@ -217,6 +235,8 @@ describe("codex api helpers", () => {
       "gpt-6-luna",
       "gpt-6-sol",
       "gpt-6.1-sol",
+      "gpt-6.2-sol",
+      "gpt-6.2-astra",
       "codex-auto-review",
       "gpt-reserve",
     ])
@@ -270,5 +290,23 @@ describe("codex api helpers", () => {
     expect(gpt61Sol?.capabilities.supports.reasoning_effort).not.toContain(
       "ultra",
     )
+    for (const id of ["gpt-6.2-sol", "gpt-6.2-astra"]) {
+      expect(models.data.find((model) => model.id === id)).toMatchObject({
+        id,
+        capabilities: {
+          limits: {
+            max_context_window_tokens: 872_000,
+            max_prompt_tokens: 872_000,
+            max_output_tokens: 128_000,
+          },
+          supports: {
+            reasoning_effort: ["low", "medium", "high", "xhigh", "max"],
+            vision: true,
+            tool_calls: true,
+          },
+        },
+        supported_endpoints: ["/v1/messages", "/v1/responses"],
+      })
+    }
   })
 })

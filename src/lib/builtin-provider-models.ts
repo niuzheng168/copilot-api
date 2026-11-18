@@ -192,6 +192,20 @@ export class BuiltinProviderModelRegistry {
           ],
         },
       },
+      "gpt-6.2-sol": {
+        pricing: {
+          cachedInput: 0.1,
+          input: 2,
+          output: 10,
+        },
+      },
+      "gpt-6.2-astra": {
+        pricing: {
+          cachedInput: 0.4,
+          input: 8,
+          output: 40,
+        },
+      },
     },
     dashscope: {
       "glm-5.3": {

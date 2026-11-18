@@ -49,6 +49,22 @@ function parse(body: string | null): CodexModelsResponse {
 }
 
 describe("Codex model catalog", () => {
+  test.each(["gpt-6.2-sol", "gpt-6.2-astra"])(
+    "keeps %s available when the upstream catalog cannot be fetched",
+    (slug) => {
+      const entry = catalog.models.find((item) => item.slug === slug)
+      expect(entry).toMatchObject({
+        display_name: slug === "gpt-6.2-sol" ? "GPT-6.2 Sol" : "GPT-6.2 Astra",
+        context_window: 872_000,
+        max_context_window: 872_000,
+        auto_compact_token_limit: 722_000,
+        supported_in_api: true,
+      })
+      expect(
+        entry?.supported_reasoning_levels.map(({ effort }) => effort),
+      ).toEqual(["low", "medium", "high", "xhigh", "max"])
+    },
+  )
   test.each([
     ["0.159.9", false],
     ["0.160.0", true],
